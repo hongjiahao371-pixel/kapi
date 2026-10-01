@@ -205,7 +205,10 @@ class AutoCapturePipeline(
                 ledgerId = ledgerId,
                 deviceId = deviceId(),
                 merchant = draft.merchant,
-                categoryId = guessCategoryId(ledgerId, draft.merchant, direction),
+                categoryId = AutoCategory.resolve(
+                    db = db, ledgerId = ledgerId,
+                    merchant = draft.merchant, rawText = text, direction = direction,
+                ),
                 source = LocalEditWriter.SOURCE_LOCAL_FALLBACK,
                 confidence = parsed.confidence,
             )
@@ -321,12 +324,18 @@ class AutoCapturePipeline(
     }
 
     /**
-     * 按商户名猜分类。
+     * 旧实现留档（已无调用点）。
      *
-     * 只做**精确的名字相等**，不做模糊匹配。猜错分类会污染历史统计，而用户在
-     * 确认页改一下分类只要一次点击——在这里赌一个相似度阈值，收益是零。
+     * 原来是拿商户名去**精确匹配**分类名：`db.categoryDao().byName(ledgerId, direction, 商户名)`。
+     * 实际上永远匹配不上——商户叫「星巴克」，没有哪个分类叫「星巴克」。所以它等于
+     * 没有自动分类，每一笔进账都是「未分类」。
+     *
+     * 真正的实现在 [AutoCategory]，规则表在 `core` 的 `CategoryRules`（那里才有单测钉着）。
+     * 直接删掉是因为留着一个语义完全相反的同名函数，下一个人会以为它还在生效。
      */
-    private suspend fun guessCategoryId(ledgerId: String, merchant: String?, direction: String): String? {
+    private suspend fun guessCategoryIdExactNameOnly(
+        ledgerId: String, merchant: String?, direction: String,
+    ): String? {
         val name = merchant?.trim()?.takeIf { it.isNotEmpty() } ?: return null
         return db.categoryDao().byName(ledgerId, direction, name)?.id
     }

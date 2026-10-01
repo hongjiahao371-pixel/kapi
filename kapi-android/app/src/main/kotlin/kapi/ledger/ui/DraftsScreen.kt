@@ -49,6 +49,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kapi.core.llm.Money
 import kapi.ledger.auto.AutoBookStore
+import kapi.ledger.auto.AutoCategory
 import kapi.ledger.auto.AutoPermissionState
 import kapi.ledger.auto.AutoPermissions
 import kapi.ledger.data.AutoDraftEntity
@@ -142,6 +143,16 @@ class DraftsViewModel(
 
     private suspend fun confirmNow(draft: AutoDraftEntity) {
         runCatching {
+            // 自动分类。商户名优先，判不出来时看账单原文里的商品标题
+            // （支付宝那笔 `微雪**店 / ESP32-P4开发板` 就是靠后者判成数码的）。
+            // 判不出来就是 null，进「未分类」——**不猜**，猜错会污染历史统计而用户不知道。
+            val categoryId = AutoCategory.resolve(
+                db = db,
+                ledgerId = draft.ledgerId,
+                merchant = draft.merchant,
+                rawText = draft.rawText,
+                direction = draft.direction,
+            )
             editor.createTransaction(
                 amountMinor = draft.amountMinor,
                 direction = draft.direction,
@@ -151,6 +162,7 @@ class DraftsViewModel(
                 deviceId = deviceId(),
                 note = draft.note,
                 merchant = draft.merchant,
+                categoryId = categoryId,
                 source = LocalEditWriter.SOURCE_LOCAL_FALLBACK,
                 confidence = draft.confidence,
             )

@@ -1,5 +1,6 @@
 package kapi.ledger.data
 
+import kapi.core.auto.CategoryRules
 import kapi.core.sync.LamportClock
 import kapi.core.sync.LocalMerge
 import kapi.ledger.sync.LocalEditWriter
@@ -101,6 +102,32 @@ class LedgerRepository(
             CategoryEntity("inc-$i", ledgerId, null, n, kind = "INCOME", sortOrder = i)
         }).filter { db.categoryDao().byId(it.id) == null }
         if (missingCategories.isNotEmpty()) db.categoryDao().upsertAll(missingCategories)
+
+        // ---- 细分类（2026-10-01）----
+        //
+        // 顶级分类只有 11 个，`餐饮` 底下什么都不分——可包子铺和火锅在用户的生活里
+        // 根本不是一回事，`购物` 更极端：一件 T 恤和一台显示器放在同一栏，
+        // 那栏数字没有任何意义。
+        //
+        // 顶级分类的 id 和名字**一个字都不改**：已有的库里已经有 `cat-0`…`cat-10`，
+        // 改名会让用户的历史账目指向不存在的分类。细分类是新行，用
+        // `cat-<顶级序号>-<细类序号>`，靠 `parentId` 串起来。
+        //
+        // 细分类清单不写在这里，而是从 [CategoryRules] 取——**规则表是唯一的权威**。
+        // 两处各写一份的话，加了规则忘了铺库、或铺了库没有规则，两边都会对不上。
+        val subCategories = DEFAULT_EXPENSE_CATEGORIES.flatMapIndexed { i, major ->
+            CategoryRules.minors(major).mapIndexed { j, minor ->
+                CategoryEntity(
+                    id = "cat-$i-$j",
+                    ledgerId = ledgerId,
+                    parentId = "cat-$i",
+                    name = minor,
+                    kind = "EXPENSE",
+                    sortOrder = j,
+                )
+            }
+        }.filter { db.categoryDao().byId(it.id) == null }
+        if (subCategories.isNotEmpty()) db.categoryDao().upsertAll(subCategories)
 
         // 上面铺的这套分类/账户要**推上去**，否则 NAS 上永远没有参考数据：
         // 换一台手机连过来，拉到的账目里的 category_id 指向一个不存在的行，
