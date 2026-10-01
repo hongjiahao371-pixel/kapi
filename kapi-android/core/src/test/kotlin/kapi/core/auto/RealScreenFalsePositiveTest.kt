@@ -184,4 +184,55 @@ class RealScreenFalsePositiveTest {
         val r = LocalTextParser.parse("钱包¥1008.30\n支出55元", 1_700_000_000_000L)
         assertEquals(5500L, r!!.amountsMinor.first())
     }
+
+    // ------------------------------------------------ 微信账单列表页（2026-10-01 新增）
+
+    /**
+     * 微信「账单」列表页，2026-10-01 realme RMX3852 真机原文。
+     *
+     * 这一屏是最典型的「一屏记录」：**四笔独立的交易**，每笔都带完整金额和日期。
+     * 而每一行又都长得像一条能读的账——`转账-转给橘生 / -0.10 / 10月1日 14:45`。
+     *
+     * 危险在于它和详情页只差一次点击：用户翻账单是常事，只要形状闸放过一次，
+     * 账本里就会多出四条**过去的**消费，而且时间戳是几个月前的，事后极难察觉。
+     *
+     * 顺带也是商户抽取的一个陷阱：这一屏里 `深圳市腾讯计算机系统有限…`
+     * 出现在金额**上面**、`转账-转给橘生` 出现在金额上面——如果哪一屏被误判成"一笔"，
+     * 商户会取到最近的那一行，看起来还挺像回事。
+     */
+    private val wechatBillList = listOf(
+        "账单",
+        "全部账单", "查找交易", "收支统计",
+        "2026年10月", "支出 ¥0.10", "收入 ¥0.00",
+        "转账-转给橘生", "-0.10", "10月1日 14:45",
+        "2025年9月", "支出 ¥18.00", "收入 ¥0.00",
+        "深圳市腾讯计算机系统有限…", "-18.00", "9月8日 09:24",
+        "2025年8月", "支出 ¥18.00", "收入 ¥0.00",
+        "深圳市腾讯计算机系统有限…", "-18.00", "8月8日 09:24",
+        "2025年7月", "支出 ¥13.00", "收入 ¥0.00",
+        "深圳市腾讯计算机系统有限…", "-13.00", "7月8日 15:10",
+        "暂无更多记录",
+    ).map { Node(it) }
+
+    @Test
+    fun `wechat bill list is a screen of records not one payment`() {
+        val v = PaymentShape.inspect(wechatBillList)
+        assertTrue(
+            "四笔独立交易构成的列表页必须被形状闸挡下，实际 $v",
+            v is Verdict.ManyTransactions,
+        )
+    }
+
+    @Test
+    fun `wechat bill list never reaches the ledger`() {
+        // 第二道门也要拦一道。两道都钉住，才不会因为将来改形状闸的口径
+        // 就把"翻账单"变成"批量导入历史消费"。
+        val text = wechatBillList.joinToString("\n") { it.text }
+        val gate = PaymentGate.verdict(text)
+        assertEquals(
+            "账单列表页不该被判定成刚发生的一笔",
+            false,
+            gate is PaymentGate.Verdict.LooksLikePayment,
+        )
+    }
 }

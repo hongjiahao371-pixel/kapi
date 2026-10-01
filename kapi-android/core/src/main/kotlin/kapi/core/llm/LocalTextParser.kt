@@ -315,47 +315,110 @@ object LocalTextParser {
     /**
      * 商户名猜测。
      *
-     * 真实通知长这样，商户**不在**金额那一行：
+     * ## 真实样本长什么样（2026-10-01 真机）
+     *
+     * 微信转账详情页（`RealScreenMerchantTest`）：
+     * ```
+     * 转账说明
+     * 提醒对方收款
+     * 等待对方确认收钱     ← 「当前状态」这个字段的**值**
+     * 当前状态
+     * -0.10               ← 金额
+     * 转账-转给橘生         ← 商户，在金额下面
+     * ```
+     *
+     * 支付宝账单详情页：
+     * ```
+     * …抽屉菜单 20 行…
+     * 交易成功
+     * 支出10.1元            ← 金额
+     * 杭州淘宝通信技术有限公司  ← 商户，在金额下面
+     * ```
+     *
+     * 通知文本（老的形状）：
      * ```
      * 交易成功
-     * 盒马鲜生          ← 商户在这一行
-     * 实付 ¥156.80      ← 金额在这一行，前缀只是字段标签
-     * 时间 12:03
+     * 盒马鲜生             ← 商户，在金额**上面**
+     * 实付 ¥156.80
      * ```
-     * 所以先看金额行前面的文字，如果那是字段标签（实付/订单/金额…）或者压根没有，
-     * 就往上找一行非空文本。
+     *
+     * ## 三条改动的理由
+     *
+     * 1. **按数值找金额行，不拿展示串去 `contains`。**
+     *    支付宝写的是 `10.1元`（尾零被它自己丢掉了），而
+     *    `Money.toYuanDisplay(1010)` 是 `10.10`——两个字符串永远不相等，
+     *    整屏 30 行里找不到金额行，商户直接返回 null。金额长什么样是对方 App
+     *    决定的，拿自己的格式去反查，等于假设对方按你的格式写。
+     *
+     * 2. **只在金额附近找（±2 行），且先下后上。**
+     *    原来是从金额行**一路向上**扫到屏幕顶。支付宝那一屏上方隔着二十行抽屉
+     *    菜单，于是抓到了 `账单分类`。真机详情页的商户标题渲染在金额**下方**，
+     *    所以先下后上；通知文本的商户在上方，两边都覆盖得到。
+     *
+     * 3. **跳过「字段的值」。**
+     *    节点顺序是**值在标签前面**（见 [PaymentId] 的类注释），所以一行如果
+     *    后面紧跟着一行**纯标签**（只有标签、没有值），它就是那个字段的值。
+     *    `等待对方确认收钱 / 当前状态` 就是这个形状——它不含数字、不含货币
+     *    符号、长度合规，所有词表都拦不住，只有结构能认出来。
      *
      * 仍然刻意保守：猜错商户不如不猜。错误的商户名会污染历史统计，而空着
      * 用户一秒就能补。
      */
     private fun guessMerchant(t: String, amounts: List<Long>): String? {
-        val amountStr = amounts.firstOrNull()?.let { Money.toYuanDisplay(it) } ?: return null
+        val target = amounts.firstOrNull() ?: return null
         val lines = t.lines().map { it.trim() }.filter { it.isNotEmpty() }
         if (lines.isEmpty()) return null
 
-        val idx = lines.indexOfFirst { it.contains(amountStr) }
+        // 按**数值**定位金额行，见上面第 1 条。
+        val idx = lines.indexOfFirst { line -> amountMatches(line).any { it.second == target } }
         if (idx < 0) return null
 
-        // 先试金额行的前缀
-        candidate(lines[idx].substringBefore(amountStr, ""))?.let { return it }
-
-        // 再往上找一行
-        for (i in idx - 1 downTo 0) {
-            candidate(lines[i])?.let { return it }
-        }
-
-        // 往上找不到就往下找。微信支付成功页的商户在金额行**下面**：
-        // ```
-        // 支付成功
-        // ¥23.50
-        // 星巴克      ← 只往上找的话永远找不到商户
-        // 当前状态 支付成功
-        // ```
-        // 往下的候选里混着"当前状态 支付成功"这种状态行，由 [STATUS_LINES] 挡掉。
-        for (i in idx + 1 until lines.size) {
-            candidate(lines[i])?.let { return it }
+        // 先下后上，各看两行。顺序与窗口见上面第 2 条。
+        val order = listOf(idx + 1, idx + 2, idx - 1, idx - 2)
+        for (i in order) {
+            if (i !in lines.indices) continue
+            merchantAt(lines, i)?.let { return it }
         }
         return null
+    }
+
+    /** 金额行前面那个前缀（`实付 ¥` 这种）先单独试一次。 */
+    private fun merchantAt(lines: List<String>, i: Int): String? {
+        candidate(lines[i]) ?: return null
+        // 下一行是纯标签 ⇒ 这一行是那个字段的值，不是商户。见上面第 3 条。
+        if (lines.getOrNull(i + 1)?.let(::isPureLabelLine) == true) return null
+        return candidate(lines[i])
+    }
+
+    /**
+     * 整行**只有标签、没有值**。
+     *
+     * 判据是「命中标签，且标签后面的东西被分隔符剔完之后**什么都不剩**」。
+     *
+     * ## 为什么不能用"不含数字"来判
+     *
+     * 第一版写的是「短 + 命中标签 + 不含数字」，结果 `当前状态 支付成功`
+     * 被判成纯标签——「支付成功」里没有数字啊——于是微信支付成功页上的
+     * `星巴克` 被当成它的值丢掉了，商户变成 null。
+     *
+     * 真正的分界是**标签后面还有没有内容**：
+     * ```
+     * 当前状态          ← 纯标签（值在它上面一行）
+     * 当前状态 支付成功   ← 标签与值同行（值在它自己这一行）
+     * 实付 ¥156.80      ← 同上
+     * ```
+     */
+    private fun isPureLabelLine(line: String): Boolean {
+        val head = line.trim()
+        if (head.isEmpty()) return false
+        for (label in FIELD_LABELS) {
+            val i = head.indexOf(label)
+            if (i < 0) continue
+            val rest = head.substring(i + label.length)
+                .trim('：', ':', ' ', '　', '|', '-', '·', '*', '=')
+            if (rest.isEmpty()) return true
+        }
+        return false
     }
 
     /** 字段标签、纯符号行、含数字的行，都不是商户名。 */
@@ -389,6 +452,11 @@ object LocalTextParser {
         "消费成功", "退款成功", "已成功", "支付完成", "交易完成", "已完成",
         "交易中", "处理中", "等待付款", "待付款", "已取消", "已关闭", "失败",
         "成功", "当前状态", "交易详情", "订单详情", "支付详情", "结果",
+        // 2026-10-01 真机：微信 P2P 转账详情页的「当前状态」取值。
+        // 结构上已经被"下一行是纯标签"那条规则挡掉了（见 merchantAt），
+        // 这里再收一遍是**双保险**——词表和结构任一失效都不至于把状态写成商户。
+        "等待对方确认收钱", "等待对方收款", "等待确认收款", "对方已收钱",
+        "已收款", "已退还", "已退回", "转账已收钱", "收款已到账",
     )
 
     private val CURRENCY_CHARS = setOf('¥', '￥', '$', '元', '圆')
