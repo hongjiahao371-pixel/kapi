@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>咔皮账本 · NAS 面板</title>
+<style>
+  :root{
+    /* 和 App 同一套语言：安静暖白底 + 白卡片 + 发丝边，卡片是画面里最亮的东西。 */
+    --bg:#F5F2EC; --card:#FFFFFF; --ink:#231F1B; --soft:#6B6259; --faint:#A79C90;
+    --line:#E8E2D8; --brand:#1F6B52; --brand-deep:#175140; --brand-soft:#E4F0EA;
+    --expense:#C0402C; --income:#1F6B52; --radius:18px;
+    --shadow:0 1px 2px rgba(35,31,27,.04), 0 8px 20px rgba(35,31,27,.05);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 64px}
+
+  header{display:flex;align-items:baseline;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+  header h1{font-size:22px;margin:0;letter-spacing:.2px}
+  header .sub{color:var(--faint);font-size:13px}
+  header .spacer{flex:1}
+  .linkbtn{background:none;border:0;color:var(--brand);font:inherit;font-size:13px;cursor:pointer;padding:4px 2px}
+  .linkbtn:hover{text-decoration:underline}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+
+  /* ---- 概览 ---- */
+  .sum{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);
+       border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin-bottom:18px}
+  .sum > div{background:var(--card);padding:16px 18px}
+  .sum .k{color:var(--faint);font-size:12px;margin-bottom:6px}
+  .sum .v{font-size:24px;font-weight:600;letter-spacing:-.4px;font-variant-numeric:tabular-nums}
+  @media(max-width:720px){.sum{grid-template-columns:repeat(2,1fr)}}
+
+  /* ---- 筛选 ---- */
+  .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;padding:14px 16px;margin-bottom:18px}
+  .f{display:flex;flex-direction:column;gap:5px}
+  .f label{font-size:12px;color:var(--faint)}
+  input[type=text],input[type=date],select{
+    font:inherit;font-size:14px;color:var(--ink);background:#fff;
+    border:1px solid var(--line);border-radius:10px;padding:7px 10px;height:36px;min-width:0;
+  }
+  input:focus,select:focus{outline:2px solid var(--brand-soft);border-color:var(--brand)}
+  .f.q{flex:1;min-width:190px}
+  .f.q input{width:100%}
+  .btn{font:inherit;font-size:14px;height:36px;padding:0 18px;border-radius:10px;cursor:pointer;border:1px solid transparent}
+  .btn.primary{background:var(--brand-deep);color:#fff}
+  .btn.primary:hover{background:var(--brand)}
+  .btn.ghost{background:#fff;border-color:var(--line);color:var(--soft)}
+  .btn.ghost:hover{border-color:var(--faint)}
+  .btn.tiny{height:24px;padding:0 10px;font-size:12px;border-radius:8px;margin-left:8px;vertical-align:1px}
+  .chk{display:flex;align-items:center;gap:6px;height:36px;color:var(--soft);font-size:14px;user-select:none}
+
+  .tabs{display:flex;gap:4px;margin:0 0 14px}
+  .tab{font:inherit;font-size:14px;padding:8px 16px;border-radius:10px;border:1px solid transparent;
+       background:none;color:var(--soft);cursor:pointer}
+  .tab[aria-selected=true]{background:var(--card);border-color:var(--line);color:var(--ink);font-weight:600;box-shadow:var(--shadow)}
+
+  /* ---- 表格 ---- */
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  thead th{text-align:left;font-size:12px;font-weight:500;color:var(--faint);
+           padding:12px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
+  tbody td{padding:12px 16px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr{cursor:pointer}
+  tbody tr:hover{background:#FBF9F5}
+  tbody tr[aria-selected=true]{background:var(--brand-soft)}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .amt-exp{color:var(--expense);font-weight:600}
+  .amt-inc{color:var(--income);font-weight:600}
+  .muted{color:var(--faint)}
+  .title{font-weight:500}
+  .sub2{color:var(--soft);font-size:13px}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;background:#F1EDE6;color:var(--soft);font-size:12px}
+  .empty{padding:48px 16px;text-align:center;color:var(--faint)}
+  .pager{display:flex;align-items:center;gap:12px;justify-content:flex-end;padding:12px 16px}
+  .pager .count{margin-right:auto;color:var(--faint);font-size:13px}
+
+  /* ---- 统计 ---- */
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:820px){.stats{grid-template-columns:1fr}}
+  .panel h2{font-size:15px;margin:0;padding:16px 18px 10px;font-weight:600}
+  /* 刻度切换按钮挂在 h2 里，得让标题行自己撑开，别让 h2 的 line-height 把按钮压扁 */
+  .panel h2{display:flex;align-items:center}
+  .bar{display:grid;grid-template-columns:82px 1fr 130px;gap:12px;align-items:center;padding:7px 18px}
+  .bar .lbl{color:var(--soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .track{height:9px;background:#F1EDE6;border-radius:999px;overflow:hidden}
+  .fill{height:100%;background:var(--brand);border-radius:999px}
+  .bar .val{text-align:right;font-variant-numeric:tabular-nums}
+  .bar .val small{color:var(--faint);margin-left:6px}
+
+  /* ---- 详情抽屉 ---- */
+  .scrim{position:fixed;inset:0;background:rgba(35,31,27,.34);opacity:0;pointer-events:none;transition:opacity .18s}
+  .scrim.on{opacity:1;pointer-events:auto}
+  .drawer{position:fixed;top:0;right:0;height:100%;width:min(460px,100%);background:var(--card);
+          box-shadow:-12px 0 40px rgba(35,31,27,.14);transform:translateX(100%);transition:transform .22s cubic-bezier(.3,.8,.3,1);
+          display:flex;flex-direction:column}
+  .drawer.on{transform:none}
+  .drawer header{padding:20px 22px 12px;margin:0;border-bottom:1px solid var(--line)}
+  .drawer .body{padding:18px 22px;overflow:auto;flex:1}
+  .kv{display:grid;grid-template-columns:96px 1fr;gap:8px 14px;font-size:14px;padding:7px 0;border-bottom:1px solid var(--line)}
+  .kv:last-child{border-bottom:0}
+  .kv .k{color:var(--faint);font-size:13px}
+  .kv .v{font-variant-numeric:tabular-nums;word-break:break-all}
+  h3.sec{font-size:12px;color:var(--faint);font-weight:500;margin:22px 0 6px;letter-spacing:.4px}
+
+  /* ---- 登录 ---- */
+  .gate{max-width:420px;margin:14vh auto;padding:28px}
+  .gate h2{font-size:18px;margin:0 0 8px}
+  .gate p{color:var(--soft);font-size:14px;margin:0 0 18px}
+  .gate input{width:100%}
+  .gate .btn{width:100%;margin-top:12px;height:40px}
+  .gate .err{color:var(--expense);font-size:13px;margin-top:12px;min-height:20px}
+  .hide{display:none !important}
+  code{background:#F1EDE6;padding:1px 5px;border-radius:5px;font-size:12.5px;
+       font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>咔皮账本</h1>
+    <span class="sub" id="hstat">NAS 面板 · 只读</span>
+    <span class="spacer"></span>
+    <button class="linkbtn hide" id="logout">退出</button>
+  </header>
+
+  <!-- 令牌门：外壳本身不含任何账本数据，所以可以匿名加载 -->
+  <div class="gate card hide" id="gate">
+    <h2>输入面板令牌</h2>
+    <p>这个令牌在 NAS 上运行 <code>docker logs kapi-sync</code> 的启动横幅里。
+       它和手机配对用的配对码是两回事,不要填错。</p>
+    <input type="text" id="tok" placeholder="面板令牌" autocomplete="off" spellcheck="false">
+    <button class="btn primary" id="tokgo">进入</button>
+    <div class="err" id="tokerr"></div>
+  </div>
+
+  <div id="app" class="hide">
+    <div class="sum">
+      <div><div class="k">支出</div><div class="v" id="s-exp">—</div></div>
+      <div><div class="k">收入</div><div class="v" id="s-inc">—</div></div>
+      <div><div class="k">结余</div><div class="v" id="s-bal">—</div></div>
+      <div><div class="k">笔数</div><div class="v" id="s-cnt">—</div></div>
+    </div>
+
+    <div class="filters card">
+      <div class="f q"><label for="f-q">关键词</label><input type="text" id="f-q" placeholder="商户 / 备注 / 分类 / 账户"></div>
+      <div class="f"><label for="f-from">起始</label><input type="date" id="f-from"></div>
+      <div class="f"><label for="f-to">结束</label><input type="date" id="f-to"></div>
+      <div class="f"><label for="f-dir">类型</label>
+        <select id="f-dir"><option value="">全部</option><option value="EXPENSE">支出</option><option value="INCOME">收入</option></select>
+      </div>
+      <div class="f"><label for="f-cat">分类</label><select id="f-cat"><option value="">全部</option></select></div>
+      <label class="chk"><input type="checkbox" id="f-del"> 含已删除</label>
+      <button class="btn primary" id="f-go">查询</button>
+      <button class="btn ghost" id="f-clear">重置</button>
+    </div>
+
+    <div class="tabs">
+      <button class="tab" data-tab="list" aria-selected="true">明细</button>
+      <button class="tab" data-tab="stats" aria-selected="false">统计</button>
+    </div>
+
+    <div id="view-list" class="card">
+      <table>
+        <thead><tr>
+          <th style="width:132px">时间</th><th>商户 / 备注</th>
+          <th style="width:110px">分类</th><th style="width:104px">账户</th>
+          <th class="num" style="width:132px">金额</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty hide" id="empty">没有符合条件的账单</div>
+      <div class="pager">
+        <span class="count" id="cnt"></span>
+        <button class="btn ghost" id="prev">上一页</button>
+        <button class="btn ghost" id="next">下一页</button>
+      </div>
+    </div>
+
+    <div id="view-stats" class="stats hide">
+      <div class="card panel">
+        <h2>支出构成
+          <button class="btn ghost tiny" id="scale-toggle"
+                  title="线性刻度下，最大的一类会占满整条，其余几乎看不见。平方根刻度保持大小顺序不变，但让小额类别也可读。">平方根刻度</button>
+        </h2>
+        <div id="bycat"></div>
+      </div>
+      <div class="card panel"><h2>每月净额</h2><div id="bymonth"></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <header>
+    <h1 style="font-size:17px" id="d-title">账单详情</h1>
+    <span class="sub" id="d-sub"></span>
+    <span class="spacer"></span>
+    <button class="linkbtn" id="d-close">关闭</button>
+  </header>
+  <div class="body" id="d-body"></div>
+</aside>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const LS = "kapi_panel_token";
+
+const S = {
+  token: localStorage.getItem(LS) || "",
+  tab: "list",
+  offset: 0,
+  limit: 50,
+  total: 0,
+  filter: {},
+  sel: null,
+  // 构成图的刻度。"sqrt" 是平方根：大小顺序不变，但长尾类别也看得见。
+  // 写成 localStorage 是因为这个选择关乎"怎么读图"，刷新一次就跳回默认很烦。
+  scale: localStorage.getItem("kapi.scale") || "sqrt",
+};
+
+/* ---------- 工具 ---------- */
+
+// esc 用于所有插值。商户名和备注都是用户自己写进去的原文，里面出现 < 就会
+// 破坏页面结构 —— 这是唯一的渲染路径，不给"这个字段是安全的"留例外。
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function money(minor) {
+  const n = Number(minor || 0) / 100;
+  return "¥" + n.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function signed(minor, dir) {
+  return (dir === "INCOME" ? "+" : "-") + money(Math.abs(Number(minor || 0)));
+}
+const p2 = (n) => String(n).padStart(2, "0");
+function day(ms) {
+  const d = new Date(Number(ms));
+  if (isNaN(d)) return "—";
+  return d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate());
+}
+function stamp(ms) {
+  const d = new Date(Number(ms));
+  if (isNaN(d)) return "—";
+  return day(ms) + " " + p2(d.getHours()) + ":" + p2(d.getMinutes());
+}
+// 本机时区的月初 / 月末。统计图按"这个月"看，用 UTC 会把 1 号凌晨的消费算进上个月。
+function monthStart(offset) {
+  const d = new Date();
+  d.setDate(1); d.setHours(0, 0, 0, 0);
+  d.setMonth(d.getMonth() + (offset || 0));
+  return day(d.getTime());
+}
+// new Date(y, m + 1, 0) 就是"第 m+1 月的 0 号"，也就是第 m 月的最后一天。
+// 这么写而不是固定填 30 号，是为了 2 月和闰年也对。
+// 注意 monthStart() 返回的是**字符串**，不能拿它再调 getFullYear。
+function monthEnd(offset) {
+  const now = new Date();
+  const last = new Date(now.getFullYear(), now.getMonth() + (offset || 0) + 1, 0);
+  return day(last.getTime());
+}
+
+async function api(path, params) {
+  const u = new URL(path, location.origin);
+  u.searchParams.set("token", S.token);
+  for (const k in (params || {})) {
+    if (params[k] !== "" && params[k] != null) u.searchParams.set(k, params[k]);
+  }
+  const r = await fetch(u, { cache: "no-store" });
+  if (r.status === 401) { signOut(); throw new Error("令牌不对"); }
+  if (!r.ok) {
+    let m = "服务端返回 " + r.status;
+    try { m = (await r.json()).message || m; } catch (e) {}
+    throw new Error(m);
+  }
+  return r.json();
+}
+
+/* ---------- 登录 ---------- */
+function signIn() {
+  $("#gate").classList.remove("hide");
+  $("#app").classList.add("hide");
+  $("#logout").classList.add("hide");
+  $("#tok").value = S.token;
+}
+function signOut() {
+  S.token = "";
+  localStorage.removeItem(LS);
+  signIn();
+  $("#tokerr").textContent = "令牌不对,请从 docker logs 里重新取。";
+}
+function showApp() {
+  $("#gate").classList.add("hide");
+  $("#app").classList.remove("hide");
+  $("#logout").classList.remove("hide");
+}
+async function tryEnter() {
+  // 令牌有两个来源：用户刚在输入框里敲的，和上次存进 localStorage 的。
+  // 这里必须两个都认——早期版本只读输入框，于是**刷新页面后必然白屏**：
+  // 自动登录时输入框是空的，函数直接 return，既不显示登录页也不显示面板。
+  // 首次打开看不出问题，只有按 F5 才会遇到。
+  const typed = $("#tok").value.trim();
+  if (typed) S.token = typed;
+  if (!S.token) { signIn(); return; }
+  $("#tokerr").textContent = "";
+  try {
+    await loadAll();
+    localStorage.setItem(LS, S.token);
+    showApp();
+  } catch (e) {
+    // 失败时必须回到登录页。停在"两个容器都隐藏"的中间态等于白屏，
+    // 用户会以为服务挂了，而不是以为令牌过期了。
+    S.token = "";
+    localStorage.removeItem(LS);
+    signIn();
+    $("#tokerr").textContent = e.message || "连不上服务";
+  }
+}
+
+/* ---------- 读取筛选条件 ---------- */
+function readFilter() {
+  S.filter = {
+    q: $("#f-q").value.trim(),
+    from: $("#f-from").value,
+    to: $("#f-to").value,
+    direction: $("#f-dir").value,
+    category_id: $("#f-cat").value,
+    include_deleted: $("#f-del").checked ? "1" : "",
+  };
+  S.offset = 0;
+}
+
+/* ---------- 加载 ---------- */
+async function loadAll() {
+  await loadSummary();
+  if (S.tab === "list") await loadList(); else await loadStats();
+}
+
+async function loadSummary() {
+  const d = await api("/v1/panel/summary", S.filter);
+  const st = d.stats || {};
+  $("#s-exp").textContent = money(st.expense);
+  $("#s-inc").textContent = money(st.income);
+  $("#s-bal").textContent = money(st.balance);
+  $("#s-cnt").textContent = st.count == null ? "—" : st.count;
+  const h = d.health || {};
+  $("#hstat").textContent =
+    "NAS 面板 · 只读 · 服务端 " + (h.server_version || "?") +
+    " · 共 " + (h.rows == null ? "?" : h.rows) + " 行 · " + (h.device_count == null ? "?" : h.device_count) + " 台设备";
+  fillCats();
+}
+
+async function fillCats() {
+  const sel = $("#f-cat");
+  const keep = sel.value;
+  const d = await api("/v1/panel/facets", { dimension: "category" });
+  const items = d.items || [];
+  // 分类是服务端按"这一列现在有哪些值"算的，和当前筛选无关：否则一旦选中某个
+  // 分类，下拉里就只剩它一个，用户再也换不回去。
+  sel.innerHTML = '<option value="">全部分类</option>' + items.map((x) =>
+    '<option value="' + esc(x.key) + '">' + esc(x.key) + "（" + x.count + "）</option>").join("");
+  sel.value = keep;
+  if (sel.value !== keep) sel.value = "";
+}
+
+async function loadList() {
+  const d = await api("/v1/panel/tx", Object.assign({}, S.filter, {
+    offset: S.offset, limit: S.limit,
+  }));
+  S.total = d.total || 0;
+  renderRows(d.rows || []);
+  const from = S.total === 0 ? 0 : S.offset + 1;
+  const to = Math.min(S.offset + S.limit, S.total);
+  $("#cnt").textContent = "共 " + S.total + " 笔 · 当前 " + from + "-" + to;
+  $("#prev").disabled = S.offset <= 0;
+  $("#next").disabled = S.offset + S.limit >= S.total;
+  $("#empty").classList.toggle("hide", S.total !== 0);
+}
+
+function renderRows(rows) {
+  const tb = $("#rows");
+  tb.innerHTML = rows.map((t) => {
+    const isInc = t.direction === "INCOME";
+    const name = t.merchant || t.note || "（无备注）";
+    const sub = t.merchant && t.note ? esc(t.note) : "";
+    // 显示名优先，id 兜底。服务端解析不了的时候（比如那笔账的分类行还没
+    // 同步过来）会退回到 id —— 难看，但比一个空格子更容易判断发生了什么。
+    // id 放进 title，这样想查原始值的人还查得到。
+    const cat = t.category_name || t.category_id;
+    const acct = t.account_name || t.account_id;
+    return "<tr data-id=\"" + esc(t.id) + "\"" + (S.sel === t.id ? " aria-selected=\"true\"" : "") + ">" +
+      "<td class=\"sub2\">" + esc(stamp(t.occurred_at)) + "</td>" +
+      "<td><div class=\"title\">" + esc(name) + "</div>" +
+        (sub ? "<div class=\"sub2\">" + sub + "</div>" : "") + "</td>" +
+      "<td>" + (cat ? "<span class=\"pill\" title=\"" + esc(t.category_id || "") + "\">" + esc(cat) + "</span>" : "<span class=\"muted\">—</span>") + "</td>" +
+      "<td class=\"sub2\" title=\"" + esc(t.account_id || "") + "\">" + esc(acct || "—") + "</td>" +
+      "<td class=\"num " + (isInc ? "amt-inc" : "amt-exp") + "\">" + signed(t.amount_minor, t.direction) + "</td>" +
+      "</tr>";
+  }).join("");
+}
+
+async function loadStats() {
+  const d = await api("/v1/panel/summary", S.filter);
+  const st = d.stats || {};
+  // 服务端按 key 升序返回（同一份结构还要供 by_month 按时间序用，那里不能重排）。
+  // 构成图要的是"谁花得多"，所以在浏览器这边按金额降序再画一次。
+  const cats = (st.by_category || []).slice().sort((a, b) => b.minor - a.minor);
+  const max = cats.reduce((m, c) => Math.max(m, Math.abs(c.minor)), 0) || 1;
+  // 总额用来算占比。条形长度表达不了精确数值（尤其开了平方根刻度），
+  // 所以百分比必须和金额一起摆在旁边，否则图就成了"看着像、其实不是"。
+  const total = cats.reduce((s, c) => s + Math.abs(c.minor), 0) || 1;
+  $("#bycat").innerHTML = cats.length ? cats.map((c) => {
+    const v = Math.abs(c.minor);
+    const pct = v / max * 100;
+    // 平方根刻度：保持大小顺序，同时把长尾从"贴左边看不见"拉回来。
+    // 一次房租就能吃掉 81% 的时候，线性刻度下剩下六类全是 1px 的线。
+    const w = S.scale === "sqrt" ? Math.sqrt(v / max) * 100 : pct;
+    // 非零值至少给 1.2% 宽度，否则"有这一笔"和"没这一笔"看起来一样。
+    const width = v > 0 ? Math.max(1.2, w) : 0;
+    const share = (v / total * 100);
+    return "<div class=\"bar\"><div class=\"lbl\" title=\"" + esc(c.key) + "\">" + esc(c.key) + "</div>" +
+      "<div class=\"track\"><div class=\"fill\" style=\"width:" + width.toFixed(1) + "%\"></div></div>" +
+      "<div class=\"val\">" + money(c.minor) +
+      "<small>" + (share >= 9.95 ? share.toFixed(0) : share.toFixed(1)) + "% · " + c.count + " 笔</small></div></div>";
+  }).join("")
+    : '<div class="empty">这段时间没有支出</div>';
+  // 按钮写的是**当前**档位，不是"点了会变成什么"——后者每次都要点一下才知道，
+  // 而这个选择直接决定条形长度能不能横向比较。
+  $("#scale-toggle").textContent = S.scale === "sqrt" ? "刻度：平方根" : "刻度：线性";
+
+  const ms = st.by_month || [];
+  const mMax = ms.reduce((m, c) => Math.max(m, Math.abs(c.minor)), 0) || 1;
+  $("#bymonth").innerHTML = ms.length ? ms.map((m) => {
+    const v = m.minor;
+    return "<div class=\"bar\"><div class=\"lbl\">" + esc(m.key) + "</div>" +
+      "<div class=\"track\"><div class=\"fill\" style=\"width:" + (Math.abs(v) / mMax * 100).toFixed(1) + "%;background:" +
+      (v >= 0 ? "var(--income)" : "var(--expense)") + "\"></div></div>" +
+      "<div class=\"val\">" + (v >= 0 ? "+" : "-") + money(Math.abs(v)) + "<small>" + m.count + " 笔</small></div></div>";
+  }).join("") : '<div class="empty">还没有数据</div>';
+}
+
+/* ---------- 详情 ---------- */
+async function openRow(id) {
+  S.sel = id;
+  let rec;
+  try { rec = await api("/v1/panel/row", { id }); }
+  catch (e) { alert(e.message); return; }
+  const v = rec.values || {};
+  const text = (k) => {
+    const raw = v[k];
+    if (raw == null) return "—";
+    // values 里存的是原始 JSON 片段：字符串带引号，数字不带。这里只做展示用的
+    // 解包，解析不出来就原样显示，不做任何"猜测性"转换。
+    try {
+      const p = JSON.parse(raw);
+      return typeof p === "object" ? raw : String(p);
+    } catch (e) { return String(raw); }
+  };
+  const labels = {
+    amount_minor: "金额(分)", direction: "方向", account_id: "账户",
+    to_account_id: "转入账户", category_id: "分类", occurred_at: "发生时间",
+    note: "备注", merchant: "商户",
+  };
+  let html = "";
+  for (const k in labels) {
+    if (v[k] == null) continue;
+    let val = text(k);
+    if (k === "occurred_at") val = stamp(val) + "（" + val + "）";
+    if (k === "amount_minor") val = money(val) + "（" + val + "）";
+    html += "<div class=\"kv\"><div class=\"k\">" + labels[k] + "</div><div class=\"v\">" + esc(val) + "</div></div>";
+  }
+  html += "<div class=\"kv\"><div class=\"k\">行 ID</div><div class=\"v\">" + esc(rec.entity_id) + "</div></div>";
+  html += "<div class=\"kv\"><div class=\"k\">Lamport</div><div class=\"v\">" + esc(rec.lamport) + "</div></div>";
+  html += "<div class=\"kv\"><div class=\"k\">状态</div><div class=\"v\">" + (rec.deleted ? "已删除（墓碑）" : "正常") + "</div></div>";
+
+  html += "<h3 class=\"sec\">字段版本戳</h3>";
+  html += "<div class=\"sub2\" style=\"margin-bottom:6px\">每个字段最后由哪台设备、哪一次写入决定。" +
+          "两台设备改同一行时,这里能看出谁赢了。</div>";
+  const fv = rec.fv || {};
+  const keys = Object.keys(fv).sort();
+  html += keys.length ? keys.map((k) =>
+    "<div class=\"kv\"><div class=\"k\">" + esc(labels[k] || k) + "</div><div class=\"v\">" +
+    esc(fv[k].l) + " · " + esc(fv[k].d) + "</div></div>").join("")
+    : '<div class="sub2">无</div>';
+
+  $("#d-title").textContent = text("merchant") || text("note") || "账单详情";
+  $("#d-sub").textContent = stamp(text("occurred_at"));
+  $("#d-body").innerHTML = html;
+  $("#drawer").classList.add("on");
+  $("#scrim").classList.add("on");
+  loadList();
+}
+function closeRow() {
+  $("#drawer").classList.remove("on");
+  $("#scrim").classList.remove("on");
+  S.sel = null;
+  loadList();
+}
+
+/* ---------- 事件 ---------- */
+$("#tokgo").addEventListener("click", tryEnter);
+$("#tok").addEventListener("keydown", (e) => { if (e.key === "Enter") tryEnter(); });
+$("#logout").addEventListener("click", signOut);
+$("#d-close").addEventListener("click", closeRow);
+$("#scrim").addEventListener("click", closeRow);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeRow(); });
+
+$("#f-go").addEventListener("click", () => { readFilter(); loadAll(); });
+$("#f-clear").addEventListener("click", () => {
+  $("#f-q").value = ""; $("#f-from").value = ""; $("#f-to").value = "";
+  $("#f-dir").value = ""; $("#f-cat").value = ""; $("#f-del").checked = false;
+  readFilter(); loadAll();
+});
+$("#f-q").addEventListener("keydown", (e) => { if (e.key === "Enter") { readFilter(); loadAll(); } });
+
+$("#prev").addEventListener("click", () => {
+  S.offset = Math.max(0, S.offset - S.limit); loadList();
+});
+$("#scale-toggle").addEventListener("click", () => {
+  S.scale = S.scale === "sqrt" ? "linear" : "sqrt";
+  localStorage.setItem("kapi.scale", S.scale);
+  loadStats();
+});
+$("#next").addEventListener("click", () => {
+  if (S.offset + S.limit < S.total) { S.offset += S.limit; loadList(); }
+});
+$("#rows").addEventListener("click", (e) => {
+  const tr = e.target.closest("tr[data-id]");
+  if (tr) openRow(tr.dataset.id);
+});
+for (const b of document.querySelectorAll(".tab")) {
+  b.addEventListener("click", () => {
+    S.tab = b.dataset.tab;
+    for (const o of document.querySelectorAll(".tab")) o.setAttribute("aria-selected", String(o === b));
+    $("#view-list").classList.toggle("hide", S.tab !== "list");
+    $("#view-stats").classList.toggle("hide", S.tab !== "stats");
+    loadAll();
+  });
+}
+
+/* ---------- 启动 ---------- */
+// 默认看本月：这是"我这个月花了多少"这个问题最常见的答案，不该让人先去想
+// 要不要设时间范围。空着日期框就等于不限时间，那是另一回事。
+//
+// 结束日期必须是**月末**而不是月初：服务端的 to 是"次日零点"的开区间上限，
+// 填 9/1 等于只查 9 月 1 号一天，面板开出来是空的——而用户会以为账丢了。
+$("#f-from").value = monthStart(0);
+$("#f-to").value = monthEnd(0);
+readFilter();
+if (S.token) tryEnter(); else signIn();
+</script>
+</body>
+</html>

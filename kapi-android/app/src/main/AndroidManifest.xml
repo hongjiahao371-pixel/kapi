@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- 局域网访问 NAS 同步服务。Android 13+ 必须显式声明，
+         否则 sync worker 会在连不上的时候静默失败。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 移动数据下自动同步会被这个权限影响：不给就只有 WiFi 同步，
+         而「回家连 WiFi 才同步」正是本产品的设定，所以默认不给。 -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
+    <!-- 通知栏自动记账：读通知的权限。Android 13+ 是运行时权限，
+         且**必须由用户在系统设置里单独授予**，请求 manifest 权限是不够的，
+         详见 LlmConfig/自动记账那节的说明。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.READ_NOTIFICATIONS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- 悬浮球记账 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- 截屏识别走的是用户主动截图 + 分享/快捷指令，不申请 READ_EXTERNAL_STORAGE：
+         记账 App 拿存储权限是最容易吓退用户的一类权限。 -->
+
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <application
+        android:name=".KapiApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:theme="@style/Theme.Kapi">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.Kapi">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- 分享文本进记账：这是**零配置**的自动记账入口，
+                 用户从微信/淘宝里「分享到本 App」就能记一笔。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- 分享图片进截图识别 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <!-- 直接接收支付通知：最高频、最省事的自动记账路径 -->
+            <intent-filter>
+                <action android:name="kapi.ledger.TRANSACTION_NOTIFICATION" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          这里**不要**摘掉 androidx.work.WorkManagerInitializer。
+
+          之前为了「自定义初始化」把它的 meta-data 摘了，结果 onCreate 里
+          WorkManager.getInstance() 直接抛 IllegalStateException，App 一启动就闪退。
+          androidx.startup 的 InitializationProvider 是个 ContentProvider，
+          它在 Application.onCreate **之前**就会被创建，所以只要保留默认初始化，
+          onCreate 里 getInstance() 就是安全的。
+
+          保险起见，KapiApp 同时实现了 Configuration.Provider：
+          万一将来做按需初始化（用户没配 NAS 时不初始化），或者哪天这条
+          meta-data 又被谁摘了，getInstance() 会自己按需初始化，
+          不会再出现「启动即闪退」。两条路都成立，才算稳。
+        -->
+
+        <!-- 通知栏自动记账：不需要高危权限，用户在系统设置里点一个开关即可。
+             微信/支付宝/银行的支付成功通知里本来就写着金额和商户，信息量和
+             读屏一样全，也没有"对方屏蔽读屏"的问题——所以这是更可靠的一条路。 -->
+        <service
+            android:name=".auto.KapiNotificationListener"
+            android:exported="false"
+            android:label="@string/auto_notify_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!--
+          无障碍读屏。**只读不写**：代码里不存在任何 performAction / dispatchGesture。
+
+          这是两难：
+          - 覆盖更广：能读到没有发通知的支付（比如某些 App 只走页面跳转）
+          - 失败率更高：微信/支付宝在支付页上主动调 setImportantForAccessibility(NO)，
+            节点树会大面积变空。有来源称同类实现在这两家上失效率很高（单一来源、
+            数字可能夸张，但"对方主动屏蔽"这个机制是可以独立确认的）
+          - 无法远程调试：用户手机上看不到我们打到的任何日志
+
+          所以它必须**可选**，且不能是唯一的一条路。
+        -->
+        <service
+            android:name=".auto.KapiAccessibilityService"
+            android:exported="false"
+            android:label="@string/auto_a11y_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+    </application>
+</manifest>

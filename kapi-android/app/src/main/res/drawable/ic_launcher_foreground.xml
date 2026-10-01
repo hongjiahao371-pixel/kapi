@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  账单小票 + 向上冒出的箭头，暗示"记账"和"上传/同步"两件事叠在一起。
+  纯几何形状，没有文字，因此在任何尺寸下都清晰。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 小票主体 -->
+    <path
+        android:fillColor="#FF3E7C6B"
+        android:pathData="M40,34 L68,34 A3,3 0 0 1 71,37 L71,74 L65.5,70 L60,74 L54.5,70 L49,74 L43.5,70 L37,74 L37,37 A3,3 0 0 1 40,34 Z" />
+
+    <!-- 小票上的金额横线 -->
+    <path
+        android:fillColor="#FFEFE7DC"
+        android:pathData="M44,44 L64,44 L64,47.5 L44,47.5 Z" />
+    <path
+        android:fillColor="#FFEFE7DC"
+        android:pathData="M44,53 L60,53 L60,56.5 L44,56.5 Z" />
+    <path
+        android:fillColor="#FFEFE7DC"
+        android:pathData="M44,62 L55,62 L55,65.5 L44,65.5 Z" />
+
+    <!-- 右上角同步箭头：账单飞向 NAS -->
+    <path
+        android:fillColor="#FFE08A3C"
+        android:pathData="M70,22 L70,40 L65,40 L72.5,50 L80,40 L75,40 L75,22 Z" />
+</vector>

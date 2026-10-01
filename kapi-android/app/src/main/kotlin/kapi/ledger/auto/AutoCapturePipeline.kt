@@ -1,0 +1,331 @@
+package kapi.ledger.auto
+
+import android.util.Log
+import kapi.core.auto.AutoBook
+import kapi.core.auto.PaymentGate
+import kapi.core.auto.PaymentId
+import kapi.core.llm.LocalTextParser
+import kapi.ledger.data.AutoDraftEntity
+import kapi.ledger.data.KapiDatabase
+import kapi.ledger.data.LedgerRepository
+import kapi.ledger.sync.LocalEditWriter
+import java.util.UUID
+
+/**
+ * 自动记账的**唯一入口**。通知栏和无障碍都只负责把文字递进来，判断全在这里。
+ *
+ * 两条通路必然会对同一笔支付各报一次：用户在微信里付了钱，微信会发一条通知
+ * （NOTIFY），同时无障碍也读到了支付成功页（A11Y）。如果把它们当成两笔，
+ * 用户的账会凭空翻倍。
+ *
+ * 处理顺序是刻意的，**不能调换**：
+ *  1. 白名单/开关 —— 挡在最前面，一次 SharedPreferences 读，别的不用做
+ *  2. 指纹去重 —— 挡掉同一笔的第 2..N 次触发。**这是整条管线里唯一的自动丢弃**
+ *  3. 支付门 —— 挡掉账单列表页那种"有金额但不是刚发生"的东西
+ *  4. 解析 —— 粗排的候选，低置信度是常态
+ *  5. 跨来源合并 —— 通到这里还带着**另一条通路的证据**，并成一条草稿
+ *  6. 分流 —— 规则解析永远进草稿，只有用户明确开了开关且大模型够自信才入账
+ *
+ * 3 必须在 2 之后但 4 之前：账单列表页每一屏的文本都不同，挡不住去重，
+ * 而它们每屏都能解析出"一笔三天前的消费"。
+ *
+ * ## 为什么不在这条管线里调大模型
+ *
+ * 一条通知就发一次请求，会有三个问题：延迟（用户已经走过支付页了）、
+ * 花钱（每条通知都是 token）、以及**把别人的支付信息发到云端**。
+ * 截图识别那条路已经能走模型，需要的时候用户主动用。
+ * 通知栏这条路保持纯本地，代价是准确率，换来的是零延迟零成本零外发。
+ */
+class AutoCapturePipeline(
+    private val db: KapiDatabase,
+    private val repository: LedgerRepository,
+    private val editor: LocalEditWriter,
+    private val autoStore: AutoBookStore,
+    private val deviceId: () -> String,
+) {
+
+    data class CaptureInput(
+        val channel: AutoBook.CaptureChannel,
+        val originPackage: String?,
+        val rawText: String?,
+        /** 事件真实发生的时间。通知用 postTime，读屏用当前时刻。 */
+        val occurredAt: Long,
+    )
+
+    sealed interface Outcome {
+        /** 已入账。[reason] 说明为什么没让用户确认。 */
+        data class Posted(val txnId: String, val reason: String) : Outcome
+
+        /** 新建了一条待确认草稿。 */
+        data class Drafted(val draftId: String, val reason: String) : Outcome
+
+        /** 并进了已有的草稿——跨来源的同一笔。 */
+        data class Merged(val draftId: String, val sources: String) : Outcome
+
+        /** 丢弃。[reason] 写进日志，用来调支付门。 */
+        data class Ignored(val reason: String) : Outcome
+    }
+
+    suspend fun capture(input: CaptureInput): Outcome {
+        val outcome = runCatching { decide(input) }.getOrElse { t ->
+            Log.e(TAG, "管线异常：${t.javaClass.name}: ${t.message}", t)
+            Outcome.Ignored("管线异常：${t.javaClass.simpleName}")
+        }
+        // 每一个被丢弃的输入都要留下痕迹。
+        //
+        // 之前只有"成功"的三条路径打日志（新建草稿 / 跨来源合并 / 已入账），
+        // 于是"什么都没记上"这个现象在日志里和"App 没跑起来"长得一模一样。
+        // 2026-09-30 真机验收就卡在这：微信付了一笔，日志里 AutoCapture 一行都没有，
+        // 只能靠逐层排除（数据库 mtime、shared_prefs、事件缓冲）才定位到是
+        // **我们自己的无障碍服务当时没被系统真正拉起来**（在"已启用"列表里，
+        // 但没绑上），而不是微信屏蔽。当时差点把责任归到微信头上——
+        // 参见 KapiAccessibilityService 的 lastTraced 注释，那才是这次真正的收获。
+        // 丢弃原因是调支付门的唯一输入，没有它就只能猜。
+        if (outcome is Outcome.Ignored) {
+            Log.i(
+                TAG,
+                "丢弃[${input.channel}/${input.originPackage}]：${outcome.reason}" +
+                    "｜原文前 120 字=${input.rawText?.take(120)?.replace('\n', '|') ?: "(无文字)"}",
+            )
+        }
+        return outcome
+    }
+
+    private suspend fun decide(input: CaptureInput): Outcome {
+        val now = input.occurredAt
+        val channel = input.channel
+
+        // 1. 开关与白名单
+        if (!channelOn(channel)) return Outcome.Ignored("用户在设置里关了这一条通路")
+        val pkg = input.originPackage
+        if (pkg == null) return Outcome.Ignored("读不到来源 App 包名")
+        if (pkg !in autoStore.watchedPackages) return Outcome.Ignored("$pkg 不在监听名单里")
+
+        val text = input.rawText ?: return Outcome.Ignored("没有文字")
+
+        // 2. 指纹去重——整条管线唯一的自动丢弃点
+        //
+        // 账单详情页上带平台交易号时**改用交易号去重**，而且换的是两样东西：
+        // 判据（硬 ID 而非文本哈希）和窗口（90 天而非 3 分钟）。理由见
+        // [kapi.core.auto.PaymentId] 的类注释——文本指纹把交易号本身抹成了 `#`，
+        // 用户隔几天再点开同一笔账单就会多一条重复记录。
+        val payId = PaymentId.authoritative(text)
+        val fingerprint = payId?.key ?: AutoBook.exactFingerprint(channel, text)
+        val duplicate = if (payId != null) {
+            autoStore.isDuplicateTxnId(fingerprint, now)
+        } else {
+            autoStore.isDuplicate(fingerprint, now)
+        }
+        if (duplicate) {
+            return Outcome.Ignored(
+                if (payId != null) {
+                    "交易号 ${payId.value}（${payId.kind.label}）已经记过，丢弃"
+                } else {
+                    "指纹 $fingerprint 在去重窗口里，丢弃"
+                },
+            )
+        }
+
+        // 3. 支付门
+        (PaymentGate.verdict(text) as? PaymentGate.Verdict.NotPayment)?.let {
+            return Outcome.Ignored(it.why)
+        }
+
+        // 4. 解析
+        val parsed = LocalTextParser.parse(input.rawText, now)
+            ?: return Outcome.Ignored("没解析出金额")
+        val best = parsed.best ?: return Outcome.Ignored("没有金额候选")
+
+        val ledgerId = repository.defaultLedgerId()
+        val direction = parsed.direction.name
+
+        // 5. 跨来源合并
+        //
+        // 查的窗口必须用 **parsed.occurredAt**，不能用传进来的 event 时间。
+        // 两者可能差很远：通知里写"昨天"，而 [LocalTextParser] 在完全读不出
+        // 日期时会归到**今天中午**（guessTime 的兜底）。拿 event 时间去查，
+        // 存着"今天中午"的候选就落在窗口外，合并永远不成立——同一笔支付
+        // 通知栏记一次、读屏再记一次，账凭空翻倍。
+        //
+        // 一句话：两边比的都必须是**真正存进草稿的那个时刻**。
+        val existing = findMergeTarget(
+            best.amountMinor, direction, parsed.occurredAt, channel,
+        )
+        if (existing != null) {
+            val merged = existing.copy(
+                sources = mergeSources(existing, channel),
+                evidenceCount = existing.evidenceCount + 1,
+                rawText = existing.rawText + RAW_SEPARATOR + text.take(MAX_RAW),
+            )
+            db.autoDraftDao().upsert(merged)
+            // 日志要说清是哪种合并。同源合并是"这一屏被读到两次"，
+            // 跨源合并是"两条通路都报了同一笔"——排查时看的方向完全不同。
+            val kind = if (AutoBook.CaptureChannel.from(existing.source) == channel) {
+                "同源近重复"
+            } else {
+                "跨来源"
+            }
+            Log.i(TAG, "$kind 合并：并入 ${merged.id}，来源 ${merged.sources}，证据 ${merged.evidenceCount} 条")
+            return Outcome.Merged(merged.id, merged.sources)
+        }
+
+        val draft = AutoDraftEntity(
+            id = UUID.randomUUID().toString(),
+            ledgerId = ledgerId,
+            amountMinor = best.amountMinor,
+            direction = direction,
+            occurredAt = parsed.occurredAt,
+            merchant = best.merchant,
+            note = null,
+            accountId = guessAccountId(pkg),
+            source = channel.name,
+            confidence = parsed.confidence,
+            fingerprint = fingerprint,
+            createdAt = System.currentTimeMillis(),
+            originPackage = pkg,
+            rawText = text.take(MAX_RAW),
+            sources = channel.name,
+            evidenceCount = 1,
+        )
+
+        // 6. 分流
+        val routed = AutoBook.route(
+            parser = AutoBook.ParserKind.RULE,
+            confidence = parsed.confidence,
+            autoPostEnabled = autoStore.autoPostHighConfidence,
+            threshold = autoStore.autoPostThreshold,
+        )
+        if (routed is AutoBook.AutoOutcome.Post) {
+            val txn = editor.createTransaction(
+                amountMinor = draft.amountMinor,
+                direction = draft.direction,
+                accountId = draft.accountId ?: DEFAULT_ACCOUNT_ID,
+                occurredAt = draft.occurredAt,
+                ledgerId = ledgerId,
+                deviceId = deviceId(),
+                merchant = draft.merchant,
+                categoryId = guessCategoryId(ledgerId, draft.merchant, direction),
+                source = LocalEditWriter.SOURCE_LOCAL_FALLBACK,
+                confidence = parsed.confidence,
+            )
+            Log.i(TAG, "已入账 ${txn.id}：${routed.reason}")
+            return Outcome.Posted(txn.id, routed.reason)
+        }
+
+        val why = (routed as AutoBook.AutoOutcome.Draft).reason
+        val withDupCheck = draft.copy(
+            likelyDuplicateOf = findPostedTwin(draft.amountMinor, direction, draft.occurredAt)
+        )
+        db.autoDraftDao().upsert(withDupCheck)
+        Log.i(TAG, "新草稿 ${withDupCheck.id}：${withDupCheck.amountMinor} $direction，$why")
+        return Outcome.Drafted(withDupCheck.id, why)
+    }
+
+    /**
+     * 定期清理。
+     *
+     * 只清**过窗口**的：窗口内的草稿还在去重窗口里，删掉会让同一笔被记两次。
+     * 一次性的清理放在这里由服务按天触发，不要挂在写入路径上——每次捕获都去
+     * `DELETE` 一遍是白白的 IO。
+     */
+    suspend fun purgeExpired(now: Long = System.currentTimeMillis()) {
+        val before = now - AutoBook.effectiveWindowMs(autoStore.dedupeWindowMs)
+        val removed = db.autoDraftDao().count()
+        db.autoDraftDao().purgeOlderThan(before)
+        val left = db.autoDraftDao().count()
+        if (left != removed) Log.i(TAG, "清理过期草稿 $removed → $left")
+    }
+
+    // ------------------------------------------------------------ 内部
+
+    private fun channelOn(channel: AutoBook.CaptureChannel): Boolean =
+        when (channel) {
+            AutoBook.CaptureChannel.A11Y -> autoStore.accessibilityEnabled
+            AutoBook.CaptureChannel.NOTIFY -> autoStore.notificationEnabled
+        }
+
+    private suspend fun findMergeTarget(
+        amountMinor: Long,
+        direction: String,
+        at: Long,
+        channel: AutoBook.CaptureChannel,
+    ): AutoDraftEntity? {
+        val candidates = db.autoDraftDao().nearMisses(
+            amountMinor, direction,
+            at - AutoBook.CROSS_SOURCE_WINDOW_MS,
+            at + AutoBook.CROSS_SOURCE_WINDOW_MS,
+        )
+        // 先找跨源的（另一条通路的证据），再找同源的近重复。
+        // 顺序不能反：跨源合并保留了两条通路的证据，可信度更高，
+        // 而且它已经是设计好的行为。
+        return candidates.firstOrNull { prev ->
+            AutoBook.isSamePaymentEvent(
+                prev.amountMinor, prev.direction, prev.occurredAt,
+                AutoBook.CaptureChannel.from(prev.source),
+                amountMinor, direction, at,
+                channel,
+            )
+        } ?: candidates.firstOrNull { prev ->
+            AutoBook.isSameChannelNearMiss(
+                prev.amountMinor, prev.direction, prev.occurredAt,
+                amountMinor, direction, at,
+            )
+        }
+    }
+
+    private fun mergeSources(existing: AutoDraftEntity, channel: AutoBook.CaptureChannel): String {
+        val parts = existing.sources.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toMutableSet()
+        parts += channel.name
+        return parts.sorted().joinToString(",")
+    }
+
+    /**
+     * 账本里有没有一笔很像的。
+     *
+     * 只在这一条上做，而且是**标注**不是丢弃：大模型高置信度先入账了，另一条
+     * 通路随后把同一笔收成草稿，用户照点"记一笔"就会重复。标出来，用户自己决定。
+     *
+     * 忽略 direction 之外的一切字段：同一分钟里同额的另一笔**也**是候选，硬要更准
+     * 就得比较商户名，而商户名恰好是最不可靠的那个字段——猜错一次就少标一次，
+     * 标错一次就误报一次，两头都不划算。
+     */
+    private suspend fun findPostedTwin(amountMinor: Long, direction: String, at: Long): String? {
+        val span = AutoBook.CROSS_SOURCE_WINDOW_MS
+        return db.txnDao()
+            .sameAmountNear(amountMinor, direction, at - span, at + span + 1)
+            .firstOrNull()
+            ?.id
+    }
+
+    /**
+     * 按来源 App 猜账户。
+     *
+     * 猜错的可能性不小，所以只是给确认页一个**预选值**。账户错了比金额错了更难
+     * 发现——金额看着就不对，账户要到对账那天才暴露。
+     */
+    private fun guessAccountId(pkg: String): String = when (pkg) {
+        "com.tencent.mm" -> "A4"                    // 微信钱包
+        "com.eg.android.AlipayGphone",
+        "com.alipay.mobile.androidclient",
+        "com.unionpay" -> "A3"                      // 支付宝 / 云闪付
+        else -> "A2"                                // 其余多半是银行 App
+    }
+
+    /**
+     * 按商户名猜分类。
+     *
+     * 只做**精确的名字相等**，不做模糊匹配。猜错分类会污染历史统计，而用户在
+     * 确认页改一下分类只要一次点击——在这里赌一个相似度阈值，收益是零。
+     */
+    private suspend fun guessCategoryId(ledgerId: String, merchant: String?, direction: String): String? {
+        val name = merchant?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return db.categoryDao().byName(ledgerId, direction, name)?.id
+    }
+
+    companion object {
+        private const val TAG = "AutoCapture"
+        private const val DEFAULT_ACCOUNT_ID = "A1"
+        private const val MAX_RAW = 2000
+        private const val RAW_SEPARATOR = "\n———\n"
+    }
+}

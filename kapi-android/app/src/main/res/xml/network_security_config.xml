@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+      自建同步服务跑在用户自己的 NAS 上，IP 直连，申请证书（Let's Encrypt 之类）
+      对内网 IP 根本不可行，所以明文必须放行。传输机密性在这个网络模型下由
+      物理隔离承担，服务端强制 Bearer token 鉴权（每设备一个，只存 sha256），
+      token 只在配对时返回一次。
+
+      为什么是全局放行，而不是只放行"私有网段"：
+
+      <domain> 匹配的是**主机名**，不是 CIDR 网段。Android 的实现是「精确相等」
+      或「以 . + domain 结尾」，所以写 <domain>192.168.0.0</domain> 配
+      includeSubdomains 也**匹配不上** 192.168.1.10 —— 它只会匹配形如
+      "xxx.192.168.0.0" 的主机。我们没法预知用户 NAS 的地址，逐个 IP 列举
+      更是不可行，所以"只放行内网"在 Android 上没有等价写法，只能全局开。
+
+      代价说清楚：全局明文意味着用户如果把大模型接口填成 http:// 而不是
+      https://，API Key 会走明文。这是真实的削弱，靠两件事缓解：
+        1. 填 http:// 的远程接口在「设置 → 大模型」里会被明确标红提示；
+        2. 局域网不清文本就是头号风险，而它是这个产品的核心设定。
+      换成"内网能连但连不上"的代价大得多——配不上 NAS 的人会直接卸载。
+
+      base-config 仍然只信系统 CA，域名证书校验没有被削弱。
+    -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

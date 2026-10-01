@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  无障碍服务的声明。
+
+  canRetrieveWindowContent="true" 是读取屏幕文字的前提。API 33 起系统对这一位
+  的管控更严，未声明时 getRootInActiveWindow() 直接返回 null —— 而且**不报错**，
+  表现就是"服务连上了但什么也读不到"。
+
+  android:packageNames **故意留空**。填了就只能写死一份包名清单，而监听哪些 App
+  必须由用户在设置页自己勾：银行 App 数量太多、各家包名不统一，写死在清单里等于
+  每加一家银行就要发一个版本。过滤在 KapiAccessibilityService 里做，白名单读的是
+  SharedPreferences。
+
+  notificationTimeout 是系统的兜底节流，我们自己的 1.5 秒去抖在代码里。
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewScrolled"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
+    android:canRetrieveWindowContent="true"
+    android:notificationTimeout="100"
+    android:description="@string/auto_a11y_description" />

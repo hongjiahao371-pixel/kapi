@@ -1,0 +1,52 @@
+﻿# 构建产物（不进版本库，只为换机时直接装手机）
+artifacts/
+build-last.log
+build-raw-*.log
+
+# Gradle / Android
+.gradle/
+# 2026-10-01 新增：本项目把 GRADLE_USER_HOME 指到仓库内（见 g.sh 头注 9），
+# 避免 ~/.gradle 被外部清理时把 daemon 一起带走。上一行的 `.gradle/` 匹配不到它。
+.gradle-home/
+.kotlin/
+build/
+local.properties
+*.apk
+*.aab
+captures/
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# 语言
+__pycache__/
+*.pyc
+
+# Windows 构建产物与二进制（Mac 上重建）
+*.exe
+kapi-sync/kapi-sync
+tools/mock-llm
+kapi-sync/dist/
+
+# 随仓库分发的第三方工具链（2026-10-01 补）
+#
+# tools/gradle-9.8.0/ 165M + tools/m2/ 62M 是**下载来的发行版**，不是本项目代码。
+# 留在磁盘上是为了断网也能构建（GRADLE_USER_HOME 指到仓库内 .gradle-home，
+# 见 g.sh 头注 9），但不该进版本库：换版本时它是纯增量，几百 MB 的 jar
+# 会把仓库撑大、拖慢 log/blame，而它本身是可再生的。
+# 丢了就从 https://services.gradle.org/distributions/gradle-9.8.0-bin.zip
+# 和 Maven Central 重新拉，g.sh 里的 9 号注有获取方式。
+tools/gradle-*/
+tools/m2/
+
+# 密钥——这两个**只能**从环境变量读
+# NAS 密码：export NAS_PW=...
+# 面板令牌：export KAPI_PANEL_TOKEN=...
+.env
+.env.*
+*.jks
+*.keystore
+*.p12
+*.pem

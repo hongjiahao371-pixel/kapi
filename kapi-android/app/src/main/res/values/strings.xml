@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">咔皮账单</string>
+
+    <string name="nav_today">今天</string>
+    <string name="nav_month">本月</string>
+    <string name="nav_stats">统计</string>
+    <string name="nav_settings">设置</string>
+
+    <string name="sync_title">NAS 同步</string>
+    <string name="sync_state_idle">未连接 NAS。记账功能全部本地可用，连接是可选的。</string>
+    <string name="sync_state_synced">已同步 · %1$s</string>
+    <string name="sync_state_pending">%1$d 笔待同步</string>
+    <string name="sync_action_now">立即同步</string>
+    <string name="sync_action_add_server">添加服务器</string>
+    <string name="sync_action_disconnect">断开连接</string>
+
+    <string name="pair_title">连接 NAS</string>
+    <string name="pair_server_hint">服务器地址</string>
+    <string name="pair_server_example">192.168.1.10:8787</string>
+    <string name="pair_code_hint">配对码</string>
+    <string name="pair_code_help">在 NAS 容器日志或管理页里获取，10 分钟内有效</string>
+    <string name="pair_submit">连接</string>
+
+    <string name="llm_title">大模型设置</string>
+    <string name="llm_base_url">接口地址</string>
+    <string name="llm_api_key">API Key</string>
+    <string name="llm_model">模型名称</string>
+    <string name="llm_local_notice">当前指向本机或局域网：截图和账单都不会离开这台设备。</string>
+    <string name="llm_remote_notice">当前指向云端服务：账单数据仍只保存在你的 NAS，但识别用的截图会发送出去。</string>
+    <string name="llm_no_vision">该模型不支持图片输入，截图识别已停用。文字记账不受影响。</string>
+
+    <string name="recog_source_llm">大模型识别</string>
+    <string name="recog_source_local">本地规则识别</string>
+    <string name="recog_source_manual">手动录入</string>
+    <string name="recog_confirm_needed">把握不大，请确认</string>
+
+    <string name="anomaly_negative_sign">金额带负号，已按绝对值处理</string>
+    <string name="anomaly_rounded">小数位过多，已四舍五入</string>
+
+    <!-- 自动记账。系统设置里两个服务的名字和说明。 -->
+    <string name="auto_notify_label">咔皮账单 · 读支付通知</string>
+    <string name="auto_a11y_label">咔皮账单 · 读支付页面</string>
+    <string name="auto_a11y_description">读取微信、支付宝、银行等 App 支付成功页面上的文字，用来记一笔。\n\n只读不写：不会点击任何按钮、不会滑动屏幕、不会替你在任何 App 里操作。识别在手机本地完成，文字不发给任何人。\n\n识别到的东西默认进「待确认」，你点一下才进账本。</string>
+
+    <string name="auto_title">自动记账</string>
+    <string name="auto_off">关</string>
+    <string name="auto_on">开</string>
+    <string name="auto_granted">已授权</string>
+    <string name="auto_not_granted">未授权</string>
+    <string name="auto_restricted">被系统限制，需要先开「允许受限设置」</string>
+</resources>
