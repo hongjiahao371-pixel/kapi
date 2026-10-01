@@ -241,12 +241,45 @@ object PaymentShape {
     /** 带金额的短节点多到这个数，就不是"一笔"了。 */
     private const val MANY_THRESHOLD = 2
 
-    /** 带金额的短节点里，一个都没被任何标签解释掉——这才是"一笔"的实体。 */
+    /** 含金额的**短节点**里，一个都没被任何标签解释掉——这才是"一笔"的实体。 */
     private fun List<String>.noLabelIn() = filter { t ->
         COMPONENT_LABELS.none { t.contains(it) } &&
             ACCOUNT_LABELS.none { t.contains(it) } &&
             PROMO_LABELS.none { t.contains(it) }
     }
+
+    /**
+     * 金额出现的位置是不是**散文里的一部分**。
+     *
+     * 2026-10-01 realme 支付宝消息列表页的假账就是这么来的：
+     * ```
+     * 我的 / 消息 / 9 / 视频 / 理财 / 首页 / 关闭
+     * 1074 / 小李搞钱进行时 / 以后还是老老实实用苹果吧
+     * 明明白白胡萝卜
+     * 突然到账42876元，差点以为是诈骗😅     ← 这一行
+     * 7347 / 旅行收藏夹 / 据说这里是二次元的圣地，南宁最潮的楼…
+     * ```
+     * `突然到账42876元` 被当成一笔收入，而 `到账` 又是收入词词表里的强信号，
+     * 两道门一起放行，账本里多出 **42876 元**的收入。
+     *
+     * 那一屏是**消息列表**——每行是「未读数 / 发送者 / 预览 / 时间」，
+     * 金额只是别人消息里提到的一个数字。
+     *
+     * 真正的交易行长什么样，逐条核过真机样本，**没有一个带散文标点**：
+     * ```
+     * 支出244.93元        支付宝支付详情
+     * 支出10.1元          支付宝账单详情
+     * -18.00              微信商家账单详情
+     * -0.10               微信转账详情
+     * 待橘生收款¥0.10      微信转账摘要
+     * ```
+     * 「标签 值」是标签在前，值在分隔符后面，不会有第二个逗号。
+     * 所以：**节点里同时出现金额和全角逗号/句号 ⇒ 它是一句话，不是一行账。**
+     */
+    private fun isProseAmount(text: String): Boolean =
+        AMOUNT.containsMatchIn(text) && PROSE_PUNCT.any { text.contains(it) }
+
+    private val PROSE_PUNCT = listOf('，', '。', '！', '？', '；', '、')
 
     fun inspect(nodes: List<Node>): Verdict {
         val texts = nodes.map { it.text.trim() }.filter { it.isNotEmpty() }
@@ -259,7 +292,8 @@ object PaymentShape {
                 t.length <= MAX_SHORT_CHARS && t.any { it.isDigit() } && AMOUNT.containsMatchIn(t)
             }
             .map { it.index to it.value }
-        val amountNodes = amountIdx.map { it.second }
+        // 散文里的金额（消息预览、推送文案）不是"一行账"，先摘出去。
+        val amountNodes = amountIdx.filterNot { (_, t) -> isProseAmount(t) }.map { it.second }
 
         // 调整项（立减金/优惠/红包…）的金额先摘出去——它是这一笔的加减法，
         // 留在里面会被数成第二笔记录，把真实的支付整屏挡掉。
@@ -312,6 +346,18 @@ object PaymentShape {
         val joined = texts.joinToString("\n")
         if (!PaymentGate.hasAmount(joined)) {
             return Verdict.ManyTransactions("整屏 ${texts.size} 个节点，没有任何金额")
+        }
+
+        // 全文里确实有金额，但**每一处都在句子里**（消息预览、推送文案）。
+        // 下面那个"金额只在长句里"的兜底就是为这一屏写的，可它分不清
+        // 「一句描述里提到了金额的真交易」和「消息列表里别人提到的一个数字」——
+        // 2026-10-01 realme 支付宝消息列表就是这么被记成了 42876 元收入。
+        //
+        // 真机五个真实交易样本的金额节点没有一个带散文标点，所以这里直接挡。
+        if (amountNodes.isEmpty() && texts.any { isProseAmount(it) }) {
+            return Verdict.ManyTransactions(
+                "整屏的金额全都出现在句子里（消息预览/推送文案），没有一行是账",
+            )
         }
 
         return Verdict.OneTransaction(
