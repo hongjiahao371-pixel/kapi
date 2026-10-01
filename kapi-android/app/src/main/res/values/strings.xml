@@ -38,8 +38,8 @@
     <string name="anomaly_negative_sign">金额带负号，已按绝对值处理</string>
     <string name="anomaly_rounded">小数位过多，已四舍五入</string>
 
-    <!-- 自动记账。系统设置里两个服务的名字和说明。 -->
-    <string name="auto_notify_label">咔皮账单 · 读支付通知</string>
+    <!-- 自动记账。系统设置里服务的名字和说明。
+         通知栏那条已于 2026-10-01 删除，只剩无障碍读屏一个服务。 -->
     <string name="auto_a11y_label">咔皮账单 · 读支付页面</string>
     <string name="auto_a11y_description">读取微信、支付宝、银行等 App 支付成功页面上的文字，用来记一笔。\n\n只读不写：不会点击任何按钮、不会滑动屏幕、不会替你在任何 App 里操作。识别在手机本地完成，文字不发给任何人。\n\n识别到的东西默认进「待确认」，你点一下才进账本。</string>
 

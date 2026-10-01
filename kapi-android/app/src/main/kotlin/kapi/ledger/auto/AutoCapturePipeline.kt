@@ -12,11 +12,12 @@ import kapi.ledger.sync.LocalEditWriter
 import java.util.UUID
 
 /**
- * 自动记账的**唯一入口**。通知栏和无障碍都只负责把文字递进来，判断全在这里。
+ * 自动记账的**唯一入口**。无障碍只负责把文字递进来，判断全在这里。
  *
- * 两条通路必然会对同一笔支付各报一次：用户在微信里付了钱，微信会发一条通知
- * （NOTIFY），同时无障碍也读到了支付成功页（A11Y）。如果把它们当成两笔，
- * 用户的账会凭空翻倍。
+ * 2026-10-01 起运行时只有读屏一条通路（通知栏那套连同
+ * `KapiNotificationListener` 一起删了），但**去重与合并的机制整条保留**：
+ * 同一笔支付被读到第 2..N 次时必须挡掉，而不是记成好几笔——这是"自动"
+ * 这两个字最基本的要求，与有几个来源无关。下一个来源接进来时它直接可用。
  *
  * 处理顺序是刻意的，**不能调换**：
  *  1. 白名单/开关 —— 挡在最前面，一次 SharedPreferences 读，别的不用做
@@ -238,10 +239,18 @@ class AutoCapturePipeline(
 
     // ------------------------------------------------------------ 内部
 
+    /**
+     * 这个来源的开关是不是开着。
+     *
+     * `NOTIFY` 在 2026-10-01 随通知栏服务一起删掉了，运行时不会再有它进来。
+     * 这里**显式**返回 false 而不是把分支删掉，是为了让"非读屏来源落到不跑"
+     * 成为一个有意识的决定：将来加第二个来源时，这一行就是它的开关该在的位置，
+     * 而不必重新把整条 `when` 找回来。
+     */
     private fun channelOn(channel: AutoBook.CaptureChannel): Boolean =
         when (channel) {
             AutoBook.CaptureChannel.A11Y -> autoStore.accessibilityEnabled
-            AutoBook.CaptureChannel.NOTIFY -> autoStore.notificationEnabled
+            AutoBook.CaptureChannel.NOTIFY -> false
         }
 
     private suspend fun findMergeTarget(

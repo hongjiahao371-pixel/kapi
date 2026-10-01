@@ -39,13 +39,16 @@ class AutoBookStore(context: Context) {
      */
     private val idStamps: MutableMap<String, Long> by lazy { loadStamps(KEY_ID_STAMPS) }
 
+    /**
+     * 读屏通路开关。
+     *
+     * 2026-10-01：原先还有一个平行的 `notificationEnabled`，随通知栏通路整条删除。
+     * 读屏这条路曾经被设计成"补充"，界面文案还写着"是通知栏的补充，不是替代"——
+     * 那个前提没有了，唯一的通路不该再用补充的口吻描述自己。
+     */
     var accessibilityEnabled: Boolean
         get() = prefs.getBoolean(KEY_A11Y, true)
         set(v) = prefs.edit().putBoolean(KEY_A11Y, v).apply()
-
-    var notificationEnabled: Boolean
-        get() = prefs.getBoolean(KEY_NOTIFY, true)
-        set(v) = prefs.edit().putBoolean(KEY_NOTIFY, v).apply()
 
     /**
      * 高置信度直接入账，不进待确认。
@@ -203,7 +206,6 @@ class AutoBookStore(context: Context) {
     companion object {
         private const val TAG = "AutoBookStore"
         private const val KEY_A11Y = "a11y_enabled"
-        private const val KEY_NOTIFY = "notify_enabled"
         private const val KEY_AUTO_POST = "auto_post_high_conf"
         private const val KEY_THRESHOLD = "auto_post_threshold"
         private const val KEY_WINDOW = "dedupe_window_ms"

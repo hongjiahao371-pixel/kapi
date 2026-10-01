@@ -25,7 +25,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -218,7 +217,7 @@ fun DraftsScreen(
             delay(1_500)
         }
     }
-    val ready = captureReadiness(perm, container.autoBookStore)
+    val ready = captureOn(perm, container.autoBookStore)
 
     LazyColumn(
         state = listState,
@@ -291,51 +290,32 @@ fun DraftsScreen(
  *
  * 原来写法是"草稿为空就显示『去开自动记账』"。可"空"有两种完全不同的成因：
  * **还没配好**，和**已经配好、只是还没发生支付**。后者恰恰是重装系统、换手机、
- * 刚装完 App 第一次打开时的状态——两项权限都开着、监听服务都连着，用户看到的却是
- * "去开自动记账"。于是他会回设置里反复确认、甚至得出"权限没生效"的结论。
+ * 刚装完 App 第一次打开时的状态——无障碍开着、服务连着，用户看到的却是"去开自动记账"。
+ * 于是他会回设置里反复确认、甚至得出"权限没生效"的结论。
  *
  * 提示语把用户的注意力引向一件**他已经做对了的事**，这比不提示更糟。
  *
  * ## 判据必须是合取
  *
- * `AutoBookStore.notificationEnabled` 默认 `true`，但用户在设置页把它关掉之后，
- * `KapiNotificationListener` 会直接 return；无障碍那条同理。可这时候设置页两项
- * 都还显示"已连上"——只看系统状态，这一屏会得出"没问题"的结论，而实际上什么都没在跑。
+ * `AutoBookStore.accessibilityEnabled` 默认 `true`，但用户在设置页把它关掉之后
+ * `KapiAccessibilityService` 会直接 return，而系统层那一项仍然显示"已连上"——
+ * 只看系统状态，这一屏会得出"没问题"的结论，而实际上什么都没在跑。
+ *
+ * 2026-10-01 起只剩读屏一条通路，所以这里不再需要 `CaptureReadiness` 那种
+ * "逐条通路列出来再取或"的结构：一个布尔值就够了。
  */
-private data class CaptureReadiness(
-    /** 通知这条路端到端通：系统已连上，且 App 内开关没被关。 */
-    val notify: Boolean,
-    /** 读屏这条路端到端通。 */
-    val page: Boolean,
-    /** 系统层一项都没授——**只有**这种情况才该说"去开"。 */
-    val nothingGranted: Boolean,
-) {
-    /** 至少一条路端到端真的在跑。 */
-    val any: Boolean get() = notify || page
-}
-
-private fun captureReadiness(
-    perm: AutoPermissionState,
-    store: AutoBookStore?,
-): CaptureReadiness = CaptureReadiness(
-    notify = perm.notificationLive && (store?.notificationEnabled ?: true),
-    page = perm.accessibilityLive && (store?.accessibilityEnabled ?: true),
-    nothingGranted = !perm.notificationGranted && !perm.accessibilityGranted,
-)
+private fun captureOn(perm: AutoPermissionState, store: AutoBookStore?): Boolean =
+    perm.accessibilityLive && (store?.accessibilityEnabled ?: true)
 
 @Composable
 private fun DraftsEmptyState(
-    ready: CaptureReadiness,
+    on: Boolean,
     onOpenAutoSettings: () -> Unit,
 ) {
     SurfaceCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(22.dp)) {
             // ---- 就绪：不再喊"去开"，改说在等什么、怎么让它来 ----
-            if (ready.any) {
-                val channels = buildList {
-                    if (ready.notify) add("读支付通知")
-                    if (ready.page) add("读支付页面")
-                }.joinToString("、")
+            if (on) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         Icons.Filled.CheckCircle, null,
@@ -350,103 +330,39 @@ private fun DraftsEmptyState(
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "已开启：$channels。在微信、支付宝或银行 App 里付一笔小额，" +
-                        "停在付款成功那一页不用退回来，这里就会列出读到的金额和商户。" +
-                        "它不会直接记账——每笔都要你点一下。",
+                    "在微信、支付宝或银行 App 里付一笔小额，停在付款成功那一页不用退回来，" +
+                        "这里就会列出读到的金额和商户。它不会直接记账——每笔都要你点一下。",
                     style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
                     color = InkSoft,
                 )
-                Spacer(Modifier.height(12.dp))
-                // 通知这条路开着却一直不进来，八成卡在微信自己那两处开关上
-                // （见 AutoPermissions.WECHAT_NOTIFY_PREREQUISITE）。默认收起，
-                // 别把一屏字砸在一个只想看余额的人脸上。
-                if (ready.notify) {
-                    WechatPrerequisiteHint()
-                }
                 Spacer(Modifier.height(14.dp))
                 // 这一条是"看一眼"，不是"去开"——标签跟着实际状态走。
                 MiniAction("看自动记账设置", Brand, enabled = true, onOpenAutoSettings)
                 return@Column
             }
 
-            // ---- 授了权但没在跑：说清楚是哪一环，不能笼统说"未开启" ----
+            // ---- 没通：说清楚要开的是什么，别只丢一个开关名字 ----
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    Icons.Outlined.NotificationsActive, null,
+                    Icons.Outlined.Visibility, null,
                     tint = Brand, modifier = Modifier.size(20.dp),
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "暂时没在跑",
+                    "还没开启",
                     style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
                     color = Ink,
                 )
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                if (ready.nothingGranted) {
-                    "还没打开「读支付通知」和「读支付页面」。开完之后，微信、支付宝、" +
-                        "银行 App 发了支付通知，这里会列出读到的金额和商户。"
-                } else {
-                    "权限在系统里是开的，但此刻没有一条通路在跑：要么 App 内的开关被关掉了，" +
-                        "要么通知监听被系统断开（内存紧张时会断，过一会儿会自己回来）。"
-                },
+                "打开「读支付页面」之后，微信、支付宝、银行 App 的付款成功页面上，" +
+                    "读到的金额和商户会列在这里。识别在手机本地完成，不联网、不花额度。",
                 style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
                 color = InkSoft,
             )
             Spacer(Modifier.height(14.dp))
-            MiniAction(
-                if (ready.nothingGranted) "去开自动记账" else "去设置里看一眼",
-                Brand, enabled = true, onOpenAutoSettings,
-            )
-        }
-    }
-}
-
-/**
- * 微信「服务通知」开关的排查入口。
- *
- * 微信把支付通知收在聚合会话里，**默认偏省电**——用户以为本 App 坏了，其实要他去
- * 另一个 App 里翻两层设置。这种跨应用的依赖必须由我们写出来，用户不可能自己想到。
- */
-@Composable
-private fun WechatPrerequisiteHint() {
-    var open by remember { mutableStateOf(false) }
-    Column {
-        Row(
-            Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .glassClickable { open = !open }
-                .padding(vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Outlined.Visibility, null,
-                tint = InkFaint, modifier = Modifier.size(15.dp),
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                if (open) "收起" else "一直没收到？微信默认不发支付通知",
-                style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
-                color = InkSoft,
-            )
-            Icon(
-                Icons.Filled.ExpandMore, null,
-                tint = InkFaint,
-                modifier = Modifier.size(15.dp),
-            )
-        }
-        AnimatedVisibility(visible = open) {
-            Text(
-                AutoPermissions.WECHAT_NOTIFY_PREREQUISITE,
-                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                color = InkSoft,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.Black.copy(alpha = 0.04f))
-                    .padding(12.dp),
-            )
+            MiniAction("去开自动记账", Brand, enabled = true, onOpenAutoSettings)
         }
     }
 }

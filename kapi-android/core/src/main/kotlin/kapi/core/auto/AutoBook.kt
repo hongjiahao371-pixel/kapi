@@ -23,14 +23,39 @@ import java.util.Locale
  */
 object AutoBook {
 
-    /** 采集渠道。决定指纹的域，也决定用户在哪句话里被告知数据来源。 */
+    /**
+     * 采集渠道。决定指纹的域，也决定用户在哪句话里被告知数据来源。
+     *
+     * ## `NOTIFY` 已不再在运行时产生，但仍刻意保留（2026-10-01）
+     *
+     * 通知栏那条通路连同 `KapiNotificationListener` 一起删了，运行时**只有 A11Y**。
+     * 枚举值本身留着，是因为它承载的两件事都还在被用、都还有测试钉着：
+     *  - [exactFingerprint] 把渠道放进指纹的**域**里——"两段文本相同也不能跨源去重"
+     *    这条性质与有几个渠道无关；
+     *  - [isSamePaymentEvent] 靠 `channelA != channelB` 区分"该合并"和"该丢弃"。
+     *
+     * 而 `isSamePaymentEvent` 保护的是"同一笔被读了两次"——这是**通用**性质，
+     * 不是通知特有的。下一个来源（无论是新的采集方式还是从数据库取）接进来时，
+     * 这套判据要能直接用；先删掉再重建，是把有测试保护的东西退化成没有。
+     *
+     * 所以这里只加注释、不删值。真要清理，等第二个来源真的出现之后再一起做。
+     */
     enum class CaptureChannel(val label: String) {
         A11Y("无障碍读屏"),
+
+        /** 保留但运行时不再产生，见上面的说明。 */
         NOTIFY("通知栏");
 
         companion object {
+            /**
+             * 解析落库的来源字符串。
+             *
+             * 兜底从 `NOTIFY` 改成 `A11Y`：通知通路删掉之后它是唯一活着的渠道，
+             * 而把一个认不出的来源说成"通知栏"，等于凭空断言了一件已经不成立的事。
+             * 认不出只可能是数据损坏，而损坏的更可能是**在用**那条渠道的记录。
+             */
             fun from(s: String?): CaptureChannel =
-                entries.firstOrNull { it.name == s } ?: NOTIFY
+                entries.firstOrNull { it.name == s } ?: A11Y
         }
     }
 

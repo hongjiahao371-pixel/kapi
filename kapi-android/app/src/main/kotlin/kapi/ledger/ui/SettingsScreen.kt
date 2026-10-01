@@ -772,12 +772,12 @@ private fun TransferSection(
  * 自动记账设置。
  *
  * 这一块要解决的核心矛盾：**权限是给系统的高危开关，功能是用户最省事的期待**。
- * 用户看到"通知使用权"这五个字的第一反应是"这玩意能读我所有通知"，然后关掉。
- * 所以顺序必须是：先说清"只读支付通知、识别在本机"，再给开关，最后才说风险。
+ * 用户看到"无障碍"这三个字的第一反应是"这玩意能替我操作手机"，然后关掉。
+ * 所以顺序必须是：先说清"只读屏幕上的文字、识别在本机"，再给开关，最后才说风险。
  *
- * 另一条：两条通路的**可靠性不同**，不能并排摆成两个一样的开关。通知栏是
- * 主路（公开 API、对方不屏蔽、只要一个开关），无障碍是补充（高危权限、
- * 对方会主动屏蔽读屏、失败率高）。摆成平级会让用户以为关掉哪条都一样。
+ * 2026-10-01 起这里只剩一行。原设计是两条通路并排（通知栏 + 无障碍），并特意把
+ * 通知栏标成主路、无障碍标成补充——那个判断当时有依据，但两条都删了之后
+ * "补充"这个说法就成了自我贬低：它现在是**唯一**的通路，界面上不该这么自称。
  */
 @Composable
 private fun AutoBookSection(
@@ -785,7 +785,6 @@ private fun AutoBookSection(
     onOpenDrafts: () -> Unit,
 ) {
     val context = LocalContext.current
-    var notifyOn by remember { mutableStateOf(store.notificationEnabled) }
     var a11yOn by remember { mutableStateOf(store.accessibilityEnabled) }
 
     // 从系统设置跳回来时状态会变，所以每次回到前台重新读一次。
@@ -805,7 +804,7 @@ private fun AutoBookSection(
             Column(Modifier.weight(1f)) {
                 Text("自动记账", style = MaterialTheme.typography.titleMedium, color = Ink)
                 Text(
-                    "读支付通知和支付页面，识别在手机本地完成，不联网、不花额度",
+                    "读支付成功页面上的文字，识别在手机本地完成，不联网、不花额度",
                     style = MaterialTheme.typography.bodySmall,
                     color = InkSoft,
                 )
@@ -820,24 +819,10 @@ private fun AutoBookSection(
 
         Spacer(Modifier.height(16.dp))
 
-        // ---- 通知栏：主路 ----
-        PermRow(
-            icon = Icons.Outlined.NotificationsActive,
-            title = "读支付通知",
-            subtitle = perm.explain("NOTIFY"),
-            granted = perm.notificationLive,
-            enabled = notifyOn,
-            onToggle = { notifyOn = it; store.notificationEnabled = it },
-            onOpenSettings = { AutoPermissions.openNotificationListenerSettings(context) },
-        )
-
-        Spacer(Modifier.height(10.dp))
-
-        // ---- 无障碍：补充 ----
         PermRow(
             icon = Icons.Outlined.Visibility,
             title = "读支付页面",
-            subtitle = perm.explain("A11Y"),
+            subtitle = perm.explain(),
             granted = perm.accessibilityLive,
             enabled = a11yOn,
             onToggle = { a11yOn = it; store.accessibilityEnabled = it },
@@ -846,36 +831,11 @@ private fun AutoBookSection(
 
         Spacer(Modifier.height(12.dp))
         Text(
-            "无障碍只读屏幕上的文字，不会点任何按钮、不会滑动屏幕。" +
-                "它权限高，但读到的信息比通知栏全得多——微信的账单详情页上" +
-                "有商户全称、支付方式、交易单号，通知里只有一句「支付成功」。" +
-                "两个都开着，哪条先到用哪条。",
+            "无障碍只读屏幕上的文字，不会点任何按钮、不会滑动屏幕、不会替你在任何 App 里操作。" +
+                "账单详情页上能读到商户全称、支付方式、交易单号这些明细。",
             style = MaterialTheme.typography.bodySmall,
             color = InkSoft,
         )
-
-        // 通知使用权已开、但微信可能自己不发通知的那一段。
-        //
-        // 只在 `notificationLive` 为真时才写出来：那时候界面上一切正常
-        // （"已连接。微信、支付宝、银行的支付通知会自动进来"），
-        // 而用户一旦发现"在微信付了钱没反应"，唯一能想到的就是我们坏了。
-        // 真实原因在另一个 App 的设置里，不写出来就永远查不到。
-        //
-        // 放在侧载引导**外面**是故意的：侧载那段讲的是"系统里找不到开关"，
-        // 这里讲的是"系统里都开好了、但微信那边还没开"，两件事不能混成一段。
-        if (perm.notificationLive) {
-            Spacer(Modifier.height(12.dp))
-            Text(
-                "微信还要自己开一下：" + AutoPermissions.WECHAT_NOTIFY_PREREQUISITE,
-                style = MaterialTheme.typography.bodySmall,
-                color = InkSoft,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(InkFaint.copy(alpha = 0.10f))
-                    .padding(12.dp),
-            )
-        }
 
         // 两条都没通的时候，把侧载那一大段引导写出来。这段字很长，
         // 但**每个侧载用户都要走一遍**，省略它等于让一半用户卡在第一步。

@@ -97,7 +97,10 @@ kapi/
 
 - **`ANDROID_SERIAL` / adb 设备**：新机器重新 `adb devices`
 - **手机上的服务**：重装 App 会**禁掉**无障碍服务，而且
-  `settings put secure enabled_accessibility_services` 不会自动恢复，必须重写一次；
-  通知监听同样要重新 `allow_listener`。
-- **`adb devices` 连的是新机器**，原来那台 OPPO PMA110（`3B164G0217700000`）还在，
-  接回去就能继续验真机。
+  `settings put secure enabled_accessibility_services` 不会自动恢复，必须重写一次，
+  紧跟着还要把 `accessibility_enabled` 总开关写回 1。
+  实测这台 realme 上 `install -r` 和 `am force-stop` 都会把无障碍整个清空
+  （`enabled_accessibility_services` 变 `null`），所以顺序必须是**先装包、后开权限**，
+  验证时不要 `force-stop`。通知监听已于 2026-10-01 整条删除，不需要再 `allow_listener`。
+- **`adb devices` 连的是新机器**：当前是 realme RMX3852（`5556272f`），
+  原来那台 OPPO PMA110（`3B164G0217700000`）还在，接回去就能继续验真机。
