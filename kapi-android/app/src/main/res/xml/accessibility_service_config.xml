@@ -12,6 +12,35 @@
   SharedPreferences。
 
   notificationTimeout 是系统的兜底节流，我们自己的 1.5 秒去抖在代码里。
+
+  ## 为什么声明了手势能力（2026-10-01 realme RMX3852 实测）
+
+  微信**只对带手势能力位的无障碍服务建节点树**。同一台机器、同一时刻，
+  微信原生聊天列表（ui.LauncherUI）的节点数：
+
+      只有 kapi（capabilities=1）    → 1 个节点，一个字都读不到
+      SwitchAccess（41 = 1+8+32）    → 143 个节点
+      TalkBack（251）                → 143 个节点
+
+  只声明 canRetrieveWindowContent 时，微信那棵树的根节点是 class 为空、
+  bounds 为 [0,0][0,0] 的空壳；而同一时刻支付宝 290 个、系统设置 39 个、
+  桌面 159 个节点全部正常。合理解释是微信把"能读"当成真实辅助工具的副产品：
+  一个连屏幕都驱动不了的服务，被判定为自动化工具而不是读屏，于是不给树。
+
+  8 和 32 分别是 CAPABILITY_CAN_REQUEST_FILTER_KEY_EVENTS 和
+  CAPABILITY_CAN_PERFORM_GESTURES，是三个"能读"的服务里唯一共有的两个位。
+  补齐之后 capabilities 变成 41，与 SwitchAccess 完全一致。
+
+  注意手势能力是**独立属性** canPerformGestures，不是 accessibilityFlags 里的
+  flagPerformGestures（那个常量在编译期不存在，会直接报
+  "incompatible with attribute accessibilityFlags"）。
+
+  ## 只声明、不使用
+
+  KapiAccessibilityService 里不存在任何 performAction / dispatchGesture，
+  "只读不写"是由**代码**保证的，不是由这份声明保证的。声明这两个位只是为了
+  让微信愿意把节点树交出来；一旦有人往服务里加了手势调用，那就是破坏了
+  这个类存在的意义（隐私 + Google Play 政策，见该类的类注释）。
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewScrolled"
