@@ -53,6 +53,29 @@ object PaymentShape {
         data class ManyTransactions(val why: String) : Verdict
     }
 
+    /**
+     * 这个金额是不是某个**构成项标签**的值。
+     *
+     * 2026-10-01 realme 支付宝订阅订单详情页（`TokenPlanMax-年度会员`，
+     * 上海稀宇科技有限公司）被整屏挡掉：
+     * ```
+     * 整屏有 3 个带金额的独立条目（508.61 / 508.61 / 支出507.79元）
+     * ```
+     * `交通银行立减金 -0.82` 已经被调整项那条规则正确排除了，剩下这三个才是问题：
+     * `订单金额` 自己命中 [COMPONENT_LABELS] 进了 component，可它的**值**
+     * `508.61` 被拆到了另一个节点上、自身不带任何标签，[noLabelIn] 判它"无标签"，
+     * 于是被当成**独立的一笔**。结构上这是 [isAdjustmentAmount] 的翻版：
+     * 标签和值落在了两个节点。
+     *
+     * 方向不一样：调整项是**值在前、标签在后**（[isAdjustmentAmount]），
+     * 构成项是**标签在前、值在后**。两边都得判，缺一个就漏一种写法。
+     */
+    private fun isComponentValue(idx: Int, texts: List<String>): Boolean {
+        val prev = texts.getOrNull(idx - 1) ?: return false
+        if (COMPONENT_LABELS.any { texts[idx].contains(it) }) return false
+        return COMPONENT_LABELS.any { prev.contains(it) }
+    }
+
     /** 含金额形态。宽松即可，这里只用来数个数。 */
     private val AMOUNT = Regex(
         """[¥￥$]\s*\d+(?:[.,]\d{1,2})?""" +
@@ -249,6 +272,37 @@ object PaymentShape {
     }
 
     /**
+     * 折叠**相邻且完全相同**的重复行。
+     *
+     * 无障碍的原始树会把一部分节点报**两遍**（父容器和它自己的 TextView 各报一次），
+     * 2026-10-01 realme 上抓到的支付宝转账详情页原样长这样：
+     * ```
+     * 盖被吱 181\*\*\*\*\*\*39
+     * 盖被吱 181\*\*\*\*\*\*39     ← 同一个节点
+     * 对方账户
+     * 转账
+     * 转账                     ← 同一个节点
+     * 2026-10-01 08:54:39
+     * 2026-10-01 08:54:39       ← 同一个节点
+     * ```
+     * 数记录的时候它们是**同一个**东西，数成两笔就撞上 [MANY_THRESHOLD]。
+     *
+     * 只折叠**相邻**的：账单列表里两笔同额消费（比如两笔 10.00）中间隔着商户名，
+     * 不相邻。而"紧挨着的两个一模一样的节点"在真机上只有一个解释——报了两遍。
+     *
+     * 这一步放在**最前面**，后面的邻接判断（[isAdjustmentAmount]、
+     * [isComponentValue]）拿到的才是干净的相邻关系。
+     */
+    private fun collapseConsecutiveDuplicates(texts: List<String>): List<String> {
+        if (texts.size < 2) return texts
+        val out = ArrayList<String>(texts.size)
+        for (t in texts) {
+            if (out.lastOrNull() != t) out.add(t)
+        }
+        return out
+    }
+
+    /**
      * 金额出现的位置是不是**散文里的一部分**。
      *
      * 2026-10-01 realme 支付宝消息列表页的假账就是这么来的：
@@ -282,7 +336,9 @@ object PaymentShape {
     private val PROSE_PUNCT = listOf('，', '。', '！', '？', '；', '、')
 
     fun inspect(nodes: List<Node>): Verdict {
-        val texts = nodes.map { it.text.trim() }.filter { it.isNotEmpty() }
+        val texts = collapseConsecutiveDuplicates(
+            nodes.map { it.text.trim() }.filter { it.isNotEmpty() },
+        )
         if (texts.isEmpty()) return Verdict.ManyTransactions("屏幕上没有可读文字")
 
         // 只看短节点里的金额。长的多半是整条消息/整段描述。
@@ -297,9 +353,12 @@ object PaymentShape {
 
         // 调整项（立减金/优惠/红包…）的金额先摘出去——它是这一笔的加减法，
         // 留在里面会被数成第二笔记录，把真实的支付整屏挡掉。
-        val adjustments = amountIdx.filter { (i, _) -> isAdjustmentAmount(i, texts) }
+        // 构成项（订单金额/合计…）的值同理：标签在上一行、值在下一行，
+        // 那个值自己不带任何词，不摘就会被当独立一笔（见 isComponentValue）。
+        val explained = amountIdx
+            .filter { (i, _) -> isAdjustmentAmount(i, texts) || isComponentValue(i, texts) }
             .map { it.second }.toSet()
-        val plain = amountNodes.filterNot { it in adjustments }.noLabelIn()
+        val plain = amountNodes.filterNot { it in explained }.noLabelIn()
         val component = amountNodes.filter { node -> COMPONENT_LABELS.any { node.contains(it) } }
 
         if (plain.size >= MANY_THRESHOLD) {

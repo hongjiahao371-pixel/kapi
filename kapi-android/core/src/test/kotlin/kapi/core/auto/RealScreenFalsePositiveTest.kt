@@ -525,4 +525,135 @@ class RealScreenFalsePositiveTest {
         val gate = PaymentGate.verdict(alipayPaymentDetail.joinToString("\n") { it.text })
         assertTrue("沉降之后必须照记，实际 $gate", gate is PaymentGate.Verdict.LooksLikePayment)
     }
+
+    // ============================================================ 2026-10-01 realme 支付宝
+
+    /**
+     * 支付宝「转账详情」页，两个**屏变体**。
+     *
+     * 同一个账户 `盖被吱 181\*\*\*\*\*\*39`、同一个金额 12100、同一笔转账，
+     * 读屏先后报了两遍，两遍**只差一个「我的消费图鉴」**。原样取自
+     * `/tmp` 里那条采集日志与落库的 `rawText`（变体甲是落进草稿的那一份）。
+     *
+     * 变体甲多出来的那一行是账单页的一个**运营入口**，它含「消费」二字、
+     * 离金额又比收入词近，于是 nearest-wins 把方向判成了支出。
+     */
+    private val alipayTransferReceived = mapOf(
+        "withMySpendingAtlas" to listOf(
+            "账单详情", "返回", "对此订单有疑问", "申请电子回单",
+            "往来流水证明", "查看往来记录", "添加", "备注", "开关", "计入收支",
+            "转账红包", "为您推荐", "请选择", "标签", "转账红包", "账单分类",
+            "我的消费图鉴", "账单管理", "更多",
+            "盖被吱 181******39", "盖被吱 181******39",
+            "对方账户", "转账", "转账", "转账备注",
+            "2026-10-01 08:54:39", "2026-10-01 08:54:39",
+            "创建时间", "交易成功", "12100元", "盖被吱",
+        ),
+        "withoutMySpendingAtlas" to listOf(
+            "账单详情", "返回", "对此订单有疑问", "申请电子回单",
+            "往来流水证明", "查看往来记录", "添加", "备注", "开关", "计入收支",
+            "转账红包", "为您推荐", "请选择", "标签", "转账红包", "账单分类",
+            "账单管理", "更多",
+            "盖被吱 181******39", "盖被吱 181******39",
+            "对方账户", "转账", "转账", "转账备注",
+            "2026-10-01 08:54:39", "2026-10-01 08:54:39",
+            "创建时间", "交易成功", "12100元", "盖被吱",
+        ),
+    )
+
+    /**
+     * 方向必须在两个变体之间**稳定**。
+     *
+     * 这不是"多记一笔"的问题：两笔方向都是支出、金额都是 1210000 分、
+     * 账单时间只差 15 秒（08:54:54 / 08:54:39）——同源合并把它们并成了一条草稿，
+     * 收到的那笔**凭空消失**。方向一稳定，这条合并路径就自然失效。
+     */
+    @Test
+    fun `a menu entry never flips the direction of the same transfer`() {
+        val dirs = alipayTransferReceived.mapValues { (_, lines) ->
+            LocalTextParser.parse(lines.joinToString("\n"))!!.direction
+        }
+        assertEquals(
+            "同一笔转账的两个屏变体必须判出同一个方向，实际 $dirs",
+            1,
+            dirs.values.toSet().size,
+        )
+        assertEquals(
+            "收到别人转账就是收入，实际 ${dirs["withoutMySpendingAtlas"]}",
+            Direction.INCOME,
+            dirs["withoutMySpendingAtlas"],
+        )
+    }
+
+    /**
+     * 同一笔的另一个变体在**形状闸**上也该是"一笔"——重复节点不该被数成多笔。
+     */
+    @Test
+    fun `a screen that reports the same node twice is still one payment`() {
+        val shape = PaymentShape.inspect(alipayTransferReceived.getValue("withMySpendingAtlas").map(::Node))
+        assertTrue("重复节点不算多笔，实际 $shape", shape is Verdict.OneTransaction)
+    }
+
+    /**
+     * 支付宝「信用卡还款」详情页，43 个节点、1 个金额 739.9 元。
+     *
+     * 前 120 字是采集日志里逐字记下的原文；后面几行是同一屏上读到的状态字段。
+     * 整屏被丢掉的日志原文是：
+     * ```
+     * 丢弃[A11Y/…]：这是付款确认页（命中「处理中」），钱还没付出去
+     * ```
+     */
+    private val alipayCreditCardRepayment = listOf(
+        "账单详情", "返回", "对此订单有疑问", "申请电子回单", "查看往来记录",
+        "添加", "备注", "开关", "计入收支", "还款", "为您推荐", "请选择",
+        "标签", "信用借还", "账单分类", "账单管理", "更多",
+        "立即领取5积分", "支付奖励", "信用卡还款", "信用卡还款",
+        "借还款说明", "银行反馈已入账，如有疑问",
+        "739.9元", "还款成功", "处理进度", "银行处理中",
+    )
+
+    @Test
+    fun `a completed credit card repayment is not a pending confirmation page`() {
+        val gate = PaymentGate.verdict(alipayCreditCardRepayment.joinToString("\n"))
+        assertTrue(
+            "还款成功 + 银行入账，页面上的「处理中」是子状态不是待付，实际 $gate",
+            gate is PaymentGate.Verdict.LooksLikePayment,
+        )
+    }
+
+    /**
+     * 支付宝「订阅订单」详情页（`TokenPlanMax-年度会员`，上海稀宇科技有限公司）。
+     *
+     * 被挡掉的日志原文是：
+     * ```
+     * 不是一笔支付：整屏有 3 个带金额的独立条目（508.61 / 508.61 / 支出507.79元）
+     * ```
+     * `交通银行立减金 -0.82` 已经被调整项规则排除；`508.61` 是 `订单金额` 的值，
+     * 被拆到了另一个节点、自身不带任何标签，于是被当成独立的一笔。
+     */
+    private val alipaySubscriptionOrder = listOf(
+        "订单详情", "返回", "订单信息", "商品说明", "服务说明",
+        "TokenPlanMax-年度会员", "上海稀宇科技有限公司",
+        "订单金额", "508.61", "508.61",
+        // 调整项是**值在前、标签在后**——和上面「订单金额」正好相反，
+        // 两种写法都得判。顺序照抄真机原始行序，别按直觉排。
+        "-0.82", "交通银行立减金",
+        "支付时间", "2026-09-28 20:14:03",
+        "交易成功", "支出507.79元",
+    )
+
+    @Test
+    fun `an order amount split from its label is not a second record`() {
+        val shape = PaymentShape.inspect(alipaySubscriptionOrder.map(::Node))
+        assertTrue(
+            "「订单金额」和它的值是同一笔，实际 $shape",
+            shape is Verdict.OneTransaction,
+        )
+    }
+
+    @Test
+    fun `the subscription order reaches the payment gate too`() {
+        val gate = PaymentGate.verdict(alipaySubscriptionOrder.joinToString("\n"))
+        assertTrue("订单详情页必须放行，实际 $gate", gate is PaymentGate.Verdict.LooksLikePayment)
+    }
 }

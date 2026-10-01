@@ -150,7 +150,12 @@ class AutoCapturePipeline(
         //
         // 一句话：两边比的都必须是**真正存进草稿的那个时刻**。
         val existing = findMergeTarget(
-            best.amountMinor, direction, parsed.occurredAt, channel,
+            amountMinor = best.amountMinor,
+            direction = direction,
+            at = parsed.occurredAt,
+            channel = channel,
+            merchant = best.merchant,
+            rawText = text,
         )
         if (existing != null) {
             val merged = existing.copy(
@@ -256,11 +261,27 @@ class AutoCapturePipeline(
             AutoBook.CaptureChannel.NOTIFY -> false
         }
 
+    /**
+     * 找可以合并进同一条草稿的既有记录。
+     *
+     * 两段判据，从弱到强依次尝试：
+     *
+     * 1. 跨源（[AutoBook.isSamePaymentEvent]）——另一条通路也报了同一笔。
+     *    2026-10-01 通知栏通路整条删掉后，运行时只剩读屏一条，
+     *    所以这一支现在恒不成立；留着是因为它定义的是"合并"与"丢弃"的分界。
+     * 2. 同源近重复（[AutoBook.isSameChannelNearMiss] **且** [AutoBook.sameTxnIdentity]）——
+     *    同一屏被读到两次的变体。金额同向同窗口只是**必要条件**，
+     *    还必须有交易号或商户名兜底，否则两笔撞了金额的独立交易会被并成一条。
+     *
+     * 第 2 条为什么必须加身份判据，见 [AutoBook.sameTxnIdentity] 的注释。
+     */
     private suspend fun findMergeTarget(
         amountMinor: Long,
         direction: String,
         at: Long,
         channel: AutoBook.CaptureChannel,
+        merchant: String?,
+        rawText: String?,
     ): AutoDraftEntity? {
         val candidates = db.autoDraftDao().nearMisses(
             amountMinor, direction,
@@ -281,6 +302,8 @@ class AutoCapturePipeline(
             AutoBook.isSameChannelNearMiss(
                 prev.amountMinor, prev.direction, prev.occurredAt,
                 amountMinor, direction, at,
+            ) && AutoBook.sameTxnIdentity(
+                prev.merchant, prev.rawText, merchant, rawText,
             )
         }
     }

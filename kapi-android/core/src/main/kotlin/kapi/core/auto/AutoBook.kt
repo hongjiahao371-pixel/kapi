@@ -334,6 +334,55 @@ object AutoBook {
         return delta <= CROSS_SOURCE_WINDOW_MS
     }
 
+    /**
+     * 两条记录够不够像是**同一笔账**——在同额同向同窗口之外再加的那一道。
+     *
+     * ## 2026-10-01 realme：这道不加就出静默丢账
+     *
+     * ```
+     * 23:16:29  新草稿 76708bd0: 1210000 EXPENSE   ← 余额宝内部划转
+     * 23:17:20  新草稿 8bb8b696: 1210000 INCOME    ← 收到盖被吱的转账
+     * 23:17:22  同源近重复 合并：并入 76708bd0，证据 2 条
+     * ```
+     *
+     * [isSameChannelNearMiss] 挡不住，因为它比的是**账单上印的时间**
+     * （`parsed.occurredAt`）而不是"我们什么时候读到的"。那一页写 `08:54:39`、
+     * 这一页写 `08:54:54`，**相隔 15 秒**，都在 20 秒窗口内，金额都是 12100。
+     *
+     * 余额宝内部划转和收到别人的转账是**完全不同的两件事**，只是金额撞了。
+     * 用户确认合并后那一条，第二笔就凭空消失了。
+     *
+     * ## 判据
+     *
+     * ```
+     * 1. 权威交易号相同   → 一定是同一笔（平台号唯一，见 [PaymentId]）
+     * 2. 商户名相同       → 同一笔的摘要页与详情页，商户一致
+     * 3. 两者都没有       → **不合并**
+     * ```
+     *
+     * 第 3 条是刻意的，方向取自"宁重复，不丢失"：判不出来时宁可留两条草稿——
+     * 重复的草稿用户**看得见**、点一下就能删；错误合并掉的那笔他**看不见**。
+     *
+     * @param merchantA 已存记录解析出的商户，可空（解析不出商户是常事）
+     * @param rawTextA 已存记录的原始读屏文本，用来取权威交易号
+     */
+    fun sameTxnIdentity(
+        merchantA: String?,
+        rawTextA: String?,
+        merchantB: String?,
+        rawTextB: String?,
+    ): Boolean {
+        // 交易号只在**两边都有**时可比：只有一边有说明那一屏没露出这个字段，
+        // 拿"缺失"去比"有值"是比不出来的，不该因此就否掉本来成立的同号。
+        val idA = PaymentId.authoritative(rawTextA)?.value
+        val idB = PaymentId.authoritative(rawTextB)?.value
+        if (idA != null && idB != null) return idA == idB
+
+        val a = merchantA?.trim()?.takeIf { it.isNotEmpty() } ?: return false
+        val b = merchantB?.trim()?.takeIf { it.isNotEmpty() } ?: return false
+        return a == b
+    }
+
     // ---------------------------------------------------------------- 杂项
 
     private val WHITESPACE = Regex("""\s+""")
