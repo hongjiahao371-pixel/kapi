@@ -38,7 +38,15 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
-            applicationIdSuffix = ".debug"
+            // 可用 -PkapiDebugSuffix=.glasstest 改成别的后缀，产出**并存包**。
+            //
+            // 起因：手机上已经有一个 kapi.ledger.debug，但签名用的是另一把
+            // debug keystore（本机 36:47:96…，手机 5AADFC72…），
+            // `adb install -r` 直接被 INSTALL_FAILED_UPDATE_INCOMPATIBLE 拒掉。
+            // 覆盖不了就只能卸载重装，而那会连同 Room 数据库一起清掉。
+            // 换后缀装成另一个包，两边都在，谁也不动谁。
+            applicationIdSuffix =
+                (project.findProperty("kapiDebugSuffix") as String?) ?: ".debug"
         }
     }
 
