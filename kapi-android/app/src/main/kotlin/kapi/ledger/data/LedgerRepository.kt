@@ -84,6 +84,40 @@ class LedgerRepository(
      *
      * 幂等：已存在就不动。v1 只有单账本，共享账本留到后面。
      */
+    /**
+     * 新建一个用户自定义分类，返回它的 id；失败或重名时返回已存在那行的 id / null。
+     *
+     * 分类是**用户的数据**，不是代码里的常量：他会想把「猫主子」建在「其他」下面。
+     * 规则表（[CategoryRules]）只管自动猜，这里管他说了算。
+     *
+     * id 用 `cat-u-` + 随机后缀而不是序号——分类会同步到 NAS，而两台手机各自建一个
+     * 「猫主子」应该变成两行，不该互相覆盖。
+     *
+     * 同名同级不重复建：用户连点两次"保存"不该得到两个一样的分类，
+     * 而那会让分类选择器里出现两颗一模一样的 chip。
+     */
+    suspend fun createCategory(name: String, kind: String, parentId: String?): String? {
+        val clean = name.trim().take(20)
+        if (clean.isEmpty()) return null
+        val ledgerId = ensureSeeded()
+        db.categoryDao().byName(ledgerId, kind, clean)?.let { return it.id }
+        val id = "cat-u-" + java.util.UUID.randomUUID().toString().take(8)
+        db.categoryDao().upsertAll(
+            listOf(
+                CategoryEntity(
+                    id = id,
+                    ledgerId = ledgerId,
+                    parentId = parentId,
+                    name = clean,
+                    kind = kind,
+                    // 排在用户自建的后面：内置分类是骨架，自定义的是补充。
+                    sortOrder = 99,
+                )
+            )
+        )
+        return id
+    }
+
     suspend fun ensureSeeded(): String {
         val ledgerId = DEFAULT_LEDGER_ID
 

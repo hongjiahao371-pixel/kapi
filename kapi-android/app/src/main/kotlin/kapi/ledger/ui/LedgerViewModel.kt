@@ -123,6 +123,36 @@ class LedgerViewModel(
         repo.editor.softDelete(id, sync.deviceId)
     }
 
+    /**
+     * 改一笔账的分类。
+     *
+     * **这是自学习唯一的学习信号。** 自动分类判错时用户在这里改一次，
+     * 同一个商户改够三次（[kapi.core.auto.MerchantLearning.MIN_OCCURRENCES]），
+     * 之后这个商户的账就会自动按他选的那一档归。
+     *
+     * 走 [LocalEditWriter.editField] 而不是直接 UPDATE：分类是要同步到 NAS 的
+     * 业务字段，直接改本地行的话，推送时服务端那一列还是旧的，
+     * 换台手机拉下来就又变回去了。
+     *
+     * 只支持**设置**，不支持清空。`category_id` 为空时这个键在同步行里整个不存在，
+     * 而合并层会用原值兜底——想清空得动同步层的编码约定，
+     * 那个代价不值得为一个罕见操作付。
+     */
+    suspend fun setCategory(txnId: String, categoryId: String): Boolean =
+        repo.editor.editField(txnId, "category_id", "\"$categoryId\"", sync.deviceId)
+
+    /**
+     * 新建一个用户自定义分类，返回它的 id；失败返回 null。
+     *
+     * 落在 [LedgerRepository] 上而不是这里直接 `repo.db`——db 是它的私有字段，
+     * 而"建分类"本来就是账本初始化的一部分。
+     */
+    suspend fun createCategory(
+        name: String,
+        kind: String,
+        parentId: String?,
+    ): String? = repo.createCategory(name, kind, parentId)
+
     suspend fun pair(baseUrl: String, code: String): SyncCoordinator.PairOutcome {
         val outcome = sync.pair(baseUrl, code)
         // 配完立刻推一次。用户刚配好就点开 App 看到空列表，是最伤的体验。

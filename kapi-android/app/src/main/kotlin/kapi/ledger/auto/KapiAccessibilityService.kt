@@ -127,6 +127,15 @@ class KapiAccessibilityService : AccessibilityService() {
      */
     private val lastWarned = ConcurrentHashMap<String, Long>()
 
+    /**
+     * 每个 App 上次**安排**延迟重读的时刻。用来给补读限速。
+     *
+     * 和 [lastHandled]（去抖，派发成功才占位）目的不同：这个记的是"多久没安排过了"，
+     * 不管那次重读有没有记到东西。理由见 [onAccessibilityEvent] 里那段——
+     * 页面一秒能来十几次内容变化事件，每次都遍历一遍节点树是用户可见的掉帧。
+     */
+    private val lastSettleAt = ConcurrentHashMap<String, Long>()
+
     private fun warnThrottled(pkg: String, message: String) {
         val now = System.currentTimeMillis()
         val last = lastWarned[pkg] ?: 0L
@@ -248,17 +257,36 @@ class KapiAccessibilityService : AccessibilityService() {
         val now = System.currentTimeMillis()
         if (readScreen(pkg, now)) return
 
-        // 窗口刚切过去时读到的多半是**半屏**：列表页还在、详情页还没画完，
-        // 或者反过来。2026-09-30 23:33 真机就是这样——从账单列表点进详情页，
-        // 那一刻的事件读到的是还没切完的屏，被形状闸判成"一屏记录"，
-        // 而详情页自己的事件**之后一个都没来**（微信这一屏的节点结构没变，
-        // 系统认为没有 content-changed）。于是这一笔就这么漏了，
-        // 界面上什么痕迹都没有，账本里就是少了那一行。
+        // 窗口刚切过去、或内容还在陆续填充时，读到的多半是**半屏**。
         //
-        // 补一次延迟重读。它不是"多试几次直到成功"，而是给动画和异步加载
-        // 留一个沉降时间：页面稳定后再读一次，读到的是最终形态。
-        // 去抖（[lastHandled]）保证这次重读只在**没真的记到东西**时才有意义。
-        if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+        // ## 2026-10-01 realme：这一段原来只在 `WINDOW_STATE_CHANGED` 时跑，漏了一整类场景
+        //
+        // 实测现场（点进微信「橘生」会话里的转账详情）：
+        // ```
+        // 事件 com.tencent.mm：type=2048          ← CONTENT_CHANGED
+        // 不是一笔支付：整屏 25 个节点，没有任何金额
+        // 不是一笔支付：整屏 28 个节点，没有任何金额   ← 读了四五次，全是半屏
+        // （此后没有任何事件，页面已经稳定，而那一屏始终没被读到）
+        // ```
+        // 一两秒后页面才画完，**但系统不再派发事件**——节点树没再变，系统认为没有
+        // content-changed。于是这一笔就这么漏了，界面上什么痕迹都没有。
+        //
+        // 原来只在 `WINDOW_STATE_CHANGED` 时补读，是因为最初遇到的漏记是从列表页
+        // 点进详情页（那是 STATE_CHANGED）。而"点进会话""页面异步填充"走的是
+        // CONTENT_CHANGED —— **事件类型不能拿来判断这一屏稳不稳**，页面稳不稳
+        // 只有再读一次才知道。所以现在两种都补。
+        //
+        // 代价：内容变化频繁的页面（支付页动画）一秒能来十几次事件。靠
+        // [lastSettleAt] 把补读限制成**每个 App 每秒最多一次**——而这个上限
+        // 对"等页面画完"是绰绰有余的（一两秒），却把最坏情况的遍历次数压到
+        // 事件数量的 1/10 以下。
+        //
+        // 它不是"多试几次直到成功"，而是给动画和异步加载留一个沉降时间：
+        // 页面稳定后再读一次，读到的是最终形态。
+        // [lastHandled] 保证这次重读只在**没真的记到东西**时才有意义。
+        val settleAt = lastSettleAt[pkg] ?: 0L
+        if (now - settleAt >= SETTLE_MIN_GAP_MS) {
+            lastSettleAt[pkg] = now
             scope.launch {
                 delay(SETTLE_DELAY_MS)
                 // 必须切回主线程。scope 跑在 Dispatchers.Default 上，
@@ -451,6 +479,15 @@ class KapiAccessibilityService : AccessibilityService() {
          * 长于它用户会以为 App 卡住。
          */
         private const val SETTLE_DELAY_MS = 1_200L
+
+        /**
+         * 两次延迟重读之间的最小间隔。
+         *
+         * 1 秒：一两秒的渲染时间足够被覆盖，而把最坏情况下每个 App 的遍历次数
+         * 压到事件数量的十分之一以下。再密就变成"每个事件都重读一遍"，
+         * 那和没限速没有区别。
+         */
+        private const val SETTLE_MIN_GAP_MS = 1_000L
 
         private const val WARN_COOLDOWN_MS = 30_000L
 

@@ -10,6 +10,15 @@ import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
+/**
+ * 聚合行：`categoryId` + 出现次数。
+ *
+ * 顶层而不是嵌在 DAO 接口里——Room 的注解处理器对接口内嵌的 POJO 处理得
+ * 不太稳，而这个类型是 [TxnDao.categoryHistogramFor] 的返回类型，
+ * 自学习全靠它。
+ */
+data class CategoryCount(val categoryId: String, val n: Int)
+
 @Dao
 interface TxnDao {
 
@@ -18,6 +27,23 @@ interface TxnDao {
 
     @Query("SELECT * FROM txn WHERE id = :id")
     suspend fun byId(id: String): TxnEntity?
+
+    /**
+     * 「这个商户的账都被归到哪几档，各多少次」——自学习的数据来源。
+     *
+     * 直接从 `txn` 表聚合，不另建影子表：`merchant` + `categoryId` 本来就在行里，
+     * 抄一份出去就要多一处同步（账目被改、被删都得跟着撤），而两处一漂移，
+     * 表现就是"我明明改过了，它还按老的分类"。
+     *
+     * `merchant = :merchant` 是**精确匹配**：见 [kapi.core.auto.MerchantLearning.normalize]
+     * 对归一化的取舍。宁可学得少。
+     */
+    @Query(
+        "SELECT categoryId, COUNT(*) AS n FROM txn " +
+            "WHERE deleted = 0 AND categoryId IS NOT NULL AND merchant = :merchant " +
+            "GROUP BY categoryId ORDER BY n DESC"
+    )
+    suspend fun categoryHistogramFor(merchant: String): List<CategoryCount>
 
     /**
      * 同步取一段区间，用于"账本里有没有一笔很像的"这种一次性判断。

@@ -320,6 +320,58 @@ class RealScreenFalsePositiveTest {
     }
 
     /**
+     * 微信会话的**浮窗预览**不是一笔支付。
+     *
+     * 2026-10-01 realme 真机抓到的现场。形状闸看到 `转账` + `￥0.10`（一个带金额
+     * 的短节点）判成"像一笔"，支付门看到「转账」这个强动词也放行——
+     * **两道门同时失守**，草稿里出现了一条 `−0.10 / 更多信息` 的假账。
+     *
+     * 真正的判据是那两个结构性标志：**聊天输入栏**和**浮窗**。交易详情页上
+     * 不会有它们，而它们不是某一屏特有的文案。
+     */
+    @Test
+    fun `wechat conversation floating window is not a payment`() {
+        val text = """
+            更多功能按钮，已折叠
+            表情
+            听写
+            切换到按住说话
+            Sherry头像
+            转账
+            你发起了一笔转账
+            ￥0.10
+            14:45
+            更多信息
+            1
+            返回
+            退出浮窗
+            浮窗
+        """.trimIndent()
+        assertEquals(
+            "会话浮窗必须被支付门挡下",
+            false,
+            PaymentGate.verdict(text) is PaymentGate.Verdict.LooksLikePayment,
+        )
+    }
+
+    /**
+     * 补读不能在用户已经切走之后还往回记一笔。
+     *
+     * 沉降重读是在 1.2 秒后读**当时**的屏，所以它必须核对包名——
+     * [KapiAccessibilityService.collectTexts] 里有 `rootPkg != eventPkg` 的检查，
+     * 这里钉的是"读到的必须是同一个 App"这个前提在真实原文上成立。
+     */
+    @Test
+    fun `a settled screen is only re-read while still in the same app`() {
+        // 交易详情页本身不该被误当成浮窗——上面的判据不能宽到把真支付也挡掉。
+        val detail = alipayPaymentDetail.joinToString("\n") { it.text }
+        assertTrue(
+            "支付宝真实详情页不能被浮窗判据误伤",
+            PaymentGate.verdict(detail) is PaymentGate.Verdict.LooksLikePayment,
+        )
+    }
+
+    /**
      * 反向保护：调整项**不能**把紧挨着它的真消费一起摘掉。
      *
      * 调整项的判定是"下一行是调整项标签"。万一把方向做成双向，

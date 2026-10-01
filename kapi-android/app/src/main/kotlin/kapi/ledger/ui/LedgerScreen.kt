@@ -1,6 +1,7 @@
 package kapi.ledger.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -32,6 +34,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -46,11 +49,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kapi.core.llm.Money
+import kapi.ledger.data.CategoryEntity
 import kapi.ledger.data.TxnEntity
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -84,7 +89,12 @@ fun LedgerScreen(
     val categoryNames = remember(categories) { categories.associate { it.id to it.name } }
     val accountNames = remember(accounts) { accounts.associate { it.id to it.name } }
     val scope = rememberCoroutineScope()
-    var pendingDelete by remember { mutableStateOf<TxnEntity?>(null) }
+    // 点开的是**编辑**面板，删除是面板里的一个按钮。
+    // 原来点一下直接弹"确定删除吗"——那是个**不可逆**操作放在最顺手的位置上，
+    // 而用户点一行时想做的事九成是"改一下分类"。自动分类判错时尤其如此：
+    // 没有这里就没有改的入口，也就没有自学习的数据。
+    var editing by remember { mutableStateOf<TxnEntity?>(null) }
+    var askDelete by remember { mutableStateOf<TxnEntity?>(null) }
     val grouped = remember(state.rows) { groupByDay(state.rows) }
 
     Scaffold(
@@ -139,7 +149,7 @@ fun LedgerScreen(
                             row = row,
                             category = row.categoryId?.let { categoryNames[it] },
                             account = row.accountId?.let { accountNames[it] },
-                            onClick = { pendingDelete = row },
+                            onClick = { editing = row },
                         )
                     }
                 }
@@ -147,9 +157,33 @@ fun LedgerScreen(
         }
     }
 
-    pendingDelete?.let { target ->
+    // ---- 编辑面板：改分类 / 新建分类 / 删除 ----
+    editing?.let { target ->
+        TxnEditDialog(
+            txn = target,
+            categories = categories,
+            currentCategoryName = target.categoryId?.let { categoryNames[it] },
+            onDismiss = { editing = null },
+            onPick = { catId ->
+                scope.launch {
+                    vm.setCategory(target.id, catId)
+                    editing = null
+                }
+            },
+            onCreate = { name, parentId ->
+                scope.launch {
+                    val id = vm.createCategory(name, target.direction, parentId)
+                    if (id != null) vm.setCategory(target.id, id)
+                    editing = null
+                }
+            },
+            onAskDelete = { askDelete = target; editing = null },
+        )
+    }
+
+    askDelete?.let { target ->
         AlertDialog(
-            onDismissRequest = { pendingDelete = null },
+            onDismissRequest = { askDelete = null },
             containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(20.dp),
             title = { Text("删除这笔？") },
@@ -161,13 +195,13 @@ fun LedgerScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    pendingDelete = null
+                    askDelete = null
                     // onDelete 是 suspend：Room 写盘不能挂主线程。
                     scope.launch { onDelete(target.id) }
                 }) { Text("删除", color = ExpenseRed) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+                TextButton(onClick = { askDelete = null }) { Text("取消") }
             },
         )
     }
@@ -353,6 +387,167 @@ private fun DayHeader(group: DayGroup) {
             "支出 ¥${Money.toYuanDisplay(group.expenseMinor)}",
             style = MaterialTheme.typography.bodySmall,
             color = InkSoft,
+        )
+    }
+}
+
+/**
+ * 改一笔账的分类。
+ *
+ * ## 这个面板为什么必须存在
+ *
+ * 它是**自学习唯一的学习信号**。自动分类判错时用户在这里改一次，同一个商户改够三次，
+ * 之后这个商户的账就自动按他选的那一档归（见 `core` 的 `MerchantLearning`）。
+ * 没有它，自动分类就是个单向的猜测——错了用户改不回来，于是错的那一档会一直错下去。
+ *
+ * ## 为什么点一行是"编辑"而不是"删除"
+ *
+ * 删除不可逆，而它原来在列表里最顺手的位置上。用户点一行时想做的事九成是改分类，
+ * 尤其在自动分类刚推上去的这段时间。
+ *
+ * ## 新建分类挂在哪个父节点下
+ *
+ * 跟着**当前选中的那一档**：他正在给某笔餐饮的账点开"猫主子"这种新分类时，
+ * 大概率是想加在餐饮下面，而不是挂到根上。默认挂当前选中的，没有选中就挂根。
+ */
+@Composable
+private fun TxnEditDialog(
+    txn: TxnEntity,
+    categories: List<CategoryEntity>,
+    currentCategoryName: String?,
+    onDismiss: () -> Unit,
+    onPick: (String) -> Unit,
+    onCreate: (name: String, parentId: String?) -> Unit,
+    onAskDelete: () -> Unit,
+) {
+    var picked by remember(txn.id) { mutableStateOf<String?>(txn.categoryId) }
+    var expanded by remember(txn.id) { mutableStateOf<String?>(null) }
+    var newName by remember(txn.id) { mutableStateOf("") }
+
+    val tops = remember(categories, txn.direction) {
+        categories.filter { it.parentId == null && it.kind == txn.direction }
+            .sortedBy { it.sortOrder }
+    }
+    val subsOf = { parentId: String ->
+        categories.filter { it.parentId == parentId }.sortedBy { it.sortOrder }
+    }
+    val pickedTop = tops.firstOrNull { it.id == picked }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(20.dp),
+        title = {
+            Column {
+                Text("¥${Money.toYuanDisplay(txn.amountMinor)}", color = Ink)
+                Text(
+                    txn.merchant ?: txn.note ?: "未命名",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkSoft,
+                )
+                Text(
+                    currentCategoryName ?: "未分类",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Brand,
+                )
+            }
+        },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(tops, key = { it.id }) { c ->
+                        CategoryPill(
+                            text = c.name,
+                            selected = c.id == picked,
+                            onClick = {
+                                // 再点一次已选中的 = 收起它的细分；
+                                // 点新的 = 先选它，再展开它的细分。
+                                if (c.id == picked) {
+                                    picked = c.id
+                                    expanded = if (expanded == c.id) null else c.id
+                                } else {
+                                    picked = c.id
+                                    expanded = c.id
+                                }
+                            },
+                        )
+                    }
+                }
+                if (expanded != null) {
+                    val subs = subsOf(expanded!!)
+                    if (subs.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(subs, key = { it.id }) { c ->
+                                CategoryPill(
+                                    text = c.name,
+                                    selected = c.id == picked,
+                                    onClick = { picked = c.id },
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Text("新建分类", style = MaterialTheme.typography.labelMedium, color = InkSoft)
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it.take(20) },
+                        placeholder = { Text("比如 猫主子", color = InkFaint) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = {
+                            if (newName.isNotBlank()) onCreate(newName.trim(), pickedTop?.id)
+                        },
+                        enabled = newName.isNotBlank(),
+                    ) { Text("建并归入", color = Brand) }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { picked?.let(onPick) },
+                enabled = picked != null,
+            ) { Text("保存", color = Brand) }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onAskDelete) { Text("删除", color = ExpenseRed) }
+                TextButton(onClick = onDismiss) { Text("取消", color = InkSoft) }
+            }
+        },
+    )
+}
+
+/** 分类选择器里的一颗。选中靠"底色更实 + 描边"两重，不只靠颜色。 */
+@Composable
+private fun CategoryPill(text: String, selected: Boolean, onClick: () -> Unit) {
+    val container = if (selected) Brand.copy(alpha = 0.20f) else Brand.copy(alpha = 0.07f)
+    val border = if (selected) 1.5.dp else 1.dp
+    val borderColor = if (selected) Brand else Brand.copy(alpha = 0.18f)
+    val content = if (selected) Brand else InkSoft
+    Row(
+        modifier = Modifier
+            .height(32.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(container)
+            .border(border, borderColor, RoundedCornerShape(16.dp))
+            .glassClickable { onClick() }
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelLarge,
+            color = content,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
         )
     }
 }
