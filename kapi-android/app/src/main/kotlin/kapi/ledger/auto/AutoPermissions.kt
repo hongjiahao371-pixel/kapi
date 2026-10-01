@@ -57,7 +57,21 @@ object AutoPermissions {
         return flat.split(':').any { ComponentName.unflattenFromString(it) == expected }
     }
 
+    /**
+     * 无障碍的**全局总开关**。
+     *
+     * 这一项不能漏。`ENABLED_ACCESSIBILITY_SERVICES` 里可以留着组件名，而
+     * `accessibility_enabled` 是 0——用户在快捷设置里把无障碍整个关掉时，系统**不会**
+     * 清空那个列表。此时只查列表就会得出"已开启"，而实际 `Bound services` 是空的，
+     * 一条事件都收不到。界面上会显示「已连上。支付成功页面上的文字会自动进来」——
+     * 这正是本文件开头说的那种"最容易骗人"的状态，只是方向反了：不是显示未授权，
+     * 是显示已授权而实际没在跑。
+     */
+    private fun isAccessibilityMasterOn(ctx: Context): Boolean =
+        Settings.Secure.getInt(ctx.contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 1
+
     private fun isAccessibilityEnabled(ctx: Context): Boolean {
+        if (!isAccessibilityMasterOn(ctx)) return false
         val enabled = Settings.Secure.getString(
             ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
         ) ?: return false
