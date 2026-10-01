@@ -6,16 +6,34 @@
 <title>咔皮账本 · NAS 面板</title>
 <style>
   :root{
-    /* 和 App 同一套语言：安静暖白底 + 白卡片 + 发丝边，卡片是画面里最亮的东西。 */
-    --bg:#F5F2EC; --card:#FFFFFF; --ink:#231F1B; --soft:#6B6259; --faint:#A79C90;
-    --line:#E8E2D8; --brand:#1F6B52; --brand-deep:#175140; --brand-soft:#E4F0EA;
-    --expense:#C0402C; --income:#1F6B52; --radius:18px;
-    --shadow:0 1px 2px rgba(35,31,27,.04), 0 8px 20px rgba(35,31,27,.05);
+    /* 和 App 同一套语言，现在两边都是**冷蓝玻璃**。取值来自
+       kapi-visual-compare B 列（视觉提示词的给定值），不是各改各的——
+       面板和 App 指的是同一个账本，两边配色必须同源。
+       暖白底 + 墨绿那一版是为对标 ColorOS 留的，已整体作废。 */
+    --bg:#F7F9FC; --card:#FFFFFF; --ink:#202C40; --soft:#5B6D85; --faint:#8296AE;
+    --line:rgba(255,255,255,.82); --brand:#2868D8; --brand-deep:#1F4699; --brand-soft:#DCE7FA;
+    --expense:#C9482F; --income:#2C7A55; --radius:18px;
+    --shadow:0 1px 2px rgba(55,83,118,.05), 0 18px 48px rgba(55,83,118,.14);
+    /* 页面底的两道光晕，App 那边在 LiquidBackground 里画的是同一组 */
+    --glow-warm:rgba(255,210,157,.46); --glow-cool:rgba(160,207,255,.50);
+    /* 若干中性填充的冷色对应：原来一律 #F1EDE6 / #FBF9F5 暖灰 */
+    --fill:#E9EFF8; --fill-hover:#F2F6FC;
+    /* 冷蓝灰的遮罩/投影色，替掉 rgba(35,31,27,…) */
+    --veil:55,83,118;
   }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
   body{
-    background:var(--bg); color:var(--ink);
+    /* 页面底的两道光晕——App 那边在 LiquidBackground 里画的是同一组
+       （暖 #FFD29D .46 @左上 / 冷 #A0CFFF .50 @右上）。两边同源，
+       面板不该是一块和 App 无关的纯色底。background-attachment:fixed
+       是必须的：面板内容长，渐变不跟随滚动就变成"只有首屏有光"。 */
+    background:
+      radial-gradient(40rem 26rem at -8% 6%, var(--glow-warm), transparent 55%),
+      radial-gradient(40rem 25rem at 108% 9%, var(--glow-cool), transparent 58%),
+      var(--bg);
+    background-attachment:fixed;
+    color:var(--ink);
     font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
     -webkit-font-smoothing:antialiased;
   }
@@ -69,7 +87,7 @@
   tbody td{padding:12px 16px;border-bottom:1px solid var(--line);vertical-align:middle}
   tbody tr:last-child td{border-bottom:0}
   tbody tr{cursor:pointer}
-  tbody tr:hover{background:#FBF9F5}
+  tbody tr:hover{background:var(--fill-hover)}
   tbody tr[aria-selected=true]{background:var(--brand-soft)}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
   .amt-exp{color:var(--expense);font-weight:600}
@@ -77,7 +95,7 @@
   .muted{color:var(--faint)}
   .title{font-weight:500}
   .sub2{color:var(--soft);font-size:13px}
-  .pill{display:inline-block;padding:2px 9px;border-radius:999px;background:#F1EDE6;color:var(--soft);font-size:12px}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;background:var(--fill);color:var(--soft);font-size:12px}
   .empty{padding:48px 16px;text-align:center;color:var(--faint)}
   .pager{display:flex;align-items:center;gap:12px;justify-content:flex-end;padding:12px 16px}
   .pager .count{margin-right:auto;color:var(--faint);font-size:13px}
@@ -90,16 +108,16 @@
   .panel h2{display:flex;align-items:center}
   .bar{display:grid;grid-template-columns:82px 1fr 130px;gap:12px;align-items:center;padding:7px 18px}
   .bar .lbl{color:var(--soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .track{height:9px;background:#F1EDE6;border-radius:999px;overflow:hidden}
+  .track{height:9px;background:var(--fill);border-radius:999px;overflow:hidden}
   .fill{height:100%;background:var(--brand);border-radius:999px}
   .bar .val{text-align:right;font-variant-numeric:tabular-nums}
   .bar .val small{color:var(--faint);margin-left:6px}
 
   /* ---- 详情抽屉 ---- */
-  .scrim{position:fixed;inset:0;background:rgba(35,31,27,.34);opacity:0;pointer-events:none;transition:opacity .18s}
+  .scrim{position:fixed;inset:0;background:rgba(var(--veil),.34);opacity:0;pointer-events:none;transition:opacity .18s}
   .scrim.on{opacity:1;pointer-events:auto}
   .drawer{position:fixed;top:0;right:0;height:100%;width:min(460px,100%);background:var(--card);
-          box-shadow:-12px 0 40px rgba(35,31,27,.14);transform:translateX(100%);transition:transform .22s cubic-bezier(.3,.8,.3,1);
+          box-shadow:-12px 0 40px rgba(var(--veil),.14);transform:translateX(100%);transition:transform .22s cubic-bezier(.3,.8,.3,1);
           display:flex;flex-direction:column}
   .drawer.on{transform:none}
   .drawer header{padding:20px 22px 12px;margin:0;border-bottom:1px solid var(--line)}
@@ -118,7 +136,7 @@
   .gate .btn{width:100%;margin-top:12px;height:40px}
   .gate .err{color:var(--expense);font-size:13px;margin-top:12px;min-height:20px}
   .hide{display:none !important}
-  code{background:#F1EDE6;padding:1px 5px;border-radius:5px;font-size:12.5px;
+  code{background:var(--fill);padding:1px 5px;border-radius:5px;font-size:12.5px;
        font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 </style>
 </head>

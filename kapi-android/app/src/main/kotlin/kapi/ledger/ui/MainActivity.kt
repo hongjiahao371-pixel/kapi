@@ -252,28 +252,6 @@ fun KapiRoot() {
         snapshotFlow { settingsScroll.value }.collect { frostedSettings.scrollTo(it) }
     }
 
-    // 顶部磨砂的开关：**只看"滚没滚离顶部"，不看滚了多少**。
-    //
-    // 试过用 firstVisibleItemScrollOffset 直接驱动磨砂强度，结果是快速滑动时
-    // 顶部那条带子会跟着内容一起"呼吸"——滚得猛就糊、滚得慢就透，读起来像
-    // 画面在抖。ColorOS 那边也是二值的：滚了就磨，没滚就平。8px 是为了吃掉
-    // 弹性滚动回弹时那一点点残余位移。
-    val topScrolled = when (current) {
-        is Screen.Ledger -> ledgerList.firstVisibleItemIndex > 0 ||
-            ledgerList.firstVisibleItemScrollOffset > 8
-        is Screen.Drafts -> draftsList.firstVisibleItemIndex > 0 ||
-            draftsList.firstVisibleItemScrollOffset > 8
-        is Screen.Stats -> statsList.firstVisibleItemIndex > 0 ||
-            statsList.firstVisibleItemScrollOffset > 8
-        is Screen.Settings -> settingsScroll.value > 8f
-        else -> false
-    }
-    val topFrost by animateFloatAsState(
-        targetValue = if (topScrolled) 1f else 0f,
-        animationSpec = tween(200),
-        label = "topFrost",
-    )
-
     // 页面推移方向。在**点击的那一刻**就算好：等到 AnimatedContent 重组时再比
     // 前后索引，两次点击之间的中间态已经丢了，方向会随机翻转。
     var navDirection by remember { mutableIntStateOf(1) }
@@ -357,14 +335,6 @@ fun KapiRoot() {
 
         }
 
-        TopAura(
-            topInset = topInset,
-            frost = topFrost,
-            dark = dark,
-            frostedContent = { ScreenBody(current, frosted = true) },
-            modifier = Modifier.align(Alignment.TopCenter),
-        )
-
         BottomBar(
             current = current,
             tabs = tabs,
@@ -430,19 +400,23 @@ private fun BottomBar(
                 .fillMaxWidth()
                 .height(Glass.BAR_HEIGHT)
                 // 投影是"悬浮"的另一半。玻璃本身只有边缘那 1dp 的明暗变化，
-                // 在安静的暖白背景上仍然偏轻；加一层很淡的落影之后，胶囊才
+                // 在浅色背景上仍然偏轻；加一层很淡的落影之后，胶囊才
                 // 真的离开纸面，而不是画在纸上。
+                //
+                // 18dp / #375376：视觉提示词的 `--shade: 0 18px 48px rgba(55,83,118,.14)`。
+                // 阴影是**冷蓝灰**不是暖褐——旧值 #2A2620 是配暖纸底的，在冷白纸上
+                // 会让胶囊底下洇出一圈脏色。深色下用纯黑，见 LiquidGlass 里同一条。
                 .shadow(
-                    elevation = 14.dp,
+                    elevation = 18.dp,
                     shape = RoundedCornerShape(Glass.BAR_RADIUS),
-                    ambientColor = Color(0xFF2A2620),
-                    spotColor = Color(0xFF2A2620),
+                    ambientColor = Color(0xFF375376),
+                    spotColor = Color(0xFF375376),
                 ),
             shape = RoundedCornerShape(Glass.BAR_RADIUS),
             radius = Glass.BAR_RADIUS,
             dark = dark,
             // 底栏用比卡片更实的玻璃：它底下压着列表文字，必须磨到读不出来。
-            tint = if (dark) Glass.TintDark else Glass.BarTint,
+            tint = if (dark) Glass.BarTintDark else Glass.BarTint,
         ) {
             Row(
                 modifier = Modifier
@@ -524,16 +498,22 @@ private fun RecordButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .shadow(10.dp, CircleShape, ambientColor = Color(0xFF2D7A64), spotColor = Color(0xFF2D7A64))
+            // 记一笔那颗圆的落影跟着品牌色走。圆本身是品牌色的实心块，
+            // 落影和它同色，圆才像是从纸上**顶起来**的，而不是贴了张色纸片。
+            .shadow(10.dp, CircleShape, ambientColor = Color(0xFF2868D8), spotColor = Color(0xFF2868D8))
             .clip(CircleShape)
             .background(
                 // 固定配色，**不跟着主题走**。这个圆是「记一笔」的主操作锚点，
-                // 深浅两档都得是同一块品牌绿——它变了，用户每次切主题都要重新
+                // 深浅两档都得是同一块品牌色——它变了，用户每次切主题都要重新
                 // 认一次。而且它的图标是白色，加上一旦变浅就等于白圆画白加号。
+                //
+                // 换到冷蓝这一套后这里是 #3A8B74→#1F5B4C 的**墨绿**，和满屏的
+                // 品牌蓝对不上——那颗圆是全 App 视觉权重最高的元素，它一绿，
+                // 整屏立刻读成"还有一半没换完"。改成同族的两档蓝。
                 Brush.verticalGradient(
                     listOf(
-                        Color(0xFF3A8B74).copy(alpha = glow),
-                        Color(0xFF1F5B4C),
+                        Color(0xFF4A8AE8).copy(alpha = glow),
+                        Color(0xFF1F4699),
                     )
                 )
             )

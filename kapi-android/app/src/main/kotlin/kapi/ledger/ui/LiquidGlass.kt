@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
@@ -102,11 +103,12 @@ object Glass {
      * 判据不是"好看"，是**读不出来**。底栏同时压着四个 tab 标签和列表正文，
      * 底下透上来的东西只要还能读，两层文字就在打架。所以这个值偏大。
      *
-     * 22 → 30dp：按 OPPO ColorOS 原图实测反解。光罩是中性灰 245 @50%，
-     * 它的遮蔽力比原来的纯白 @44% 更强，但中性灰本身没有纯白那么"顶"，
-     * 需要更大的模糊半径把透上来的内容压到读不出来才够。
+     * 取 24dp 是视觉提示词的给定值（`kapi-visual-compare` B 列 `--blur:24px`）。
+     * 之前为了对标 ColorOS 量到 30dp——那一版已经作废，但**结论留在这里**：
+     * 那个 30 是按"中性灰 245 @50% 的遮蔽力比纯白弱、需要更大半径压住"反解的，
+     * 而现在光罩换回纯白 @62%，遮蔽力比当时强，24dp 已经够。
      */
-    val BLUR: Dp = 30.dp
+    val BLUR: Dp = 24.dp
 
     /**
      * 磨砂颗粒强度。
@@ -120,33 +122,25 @@ object Glass {
     /**
      * 玻璃的奶白底。低版本没有模糊层，靠它撑住层次。
      *
-     * ## 从纯白改成**中性灰**，不是审美选择，是量出来的
+     * ## 取值来自视觉提示词，不再来自对标 ColorOS
      *
-     * OPPO ColorOS 原图逐像素实测，玻璃的光罩行为是：
+     * 之前这一组是拿 OPPO ColorOS 原图逐像素反解出来的（中性灰 245 @50%，
+     * 三个独立样本全部命中），现在整套视觉换回提示词的冷蓝体系，那次拟合
+     * 作废。这里保留它唯一还有用的一条结论：
      *
-     *     结果 = 0.5 × 245(中性灰) + 0.5 × 背后内容
+     * > **纯白 Tint 和中性灰 Tint 不是一回事。** 纯白 245 不存在"不顶"的问题，
+     * > 它的遮蔽力天然比中性灰强，同等模糊半径下压得住的内容更多。
      *
-     * 暗底(明度 21) → 实测 127，模型 133，差 6
-     * 亮底(明度 240) → 实测 243，模型 242，差 1
-     * 圆形按钮衬底(明度 90) → 实测 164，模型 167.5，差 3.5
-     *
-     * 三个独立样本全部命中，所以这组参数是拟合出来的，不是"看着差不多"。
-     *
-     * 原来的 `0x70FFFFFF` 有两处和实测对不上：
-     *  1. **色相错了**：纯白 Tint 会把背后的暖色（kapi 的暖纸底、账目红）洗掉，
-     *     玻璃看上去是白的而不是"透着颜色"。实测色渗只有 R−B ±10，很淡，
-     *     纯白 Tint 会把这最后一点也吃掉。
-     *  2. **浓度不对**：0x70 = 43.9%，实测是 50%。
-     *
-     * 换中性灰之后玻璃会透出一点底色，这是对的——玻璃本来就是"透着背后颜色的东西"。
+     * 提示词给的就是纯白（`--glass-tint: rgba(255,255,255,.62)`），
+     * 所以 [BLUR] 才从 30 回到 24——不是随便调小的。
      *
      * ⚠️ **这一项目前不参与任何实际渲染**，别在这里调期望能改底栏。
      * 全工程 `GlassSurface` 只有一个调用点（MainActivity 里的 BottomBar），而它
-     * 永远显式传 `tint = Glass.BarTint`，所以浅色下走的一直是 [BarTint]，
+     * 永远显式传 `tint`，所以浅色下走的一直是 [BarTint]，
      * 这个值只是 `GlassSurface` 的兜底默认值。底栏的浓度请改 [BarTint]。
      */
-    val TintLight = Color(0x80F5F5F5)
-    val TintDark = Color(0xB32A2A27)
+    val TintLight = Color(0x9EFFFFFF)   // rgba(255,255,255,.62)
+    val TintDark = Color(0xB818212F)    // rgba(24,33,47,.72)
 
     /**
      * 底栏专用的玻璃浓度——**这才是浅色下底栏真正用的光罩**。
@@ -154,33 +148,44 @@ object Glass {
      * 底栏和卡片对"透"的容忍度完全不同：卡片是内容载体必须实，
      * 底栏是操作层，底下压着列表文字必须磨到读不出来。
      *
-     * 取值不是拍脑袋，是拿一块已知色标在真机上量的（OPPO PMA110 / ColorOS 17）：
-     * 临时在设置页顶部铺一条 1200dp 高的校准条——左半纯红、右半红白竖条纹——
-     * 一次截图里同时拿到玻璃上方（锐利）和玻璃内（透过）的同一份信号：
+     * 取值来自视觉提示词（`kapi-visual-compare` B 列）：
+     * 浅色 `--bar-tint: rgba(255,255,255,.78)`、深色 `rgba(24,33,47,.84)`。
      *
-     *   浓度    光罩透过率*   条纹高频残留   模糊衰减
-     *   0x8F     45.9%         12.6%         87.4%
-     *   0xA0     40.7%         10.9%         89.1%   ← 当前
-     *   ColorOS  ——             ~7%          ~70%
+     * 之前为对标 ColorOS 做过一轮实测：拿一条已知色标（纯红 / 红白条纹）铺在
+     * 设置页，一次截图里同时量玻璃上方（锐利）和玻璃内（透过）的同一份信号，
+     * 反解出 0x8F(56%) 与 0xA0(62%) 两档。那轮结论随整套视觉作废，但**方法留着**，
+     * 下面这段记的是它真正教会我们的东西，跟当前取值无关：
      *
-     * \* 光罩透过率＝纯红区 R−B 从 255 掉到玻璃内多少，**只反映光罩**：模糊对
-     *   纯色无效，所以纯红这一路测不到 blur。条纹那一路才同时含 blur+veil。
-     *
-     * 0x8F→0xA0 把综合透过从 12.6% 压到 10.9%，向 ColorOS 靠了 13%。
-     * 没有继续加浓：要补齐到 ColorOS 的 ~7% 需要 α≈0.77（0xC4），实测会让
-     * 底栏接近不透明、玻璃感基本消失——对一个压在列表文字上的操作层是净损失。
-     * [BLUR] 同理**没有**再往上加：kapi 的 87~89% 衰减已经强于 ColorOS 的 ~70%，
-     * 底栏底下是正文，再加只会更糊更贵。
+     * 1. **模糊对纯色无效。** 实测纯红区穿过 0x8F 光罩后 R−B 只从 255 掉到 117，
+     *    正好等于 `1 − α`，一个模糊的影子都没有。想同时量 blur 和 veil，
+     *    必须用条纹，纯色那一路只能量光罩。
+     * 2. **别把画在玻璃之上的东西算进"玻璃内"。** 早先的采样列里混进了
+     *    玻璃上那枚绿色 FAB 和未选中 tab 的标签色，量出来的"色度透过率"
+     *    几乎不随光罩浓度变化——那些像素根本不经过光罩。
+     * 3. **系统状态栏图标画在所有 App 内容之上。** 拿状态栏区域判"磨砂有没有
+     *    生效"会得到"内容比下面还锐"的结论，量到的是通知图标（实测美团
+     *    图标 `(255,228,31)`，R−B 极差 330），不是 App 内容。
      */
-    val BarTint = Color(0xA0F5F5F5)
+    val BarTint = Color(0xC7FFFFFF)      // rgba(255,255,255,.78)
+    val BarTintDark = Color(0xD618212F)  // rgba(24,33,47,.84)
 
-    /** 内圈暗边。玻璃是有厚度的，光在侧壁会衰减。 */
-    val InnerShadeLight = Color(0x1A4A4238)
+    /**
+     * 内圈暗边 / 边缘高光 / 边缘暗侧。
+     *
+     * `--rim` 提示词给了（浅 .82 / 深 .16）。另外两组规格里没有，是 kapi 自己
+     * 为了在浅底上把玻璃的"厚度"画出来加的：只画亮边时，胶囊在浅色纸上会
+     * 直接消失，必须配一道暗侧才读得出是个立体的东西。
+     *
+     * 这两组原来都是**暖色**（#4A4238 / #2B2620）——那是配暖纸底的。冷蓝这套
+     * 里留着暖色会在玻璃边缘透出一圈脏brown，所以色相跟着底色一起转冷，
+     * **alpha 一律不动**（它们控制的是边缘强度，不是颜色）。
+     */
+    val InnerShadeLight = Color(0x1A3E4A60)
     val InnerShadeDark = Color(0x40000000)
 
-    /** 边缘高光：模拟光从上方来。 */
-    val RimLight = Color(0xE6FFFFFF)
-    val RimDark = Color(0x33FFFFFF)
+    /** 边缘高光：模拟光从上方来。`--rim`：浅 .82 / 深 .16 */
+    val RimLight = Color(0xD1FFFFFF)
+    val RimDark = Color(0x29FFFFFF)
 
     /**
      * 边缘的**暗侧**。
@@ -189,7 +194,7 @@ object Glass {
      * 肉眼等于没有，底栏就"消失"了。真实玻璃在浅背景上的边缘是**上亮下暗**的
      * 一圈——顶面反光，侧壁和底面把环境光挡回去。
      */
-    val RimShadeLight = Color(0x2E2B2620)
+    val RimShadeLight = Color(0x2E2B3444)
     val RimShadeDark = Color(0x66000000)
 
     val BAR_RADIUS: Dp = 36.dp
@@ -492,172 +497,6 @@ fun GlassSurface(
 }
 
 // ---------------------------------------------------------------------------
-// 顶部光效
-// ---------------------------------------------------------------------------
-
-/**
- * 顶部光效 = **常驻微光** + **滚动磨砂**。
- *
- * ## 为什么原来那块读成"白条"
- *
- * 原先顶部什么都没有，`LiquidBackground` 的竖向渐变在 y=0 是 `#F1EEE8`、到 45%
- * 才是 `#F8F6F2`，于是最上面天然比中段暗一截；再叠一道 alpha 0.10 的绿，一眼看过去
- * 就是"一条颜色略深的横带"——**平涂就是白条，跟它多暗、多绿无关**。
- *
- * 真机实测（OPPO PMA110，账本页 x=200）：y=0..200 稳定在 `(230,231,224)`，
- * 一个数都没变。对比同屏中段纸色 `(247,245,241)`——顶上比中段暗 17 级，
- * 且**完全没有梯度**。所以要修的不是颜色，是"它太平"。
- *
- * ## ColorOS 上是什么（同一台机器实测，别照着想象做）
- *
- * - 设置页**静止**时：顶部是**完全平涂 `#F0F1F2`**，y=0..450 每个像素都是
- *   `(240,241,242)`。**没有光效。**
- * - 相册页：同样平涂 `#F0F1F2`，460px 高。**也没有光效。**
- * - 设置页**滚动后**：顶部才变成磨砂——列表内容（红 SOS 图标、"SOS 紧急联络"）
- *   滚上去被磨成残影，搜索框同时浮成磨砂胶囊。
- *
- * 结论：ColorOS 那个"不是白条"的效果**只在滚动时存在**，本质是内容透出被磨掉。
- * 本函数把它拆成两半，两半都要：微光负责静止时的质感，磨砂负责滚动时的通透。
- *
- * @param frost 0..1，滚动磨砂强度。调用方按"当前列表是否已滚离顶部"驱动并做动画。
- * @param frostedContent 内容副本。**只画到 [TopAura] 那条带子那么高**——
- *   底栏那份副本是按整屏高度测量的，顶部没必要再付一次全屏合成的钱。
- */
-@Composable
-fun TopAura(
-    topInset: Dp,
-    frost: Float,
-    dark: Boolean = false,
-    frostedContent: (@Composable () -> Unit)? = null,
-    modifier: Modifier = Modifier,
-) {
-    val density = LocalDensity.current
-    val band = topInset + 6.dp
-    val blurPx = with(density) { Glass.BLUR.toPx() }
-    val stripDp = band + Glass.BLUR * 2
-    val stripPx = with(density) { stripDp.toPx() }
-    val veil = if (dark) Glass.TintDark else Glass.BarTint
-
-    Box(
-        modifier
-            .fillMaxWidth()
-            .height(band)
-            // 先糊后裁：模糊要拿到带子外那两截 BLUR 的邻居像素，否则下缘会发虚。
-            // 裁发生在本节点，模糊在子节点上，次序和 GlassSurface 一致。
-            .clipToBounds(),
-    ) {
-        // ① 滚动磨砂。
-        if (frost > 0.01f && frostedContent != null && glassBlurAvailable()) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(stripDp)
-                    .graphicsLayer {
-                        renderEffect = BlurEffect(blurPx, blurPx, TileMode.Clamp)
-                        alpha = frost
-                    },
-            ) {
-                // 副本视口就等于 stripPx——和底栏那份"按整屏高度测量"不同，
-                // 这里只合成落在这条带子里的那几个 item。坐标依然对得上：
-                // 带子顶端就是屏幕顶端，副本 place(0,0) 即是屏幕 y=0。
-                Box(
-                    Modifier.layout { measurable, constraints ->
-                        val placed = measurable.measure(
-                            Constraints(
-                                minWidth = constraints.maxWidth,
-                                maxWidth = constraints.maxWidth,
-                                minHeight = stripPx.roundToInt(),
-                                maxHeight = stripPx.roundToInt(),
-                            )
-                        )
-                        layout(constraints.maxWidth, stripPx.roundToInt()) {
-                            placed.place(0, 0)
-                        }
-                    },
-                ) {
-                    // 【关键】副本必须自带不透明底，否则模糊的是空气不是内容。
-                    // 理由和 GlassSurface 里那段一样，此处不再重复。
-                    LiquidBackground(dark = dark) { frostedContent() }
-                }
-            }
-
-            // 磨砂之上的雾。模糊本身不够——文字只是"糊了"，不是"隔着一层玻璃"，
-            // 还得压一层中性白。这一层同时承担渐隐：上缘重、下缘轻。
-            Box(
-                Modifier.matchParentSize().drawBehind {
-                    drawRect(
-                        Brush.verticalGradient(
-                            0f to veil.copy(alpha = veil.alpha * 0.95f * frost),
-                            1f to veil.copy(alpha = veil.alpha * 0.55f * frost),
-                        )
-                    )
-                }
-            )
-
-            // 下缘一道亮边。没有它，磨砂区只是"上面糊了一点"，
-            // 读不出这是一条独立的玻璃；有了它，带子才和正文**脱开**。
-            Box(
-                Modifier.matchParentSize().drawBehind {
-                    val t = 1.dp.toPx()
-                    val edge = if (dark) Color(0x40FFFFFF) else Color(0xE6FFFFFF)
-                    drawRect(
-                        brush = Brush.verticalGradient(
-                            0f to Color.Transparent,
-                            1f to edge.copy(alpha = edge.alpha * frost),
-                            startY = size.height - t,
-                            endY = size.height,
-                        ),
-                        topLeft = Offset(0f, size.height - t),
-                        size = Size(size.width, t),
-                    )
-                }
-            )
-        }
-
-        // ② 常驻微光。滚不滚动都在，是"这块玻璃被上方光源照着"的那层光。
-        //
-        // 【为什么用竖向渐变而不是径向】第一版用的是径向（圆心在带子上方），
-        // 看着像光，量出来根本不是：
-        //   白色 0.60 提亮后 L≈244，接着深绿 0x2D7A64（L=89，比纸面暗 140）
-        //   以 0.14 叠上去，直接把亮度吃回 222——**比不画还暗 6 级**，
-        //   顶部于是比下方纸面更沉更绿，恰好就是"一条白条"被强化的样子。
-        //   而且径向渐变在带底还剩 0.2 左右的不透明度，y≈185 处一刀硬切。
-        //
-        // 现在两层都走竖向渐变，且**都在带底收到完全透明**：
-        //   ① 白色提亮，负责"亮"；② 极淡品牌绿，负责"不是纯白"。
-        // 绿只给 0.055——再高就又变成压暗。
-        Box(
-            Modifier.matchParentSize().drawBehind {
-                if (dark) {
-                    drawRect(
-                        Brush.verticalGradient(
-                            0f to Color(0xFF4A4A55).copy(alpha = 0.40f),
-                            0.5f to Color(0xFF2A2A32).copy(alpha = 0.18f),
-                            1f to Color.Transparent,
-                        )
-                    )
-                } else {
-                    drawRect(
-                        Brush.verticalGradient(
-                            0f to Color(0xFFFFFFFF).copy(alpha = 0.62f),
-                            0.45f to Color(0xFFFFFFFF).copy(alpha = 0.22f),
-                            1f to Color.Transparent,
-                        )
-                    )
-                    drawRect(
-                        Brush.verticalGradient(
-                            0f to Color(0xFF2D7A64).copy(alpha = 0.055f),
-                            0.45f to Color(0xFF2D7A64).copy(alpha = 0.020f),
-                            1f to Color.Transparent,
-                        )
-                    )
-                }
-            }
-        )
-    }
-}
-
-// ---------------------------------------------------------------------------
 // 背景
 // ---------------------------------------------------------------------------
 
@@ -685,42 +524,44 @@ fun LiquidBackground(
 ) {
     Box(
         modifier.fillMaxSize().drawBehind {
-            if (dark) {
-                drawRect(
-                    Brush.verticalGradient(
-                        0f to Color(0xFF16161A),
-                        0.55f to Color(0xFF101013),
-                        1f to Color(0xFF0C0C0E),
-                    ),
-                )
-            } else {
-                // 暖白打底。中间最亮、两端略沉，做出"一张纸被顶光照着"的错觉。
-                drawRect(
-                    Brush.verticalGradient(
-                        0f to Color(0xFFF1EEE8),
-                        0.45f to Color(0xFFF8F6F2),
-                        1f to Color(0xFFEFECE5),
-                    ),
-                )
-                // 顶部一抹极淡的品牌绿。只在状态栏那一段，几乎看不见——
-                // 它的作用是让冷白不那么"电脑屏"，而不是"这是一张渐变背景"。
-                drawRect(
-                    Brush.radialGradient(
-                        colors = listOf(Color(0xFF2D7A64).copy(alpha = 0.10f), Color.Transparent),
-                        center = Offset(size.width * 0.5f, -size.height * 0.06f),
-                        radius = size.width * 0.95f,
-                    ),
-                )
-                // 底部一抹暖光，和顶部的绿形成一个很轻的对位。
-                // 它正好落在底栏后面，磨出来的胶囊会带一点暖调而不是死白。
-                drawRect(
-                    Brush.radialGradient(
-                        colors = listOf(Color(0xFFC99A6B).copy(alpha = 0.09f), Color.Transparent),
-                        center = Offset(size.width * 0.82f, size.height * 1.04f),
-                        radius = size.width * 0.85f,
-                    ),
-                )
+            // 视觉提示词给的 `--page-bg`，两套：
+            //   浅色  radial(40rem 26rem @ -8%  6%, rgba(255,210,157,.46), 55%)
+            //         radial(40rem 25rem @ 108% 9%, rgba(160,207,255,.50), 58%)
+            //         底 #F7F9FC
+            //   深色  同形，alpha 降到 .16 / .20，底 #0F1520
+            //
+            // 【rem 怎么换算】CSS 的 rem 是绝对像素（16px/个），在手机上会随
+            // 视口宽度漂移——照抄成固定 dp，换个屏幕光晕就散得不对。这里把半径
+            // 折成**屏宽的比例**，并保留 CSS 里的长短轴比（26/40 = 0.65），
+            // 这样任何机型上两团光的相对大小都一样。圆心位置 `at -8% 6%`
+            // 本来就是按视口百分比给的，直接沿用。
+            val rx = size.width * 0.45f
+            val warm = Color(0xFFFFD29D)
+            val cool = Color(0xFFA0CFFF)
+            val warmA = if (dark) 0.16f else 0.46f
+            val coolA = if (dark) 0.20f else 0.50f
+
+            // 提示词的 page-bg 是**椭圆**光晕（40rem × 26rem），而
+            // `Brush.radialGradient` 只会画正圆——没有 radiusY 参数。
+            // 所以这里画正圆，再用 withTransform 在 y 方向压扁成同样的长短轴比。
+            // 顺带一提：把光晕硬画成正圆会在宽屏上明显偏"胖"，那不是提示词的意思。
+            fun glow(color: Color, alpha: Float, cx: Float, cy: Float, aspect: Float) {
+                val c = Offset(cx, cy)
+                withTransform({ scale(1f, aspect, c) }) {
+                    drawRect(
+                        Brush.radialGradient(
+                            colors = listOf(color.copy(alpha = alpha), Color.Transparent),
+                            center = c,
+                            radius = rx,
+                        ),
+                    )
+                }
             }
+
+            // 先铺底色，再叠两团光晕。
+            drawRect(if (dark) Color(0xFF0F1520) else Color(0xFFF7F9FC))
+            glow(warm, warmA, size.width * -0.08f, size.height * 0.06f, 0.65f)   // 26/40
+            glow(cool, coolA, size.width * 1.08f, size.height * 0.09f, 0.625f)  // 25/40
         },
     ) {
         // 【根上兜底】Material3 的 LocalContentColor 默认是 Color.Black。任何漏写
@@ -764,15 +605,18 @@ fun SurfaceCard(
     dark: Boolean = androidx.compose.foundation.isSystemInDarkTheme(),
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val fill = if (dark) Color(0xFF1C1C20) else Color(0xFFFFFFFF)
-    val edge = if (dark) Color(0x14FFFFFF) else Color(0x0F1A1917)
+    // 三处暖色一起转冷：卡片底、发丝边、落影。原来 #1C1C20 / #1A1917 / #2A2620
+    // 都是配暖纸底调的，在冷白纸上会洇出一圈脏。alpha 一律不动——它们控制的是
+    // 卡片和纸面的分界强度，不看颜色。
+    val fill = if (dark) Color(0xFF18212F) else Color(0xFFFFFFFF)
+    val edge = if (dark) Color(0x14FFFFFF) else Color(0x0F202C40)
     Box(
         modifier
             .shadow(
                 elevation = if (dark) 2.dp else 10.dp,
                 shape = shape,
-                ambientColor = if (dark) Color.Black else Color(0xFF2A2620),
-                spotColor = if (dark) Color.Black else Color(0xFF2A2620),
+                ambientColor = if (dark) Color.Black else Color(0xFF375376),
+                spotColor = if (dark) Color.Black else Color(0xFF375376),
             )
             .clip(shape)
             .background(fill)

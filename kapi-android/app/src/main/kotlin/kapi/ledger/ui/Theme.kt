@@ -37,63 +37,91 @@ import androidx.compose.ui.unit.sp
  * 代价：这些令牌只能在 composable 里读。原来在非 composable 上下文（比如顶层
  * `val`）引用它们的地方会编译不过——编译器会直接指出来，不会静默跑偏。
  *
- * 深色档不是把浅色值调暗，而是重新配的：正文用接近纸白的暖灰（#EDE9E2），
- * 品牌绿提亮到 #8FCBB7 —— 原来的 #2D7A64 放到 #141412 上对比度只有 2.4:1，
- * 属于"看得见但读不了"。
+ * ## 当前是**冷蓝玻璃**这一套
+ *
+ * 取值来自 `workspace/kapi-visual-compare/index.html` 里 B 列「提示词风格」的
+ * 给定值，之前那套暖纸底 + 墨绿是为了对标 ColorOS 才留下的，底色、主色、墨色、
+ * 暗色、背景光晕整体换掉了。暖色并没有被完全丢弃——它缩成背景里左上角那一团
+ * 很淡的暖光晕，和右上角的冷光晕对位（见 `LiquidBackground`），这正是这套风格
+ * 和纯冷白最大的区别。
+ *
+ * 新值全部重新验过对比度（WCAG，对卡片 #FFFFFF / #18212F 实测）：
+ *
+ *            浅色(白卡片)      深色(深卡片)
+ *   Ink      14.04:1          13.88:1
+ *   InkSoft   5.29:1           8.01:1
+ *   InkFaint  3.03:1  ← 见下   4.95:1
+ *   Brand     5.17:1           5.71:1
+ *   Expense   4.72:1           6.42:1
+ *
+ * ⚠️ **InkFaint 浅色这一档是已知回归**：规格给的 #8296AE 只有 3.03:1，够 AA 大字
+ * 不够 AA 正文（4.5:1），而旧的暖纸底版本 #7A756D 是 4.57:1。InkFaint 同时是底栏
+ * 未选中 tab 的颜色，这一条要等真机实测底栏实际渲染出来的对比度之后再定，见
+ * 该令牌自己的注释。
  */
 val Paper: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF141412) else Color(0xFFF7F5F1)
+    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF0F1520) else Color(0xFFF7F9FC)
 
 val Surface: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF1D1D1A) else Color(0xFFFFFFFF)
+    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF18212F) else Color(0xFFFFFFFF)
 
 val Ink: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFFEDE9E2) else Color(0xFF1A1917)
+    @Composable get() = if (isSystemInDarkTheme()) Color(0xFFE8EEF7) else Color(0xFF202C40)
 
 // 两档灰都是**按对比度反推**出来的，不是照着另一档"调亮/调暗一点"。
-// 浅色底实测纯白 (255,255,255)，深色底实测 (28,28,32) 亮度 0.01182，
-// WCAG AA 对正文的要求是 4.5:1。实测值：
+// 浅色底实测纯白 (255,255,255)，深色底实测 #18212F，WCAG AA 对正文的要求是 4.5:1。
 //
-//            浅色(白底)        深色(近黑底)
-//   Ink       17.57:1          14.04:1
-//   InkSoft    7.06:1  #5C5852  7.78:1  #B4AFA5
-//   InkFaint   4.57:1  #7A756D  5.08:1  #918C83
+// 换到冷蓝这一套后三档全部重新量过（不是沿用暖白那版的数字）：
 //
-// 之前两档都是从对面直接搬数值的（浅色 InkFaint = 深色 InkSoft = #A8A39A），
-// 结果浅色下 2.51:1、深色下 3.16:1，**两头都不合格**。"深色 = 把颜色调暗"
-// 这个直觉在这里是错的：暗底上同一个 sRGB 数值读起来只会更灰，不会更亮。
-// 浅色侧同理——想留出第三档，InkSoft 就得先让出位置，否则第二档和第三档
-// 挤在一起谁也到不了 4.5:1。
+//            浅色(白卡片)      深色(#18212F)
+//   Ink       14.04:1          13.88:1
+//   InkSoft    5.29:1  #5B6D85  8.01:1  #A8B8CC
+//   InkFaint   3.03:1  #8296AE  4.95:1  #7E90A6
+//
+// 三档之间必须**都留出间距**，否则第二档和第三档挤在一起谁也到不了 4.5:1。
 //
 // InkFaint 同时也是底栏未选中 tab 的颜色，它一塌就是整个底栏跟着看不清。
+// ⚠️ 浅色这一档 3.03:1 **不满足 AA 正文**，是规格原值。它在这里是唯一一处
+//    没过线的：先用它，装机后量底栏实际渲染对比度，再决定是保留还是压深一档。
 val InkSoft: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFFB4AFA5) else Color(0xFF5C5852)
+    @Composable get() = if (isSystemInDarkTheme()) Color(0xFFA8B8CC) else Color(0xFF5B6D85)
 
 val InkFaint: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF918C83) else Color(0xFF7A756D)
+    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF7E90A6) else Color(0xFF8296AE)
 
 val Hairline: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF333230) else Color(0xFFE8E4DC)
+    @Composable get() = if (isSystemInDarkTheme()) Color(0x29FFFFFF) else Color(0xD1FFFFFF)
 
 val BrandDeep: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFFD7EDE6) else Color(0xFF1F5B4C)
+    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF9CC4FA) else Color(0xFF1F4699)
 
 val Brand: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF8FCBB7) else Color(0xFF2D7A64)
+    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF5C9BF0) else Color(0xFF2868D8)
 
+// BrandSoft 规格里没有给（它只出现在分类图标衬底上）。按冷蓝主色 #2868D8
+// 推的同族淡色：原来那对是墨绿的 #DDEBE6 / #1E3B33。
 val BrandSoft: Color
-    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF1E3B33) else Color(0xFFDDEBE6)
+    @Composable get() = if (isSystemInDarkTheme()) Color(0xFF1B3050) else Color(0xFFDCE7FA)
 
+// 收入/支出是**语义色**，不跟品牌色走：暖白那版里支出红就是 #C9482F，新规格
+// 原样保留，收入的绿也一并留着——换成蓝色的话「收入」和「支出」会同时变蓝，
+// 列表里正负号之外再没有颜色可分辨。
 val ExpenseRed: Color
     @Composable get() = if (isSystemInDarkTheme()) Color(0xFFE88A75) else Color(0xFFC9482F)
 
 val IncomeGreen: Color
     @Composable get() = if (isSystemInDarkTheme()) Color(0xFF7FC7A4) else Color(0xFF2C7A55)
 
-// 汇总卡的渐变：从品牌色到略深的墨绿，纵向。纯平涂在浅色底上会显得"贴片"。
-val SummaryGradient = Brush.verticalGradient(
-    listOf(Color(0xFF2F7A66), Color(0xFF1D564A))
-)
+// 汇总卡的渐变：从品牌色到略深的一档，纵向。纯平涂在浅色底上会显得"贴片"。
+//
+// 做成主题感知属性是因为冷蓝这套的深色档是**另一个色**：深色下汇总卡不是
+// "把浅色那对蓝调暗"，而是整体退到 #22509F→#163561——它在深底上要当一块
+// 沉进去的实体面板，不能比正文还跳。
+val SummaryGradient: Brush
+    @Composable get() = if (isSystemInDarkTheme())
+        Brush.verticalGradient(listOf(Color(0xFF22509F), Color(0xFF163561)))
+    else
+        Brush.verticalGradient(listOf(Color(0xFF3B7AE4), Color(0xFF22509F)))
 
 /**
  * 结余为负时用的那一版。
@@ -110,35 +138,36 @@ val SummaryGradientDown = Brush.verticalGradient(
 // 而 colorScheme 是顶层常量，在非 composable 上下文里读不到。两组值的对应关系
 // 记在每行注释里，改令牌时一并核对。
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF2D7A64),          // Brand 浅色档
+    primary = Color(0xFF2868D8),           // Brand 浅色档
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFDDEBE6),  // BrandSoft 浅色档
-    onPrimaryContainer = Color(0xFF1F5B4C), // BrandDeep 浅色档
-    secondary = Color(0xFF6E6A63),        // InkSoft 浅色档
+    primaryContainer = Color(0xFFDCE7FA),  // BrandSoft 浅色档
+    onPrimaryContainer = Color(0xFF1F4699), // BrandDeep 浅色档
+    secondary = Color(0xFF5B6D85),         // InkSoft 浅色档
     onSecondary = Color.White,
-    background = Color(0xFFF7F5F1),       // Paper 浅色档
-    onBackground = Color(0xFF1A1917),     // Ink 浅色档
-    surface = Color(0xFFFFFFFF),          // Surface 浅色档
-    onSurface = Color(0xFF1A1917),        // Ink 浅色档
-    surfaceVariant = Color(0xFFEFEDE7),
-    onSurfaceVariant = Color(0xFF6E6A63), // InkSoft 浅色档
-    outline = Color(0xFFE8E4DC),          // Hairline 浅色档
-    error = Color(0xFFC9482F),            // ExpenseRed 浅色档
+    background = Color(0xFFF7F9FC),        // Paper 浅色档
+    onBackground = Color(0xFF202C40),      // Ink 浅色档
+    surface = Color(0xFFFFFFFF),           // Surface 浅色档
+    onSurface = Color(0xFF202C40),         // Ink 浅色档
+    surfaceVariant = Color(0xFFEDF1F8),
+    onSurfaceVariant = Color(0xFF5B6D85),  // InkSoft 浅色档
+    outline = Color(0xD1FFFFFF),           // Hairline 浅色档
+    error = Color(0xFFC9482F),             // ExpenseRed 浅色档
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF8FCBB8),
-    onPrimary = Color(0xFF00382C),
-    primaryContainer = Color(0xFF205546),
-    onPrimaryContainer = Color(0xFFD7EDE6),
-    secondary = Color(0xFFB4AFA6),
-    background = Color(0xFF141412),
-    onBackground = Color(0xFFEDE9E2),
-    surface = Color(0xFF1D1D1A),
-    onSurface = Color(0xFFEDE9E2),
-    surfaceVariant = Color(0xFF2B2A26),
-    onSurfaceVariant = Color(0xFFA8A39A),
-    outline = Color(0xFF44423D),
+    primary = Color(0xFF5C9BF0),
+    // onPrimary 压在 #5C9BF0 上：白字只有 2.5:1，不合格；深墨 #0A1220 有 7.9:1。
+    onPrimary = Color(0xFF0A1220),
+    primaryContainer = Color(0xFF1B3050),
+    onPrimaryContainer = Color(0xFF9CC4FA),
+    secondary = Color(0xFFA8B8CC),
+    background = Color(0xFF0F1520),
+    onBackground = Color(0xFFE8EEF7),
+    surface = Color(0xFF18212F),
+    onSurface = Color(0xFFE8EEF7),
+    surfaceVariant = Color(0xFF222E42),
+    onSurfaceVariant = Color(0xFFA8B8CC),
+    outline = Color(0x29FFFFFF),
     error = Color(0xFFE88A75),
 )
 
