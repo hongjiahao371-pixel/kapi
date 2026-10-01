@@ -353,4 +353,43 @@ class RealScreenFalsePositiveTest {
             gate is PaymentGate.Verdict.LooksLikePayment,
         )
     }
+
+    /**
+     * 屏还没稳定时不记——**金额错了比商户错了严重得多**。
+     *
+     * 2026-10-01 realme 抓到的那一条 `-3.99 / 加载中` 就是现场：详情页还在加载，
+     * 第一行是「加载中」，而金额已经出现了。商户是脏的可以事后改，**金额是错的
+     * 就没法事后改**——它会一直躺在账本里污染统计，而用户不会发现。
+     *
+     * 沉降延迟（1.2 秒）是个估计值，支付宝这一屏的详情是异步补的，没等到。
+     * 与其赌延迟调多大合适，不如让屏自己说"我还没准备好"。
+     */
+    @Test
+    fun `a half loaded screen is never recorded`() {
+        val halfLoaded = """
+            加载中
+            微雪**店
+            支出244.93元
+            支付时间
+            2026-09-29 16:03:25
+            交通银行立减金
+        """.trimIndent()
+        val gate = PaymentGate.verdict(halfLoaded)
+        assertEquals(
+            "半屏状态的金额可能不对，宁可不记",
+            false,
+            gate is PaymentGate.Verdict.LooksLikePayment,
+        )
+    }
+
+    /**
+     * 但沉降正常时不能连坐——最终形态那一屏必须照记。
+     *
+     * 这一对放在一起才有意义：只写前一条，形状闸就会被调坏去挡所有支付宝详情页。
+     */
+    @Test
+    fun `the settled version of the same screen is still recorded`() {
+        val gate = PaymentGate.verdict(alipayPaymentDetail.joinToString("\n") { it.text })
+        assertTrue("沉降之后必须照记，实际 $gate", gate is PaymentGate.Verdict.LooksLikePayment)
+    }
 }

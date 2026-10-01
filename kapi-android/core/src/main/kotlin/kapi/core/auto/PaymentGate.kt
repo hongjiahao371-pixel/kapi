@@ -146,6 +146,17 @@ object PaymentGate {
     )
 
     /**
+     * 页面**还没稳定**的占位词。命中就不记。
+     *
+     * 只收"明确表示还在等"的词，不收网络类抱怨（`网络异常` 常常和
+     * "重试" 一起出现，而重试之后页面会正常——那时候我们宁可等沉降延迟
+     * 再读一次，也不要因为一句报错就永远不记这一笔）。
+     */
+    private val LOADING_HINTS = listOf(
+        "加载中", "正在加载", "加载失败", "请稍候", "请稍等", "稍候",
+    )
+
+    /**
      * 金额的宽松形态，够用来数"这段文字里有几笔钱"。
      *
      * **必须和 [kapi.core.llm.LocalTextParser.AMOUNT_PATTERNS] 认的东西一致。**
@@ -243,6 +254,20 @@ object PaymentGate {
         val amountCount = AMOUNT.findAll(t).count()
 
         if (amountCount == 0) return Verdict.NotPayment("没有金额")
+
+        // 屏还没稳定就不记。**必须在数金额之前判。**
+        //
+        // 2026-10-01 realme 支付宝：详情页还在加载时读到的那一屏，第一行就是
+        // `加载中`，而金额恰好已经出现了——于是生成了一条 `-3.99 / 加载中` 的草稿。
+        // 商户是脏的，可以事后改；**金额是错的就没法事后改了**，错账会一直污染统计，
+        // 而用户不会发现。所以这一条要卡在解析之前。
+        //
+        // 沉降延迟（KapiAccessibilityService 的 SETTLE_DELAY_MS）是 1.2 秒，
+        // 那是个**估计值**：支付宝这一屏的详情是异步补的，1.2 秒不够。
+        // 与其赌延迟调大到多少合适，不如让屏自己说"我还没准备好"。
+        LOADING_HINTS.firstOrNull { lower.contains(it) }?.let {
+            return Verdict.NotPayment("页面还在加载中（命中「$it」），这一屏不是最终形态")
+        }
 
         // 会话/消息列表页：在看任何动词之前挡掉。
         // 这些页面里每条消息都自带完整金额和"成功"字样，靠动词分辨不出来。
