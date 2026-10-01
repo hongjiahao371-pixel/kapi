@@ -252,6 +252,28 @@ fun KapiRoot() {
         snapshotFlow { settingsScroll.value }.collect { frostedSettings.scrollTo(it) }
     }
 
+    // 顶部磨砂的开关：**只看"滚没滚离顶部"，不看滚了多少**。
+    //
+    // 试过用 firstVisibleItemScrollOffset 直接驱动磨砂强度，结果是快速滑动时
+    // 顶部那条带子会跟着内容一起"呼吸"——滚得猛就糊、滚得慢就透，读起来像
+    // 画面在抖。ColorOS 那边也是二值的：滚了就磨，没滚就平。8px 是为了吃掉
+    // 弹性滚动回弹时那一点点残余位移。
+    val topScrolled = when (current) {
+        is Screen.Ledger -> ledgerList.firstVisibleItemIndex > 0 ||
+            ledgerList.firstVisibleItemScrollOffset > 8
+        is Screen.Drafts -> draftsList.firstVisibleItemIndex > 0 ||
+            draftsList.firstVisibleItemScrollOffset > 8
+        is Screen.Stats -> statsList.firstVisibleItemIndex > 0 ||
+            statsList.firstVisibleItemScrollOffset > 8
+        is Screen.Settings -> settingsScroll.value > 8f
+        else -> false
+    }
+    val topFrost by animateFloatAsState(
+        targetValue = if (topScrolled) 1f else 0f,
+        animationSpec = tween(200),
+        label = "topFrost",
+    )
+
     // 页面推移方向。在**点击的那一刻**就算好：等到 AnimatedContent 重组时再比
     // 前后索引，两次点击之间的中间态已经丢了，方向会随机翻转。
     var navDirection by remember { mutableIntStateOf(1) }
@@ -334,6 +356,14 @@ fun KapiRoot() {
             }
 
         }
+
+        TopAura(
+            topInset = topInset,
+            frost = topFrost,
+            dark = dark,
+            frostedContent = { ScreenBody(current, frosted = true) },
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
 
         BottomBar(
             current = current,

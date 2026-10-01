@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
@@ -487,6 +488,172 @@ fun GlassSurface(
         // 删的理由和实测数据写在 `object Glass` 末尾那段注释里。
 
         content()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 顶部光效
+// ---------------------------------------------------------------------------
+
+/**
+ * 顶部光效 = **常驻微光** + **滚动磨砂**。
+ *
+ * ## 为什么原来那块读成"白条"
+ *
+ * 原先顶部什么都没有，`LiquidBackground` 的竖向渐变在 y=0 是 `#F1EEE8`、到 45%
+ * 才是 `#F8F6F2`，于是最上面天然比中段暗一截；再叠一道 alpha 0.10 的绿，一眼看过去
+ * 就是"一条颜色略深的横带"——**平涂就是白条，跟它多暗、多绿无关**。
+ *
+ * 真机实测（OPPO PMA110，账本页 x=200）：y=0..200 稳定在 `(230,231,224)`，
+ * 一个数都没变。对比同屏中段纸色 `(247,245,241)`——顶上比中段暗 17 级，
+ * 且**完全没有梯度**。所以要修的不是颜色，是"它太平"。
+ *
+ * ## ColorOS 上是什么（同一台机器实测，别照着想象做）
+ *
+ * - 设置页**静止**时：顶部是**完全平涂 `#F0F1F2`**，y=0..450 每个像素都是
+ *   `(240,241,242)`。**没有光效。**
+ * - 相册页：同样平涂 `#F0F1F2`，460px 高。**也没有光效。**
+ * - 设置页**滚动后**：顶部才变成磨砂——列表内容（红 SOS 图标、"SOS 紧急联络"）
+ *   滚上去被磨成残影，搜索框同时浮成磨砂胶囊。
+ *
+ * 结论：ColorOS 那个"不是白条"的效果**只在滚动时存在**，本质是内容透出被磨掉。
+ * 本函数把它拆成两半，两半都要：微光负责静止时的质感，磨砂负责滚动时的通透。
+ *
+ * @param frost 0..1，滚动磨砂强度。调用方按"当前列表是否已滚离顶部"驱动并做动画。
+ * @param frostedContent 内容副本。**只画到 [TopAura] 那条带子那么高**——
+ *   底栏那份副本是按整屏高度测量的，顶部没必要再付一次全屏合成的钱。
+ */
+@Composable
+fun TopAura(
+    topInset: Dp,
+    frost: Float,
+    dark: Boolean = false,
+    frostedContent: (@Composable () -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    val band = topInset + 6.dp
+    val blurPx = with(density) { Glass.BLUR.toPx() }
+    val stripDp = band + Glass.BLUR * 2
+    val stripPx = with(density) { stripDp.toPx() }
+    val veil = if (dark) Glass.TintDark else Glass.BarTint
+
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(band)
+            // 先糊后裁：模糊要拿到带子外那两截 BLUR 的邻居像素，否则下缘会发虚。
+            // 裁发生在本节点，模糊在子节点上，次序和 GlassSurface 一致。
+            .clipToBounds(),
+    ) {
+        // ① 滚动磨砂。
+        if (frost > 0.01f && frostedContent != null && glassBlurAvailable()) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(stripDp)
+                    .graphicsLayer {
+                        renderEffect = BlurEffect(blurPx, blurPx, TileMode.Clamp)
+                        alpha = frost
+                    },
+            ) {
+                // 副本视口就等于 stripPx——和底栏那份"按整屏高度测量"不同，
+                // 这里只合成落在这条带子里的那几个 item。坐标依然对得上：
+                // 带子顶端就是屏幕顶端，副本 place(0,0) 即是屏幕 y=0。
+                Box(
+                    Modifier.layout { measurable, constraints ->
+                        val placed = measurable.measure(
+                            Constraints(
+                                minWidth = constraints.maxWidth,
+                                maxWidth = constraints.maxWidth,
+                                minHeight = stripPx.roundToInt(),
+                                maxHeight = stripPx.roundToInt(),
+                            )
+                        )
+                        layout(constraints.maxWidth, stripPx.roundToInt()) {
+                            placed.place(0, 0)
+                        }
+                    },
+                ) {
+                    // 【关键】副本必须自带不透明底，否则模糊的是空气不是内容。
+                    // 理由和 GlassSurface 里那段一样，此处不再重复。
+                    LiquidBackground(dark = dark) { frostedContent() }
+                }
+            }
+
+            // 磨砂之上的雾。模糊本身不够——文字只是"糊了"，不是"隔着一层玻璃"，
+            // 还得压一层中性白。这一层同时承担渐隐：上缘重、下缘轻。
+            Box(
+                Modifier.matchParentSize().drawBehind {
+                    drawRect(
+                        Brush.verticalGradient(
+                            0f to veil.copy(alpha = veil.alpha * 0.95f * frost),
+                            1f to veil.copy(alpha = veil.alpha * 0.55f * frost),
+                        )
+                    )
+                }
+            )
+
+            // 下缘一道亮边。没有它，磨砂区只是"上面糊了一点"，
+            // 读不出这是一条独立的玻璃；有了它，带子才和正文**脱开**。
+            Box(
+                Modifier.matchParentSize().drawBehind {
+                    val t = 1.dp.toPx()
+                    val edge = if (dark) Color(0x40FFFFFF) else Color(0xE6FFFFFF)
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            1f to edge.copy(alpha = edge.alpha * frost),
+                            startY = size.height - t,
+                            endY = size.height,
+                        ),
+                        topLeft = Offset(0f, size.height - t),
+                        size = Size(size.width, t),
+                    )
+                }
+            )
+        }
+
+        // ② 常驻微光。滚不滚动都在，是"这块玻璃被上方光源照着"的那层光。
+        //
+        // 【为什么用竖向渐变而不是径向】第一版用的是径向（圆心在带子上方），
+        // 看着像光，量出来根本不是：
+        //   白色 0.60 提亮后 L≈244，接着深绿 0x2D7A64（L=89，比纸面暗 140）
+        //   以 0.14 叠上去，直接把亮度吃回 222——**比不画还暗 6 级**，
+        //   顶部于是比下方纸面更沉更绿，恰好就是"一条白条"被强化的样子。
+        //   而且径向渐变在带底还剩 0.2 左右的不透明度，y≈185 处一刀硬切。
+        //
+        // 现在两层都走竖向渐变，且**都在带底收到完全透明**：
+        //   ① 白色提亮，负责"亮"；② 极淡品牌绿，负责"不是纯白"。
+        // 绿只给 0.055——再高就又变成压暗。
+        Box(
+            Modifier.matchParentSize().drawBehind {
+                if (dark) {
+                    drawRect(
+                        Brush.verticalGradient(
+                            0f to Color(0xFF4A4A55).copy(alpha = 0.40f),
+                            0.5f to Color(0xFF2A2A32).copy(alpha = 0.18f),
+                            1f to Color.Transparent,
+                        )
+                    )
+                } else {
+                    drawRect(
+                        Brush.verticalGradient(
+                            0f to Color(0xFFFFFFFF).copy(alpha = 0.62f),
+                            0.45f to Color(0xFFFFFFFF).copy(alpha = 0.22f),
+                            1f to Color.Transparent,
+                        )
+                    )
+                    drawRect(
+                        Brush.verticalGradient(
+                            0f to Color(0xFF2D7A64).copy(alpha = 0.055f),
+                            0.45f to Color(0xFF2D7A64).copy(alpha = 0.020f),
+                            1f to Color.Transparent,
+                        )
+                    )
+                }
+            }
+        )
     }
 }
 
