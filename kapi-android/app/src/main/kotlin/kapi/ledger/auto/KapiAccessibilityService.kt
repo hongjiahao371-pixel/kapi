@@ -33,20 +33,73 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * 所以这个类里**不存在**任何会改变屏幕状态的调用。这不是疏忽，是它存在的意义。
  *
- * ## 微信、支付宝到底能不能读（2026-09-30 真机实测）
+ * ## 微信、支付宝到底能不能读（**分设备**，2026-09-30 / 2026-10-01 两次真机实测）
  *
- * **能读。** OPPO PMA110 / Android 17 / 微信 8.0.78 上，微信照常派发无障碍事件，
- * 节点树读得到（`am start` 冷启动读到 88 个节点）；用户手动走 我→服务→钱包→账单
- * 也能读到金额和商户名。工行、招行、交行、中行、云闪付、支付宝同样可读。
+ * ### 2026-09-30　OPPO PMA110 / Android 17 / 微信 8.0.78：**能读**
  *
- * 早先这里写的是「微信/支付宝会调 `setImportantForAccessibility(NO)` 屏蔽子树、
- * 失效率很高」。那是**错的**，错因是测法：三轮「拉起微信」都用的是
- * `adb shell monkey -p com.tencent.mm -c LAUNCHER 1`，而 App 已经在前台时
- * `monkey` **不产生窗口切换事件**，无障碍只在界面变化时回调——
- * 于是拿着自己造出来的 0 条事件断言了"对方屏蔽读屏"。
- * 拉前台要用 `am start -n <pkg>/<activity>`，它会真的产生 WINDOW_STATE_CHANGED。
+ * 微信照常派发无障碍事件，节点树读得到（`am start` 冷启动读到 88 个节点）；用户手动走
+ * 我→服务→钱包→账单 也能读到金额和商户名。工行、招行、交行、中行、云闪付、支付宝同样可读。
  *
- * 通知栏那条路仍然是重要的补充通路，但**不是**因为读屏走不通。
+ * ### 2026-10-01　realme RMX3852 / Android 16 / 微信 8.0.78（**同一个微信版本**）：**读不到**
+ *
+ * **微信在这台机器上完全不向无障碍暴露界面**，而且不是 WebView 页的问题，是全部页面：
+ *
+ * ```
+ * 画面：转账详情页，内容极其完整
+ *       转账-转给橘生 / −0.10 / 当前状态 等待对方确认收钱 /
+ *       转账时间 2026年10月1日 14:45:40 / 支付方式 中国银行储蓄卡(0416) /
+ *       转账单号 1000050001202610010626797537039
+ * 无障碍树：
+ *       <node index="0" text="" package="com.tencent.mm"
+ *             content-desc="" bounds="[0,0][0,0]" />
+ * ```
+ *
+ * 一个**零尺寸**的空节点。逐页验过：
+ * | 页面 | 窗口 | 节点/文字 |
+ * |---|---|---|
+ * | 转账详情 | `plugin.webview.ui.tools.MMWebViewUI` | 1 / 0 |
+ * | plugin 页 | `plugin.mall.ui.MallIndexUIv2` | 1 / 0 |
+ * | **原生聊天列表** | `ui.LauncherUI` | 1 / 0 |
+ *
+ * 同一个 `uiautomator dump` 和本服务**两个互相独立的读取方**给出同一结果
+ * （本服务打的是 `com.tencent.mm 的屏幕上没有可读文字`），
+ * 所以不是"我们读错了"，是**树里确实什么都没有**。
+ *
+ * ### 同版本、不同结果 ⇒ 变量在设备/ROM 上，不在微信版本上
+ *
+ * 两台机器微信都是 8.0.78，读出来一个 88 节点一个 1 节点。
+ * **所以"微信能读"不是一条可以照搬的结论**，它是有前提的。
+ *
+ * ### 对照组是必需的：同一时刻支付宝读得好好的
+ *
+ * 同一台机器、同一时刻：
+ * - 系统设置：**39 节点 / 9 文字**
+ * - 支付宝首页：**290 节点 / 45 文字**，本服务实际读到 68 节点，
+ *   并正确判成 `不是一笔支付：整屏 68 个节点，没有任何金额`（首页确实不是支付页）
+ * - 微信：**1 节点 / 0 文字**
+ *
+ * 读屏通路本身没坏，支付宝就是证明。**遇到"读不到"时，先跑一个已知能通的 App 做对照**，
+ * 否则分不清是"对方不暴露"还是"我们这边坏了"——这正是 [lastTraced] 那段要求的做法。
+ *
+ * 尚未查清变量：同版本不同结果，是厂商 ROM 的差异、还是与本机某个设置有关。
+ * **下结论前先复测**：
+ * ```
+ * adb shell dumpsys window | grep mCurrentFocus
+ * adb shell uiautomator dump /sdcard/x.xml && adb shell cat /sdcard/x.xml
+ * ```
+ *
+ * 通知栏那条路对微信仍然是**唯一**可用通路，不是"补充"。
+ *
+ * ### 早先的两次误判，都留在这里当反面教材
+ *
+ * ① 写「微信/支付宝会调 `setImportantForAccessibility(NO)` 屏蔽子树、失效率很高」。
+ * 错因是测法：三轮「拉起微信」都用 `adb shell monkey -p com.tencent.mm -c LAUNCHER 1`，
+ * 而 App 已在前台时 `monkey` **不产生窗口切换事件**——拿着自己造出来的 0 条事件
+ * 断言了"对方屏蔽读屏"。拉前台要用 `am start -n <pkg>/<activity>`。
+ *
+ * ② 反过来把 OPPO 那一台的结果当成普遍结论写进本注释，于是 2026-10-01 在 realme 上
+ * 排查时，第一反应是"权限没接上"，绕了一圈。**一次成功的实测不等于一条规律。**
+
  */
 class KapiAccessibilityService : AccessibilityService() {
 
@@ -113,6 +166,21 @@ class KapiAccessibilityService : AccessibilityService() {
      * 「我这套测法能测出东西」——拿一个已知能通的输入（另一个 App、或换一个拉起方式）
      * 跑一遍，对照成立之后，空日志才终于能说明问题。
      *
+     * ## 入口行和「为什么提前返回」必须各占一份额度
+     *
+     * 曾经两条共用 [lastTraced] 里同一个 pkg 的额度，而入口行是先写的那一条——
+     * 于是 [readScreen] 里每一句提前返回的理由（不在白名单、开关被关、读不到屏幕）
+     * 都在写完入口行**同一毫秒内**被 5 秒窗口吞掉。
+     *
+     * 后果不是"少几行日志"，而是**这一整段设计的意义被自己废掉**：
+     * 它的全部作用就是让"事件进来了但我们提前返回"和"事件压根没来"在日志里可区分，
+     * 而共用额度之后这两种情况又变成了同一个样子——只剩一行孤零零的入口行。
+     * 2026-10-01 在 realme 上就是这样：只看到 `事件 com.tencent.mm：type=32`，
+     * 既看不出是哪种提前返回，也看不出后面其实还有一句"屏幕上没有可读文字"要等
+     * 30 秒的 warn 节流放行。查这一条花掉的功夫，超过了它本该省下的。
+     *
+     * 所以 [slot] 把两者分开计数。
+     *
      * ## 为什么不直接去掉节流
      *
      * 支付成功页的动画一秒能派发十几次 `TYPE_WINDOW_CONTENT_CHANGED`，
@@ -120,11 +188,12 @@ class KapiAccessibilityService : AccessibilityService() {
      */
     private val lastTraced = ConcurrentHashMap<String, Long>()
 
-    private fun traceThrottled(pkg: String, message: String) {
+    private fun traceThrottled(pkg: String, message: String, slot: String = "why") {
+        val key = "$pkg|$slot"
         val now = System.currentTimeMillis()
-        val last = lastTraced[pkg] ?: 0L
+        val last = lastTraced[key] ?: 0L
         if (now - last < TRACE_COOLDOWN_MS) return
-        lastTraced[pkg] = now
+        lastTraced[key] = now
         Log.d(TAG, "事件 $pkg：$message")
     }
 
@@ -163,7 +232,9 @@ class KapiAccessibilityService : AccessibilityService() {
         val type = event?.eventType ?: -1
         // 入口无条件留痕。理由见 [lastTraced]：没有这一行，
         // 「微信屏蔽读屏」和「我们自己提前 return」在日志里完全同形。
-        traceThrottled(pkg, "type=$type")
+        // slot="entry" 让它和下面 readScreen 里的失败理由各占一份节流额度——
+        // 共用额度会把"为什么提前返回"吞掉，这一行的意义就没了。
+        traceThrottled(pkg, "type=$type", slot = "entry")
 
         if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             type != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
