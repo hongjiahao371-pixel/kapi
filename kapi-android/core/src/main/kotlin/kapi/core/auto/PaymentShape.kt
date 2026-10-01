@@ -134,6 +134,107 @@ object PaymentShape {
         "拼团", "首单", "新人专享", "最高可省", "随机立减", "开卡", "抽红包",
     )
 
+    /**
+     * **金额调整项**标签。带这些的金额是**这一笔自己的加减法**，不是另一笔记录。
+     *
+     * 2026-10-01 realme 真机：支付宝支付详情页上并排两个金额——
+     * ```
+     * 微雪**店
+     * 支出244.93元        ← 订单金额
+     * 等待确认收货
+     * 交通银行立减金        ← 这一行是**标签**
+     * -1.98               ← 金额在**下一个节点**，自己不带任何标签
+     * 支付时间
+     * ```
+     * `交通银行立减金` 本身因为命中 [PROMO_LABELS] 的「立减」被排除掉了，
+     * 而 `-1.98` 是**另一个节点**、不含任何词，`noLabelIn` 判它"无标签"，
+     * 于是 plain 数到 2，撞上 [MANY_THRESHOLD]，**一笔真实的支付被当成一屏记录挡掉**。
+     *
+     * 金额和对方怎么拆分节点有关，而那是渲染实现细节——我们不能假设
+     * 「立减金」和「1.98」一定在同一个节点里。
+     *
+     * ## 为什么单独一档，不并进 [COMPONENT_LABELS] 或 [PROMO_LABELS]
+     *
+     * 构成项（实付/运费/合计）带在**金额自己那个节点**上；
+     * 促销位（免密/首单/秒杀）是**营销文案**，它的数字不属于任何一笔账。
+     * 而调整项是第三种：**它属于这一笔，但标签和值被拆到了两个节点**。
+     * 三者判定方式不同，混在一起就会出现「支付宝首页那笔 55 元被旁边的
+     * 免密 banner 连坐」这种反向误杀（见 RealScreenFalsePositiveTest）。
+     */
+    private val ADJUSTMENT_LABELS = listOf(
+        "立减金", "立减", "优惠", "红包", "优惠券", "折扣", "津贴", "返现", "抵扣",
+    )
+
+    /**
+     * 这个金额是不是某个调整项的值。
+     *
+     * **只看后一行**（值在前、标签在后），这是本树的真实形状。
+     * 2026-10-01 realme 支付宝支付详情页，服务自己打出来的原始行序：
+     * ```
+     * -1.98 │ 交通银行立减金 │ 极速付款 │ 管理极速付款 │ 等待确认收货 │
+     * 支出244.93元 │ 微雪**店
+     * ```
+     * 和 [PaymentId] 类注释里记的一致：**值在标签前面**。
+     *
+     * ## 这里的坑：不能用 `uiautomator dump` 的顺序
+     *
+     * 同一屏，`uiautomator dump` 给的顺序是**反的**（它按布局从上到下排，
+     * 原始树按 DOM）。照着 dump 的顺序写单测，测试会绿，真机不生效——
+     * 2026-10-01 第一次修就是这么白跑一轮。判邻接关系只能用服务自己打的
+     * `原始行序` 那行日志。
+     *
+     * 前一行那个方向**不能**判，否则会连坐：
+     * ```
+     * 支出55元 │ 交通银行立减金 │ -1.98
+     * ```
+     * `支出55元` 的下一行是调整项标签，它会被一起摘出去，整屏就只剩一个
+     * 「立减金」，落到"没有任何一笔消费"那一档。
+     * `RealScreenFalsePositiveTest` 里 `a discount label does not swallow the
+     * neighbouring real spend` 钉的就是这一屏。
+     */
+    private fun isAdjustmentAmount(idx: Int, texts: List<String>): Boolean {
+        val next = texts.getOrNull(idx + 1) ?: return false
+        return ADJUSTMENT_LABELS.any { next.contains(it) }
+    }
+
+    /**
+     * 某一行的下一行是不是调整项标签——用来把「标签行」也一起摘掉。
+     *
+     * 只判「这一行本身是调整项标签」，不判金额：金额那一行由
+     * [isAdjustmentAmount] 负责。两者合起来才是一整条调整项记录。
+     */
+    private fun isAdjustmentLabel(idx: Int, texts: List<String>): Boolean =
+        ADJUSTMENT_LABELS.any { texts[idx].contains(it) }
+
+    /**
+     * 剔掉调整项行（标签 + 它那个金额），剩下的才是"页面本身在讲什么"。
+     *
+     * ## 支付门为什么也需要它
+     *
+     * 形状闸数的是"有几个独立记录"，剔掉调整项就够。但 [PaymentGate] 的促销词
+     * 检查是**对整屏做子串匹配**的，于是支付详情页上那一行
+     * `交通银行立减金` 会把整屏判成促销页：
+     * ```
+     * 丢弃[A11Y/com.eg.android.AlipayGphone]：出现了促销词「立减」
+     * ```
+     * 而「这一笔减了 1.98」是**这一笔的明细**，它不说明页面性质。
+     *
+     * 所以同一份"哪些行属于调整项"的判断要给两道门共用——它们问的问题不同
+     * （一个问"有几笔"，一个问"这是不是促销页"），但前提是同一件事：
+     * **立减金是这一笔的一部分，不是另一个页面。**
+     */
+    fun withoutAdjustmentRows(text: String): String {
+        val lines = text.lines()
+        if (lines.size < 2) return text
+        val drop = HashSet<Int>()
+        for (i in lines.indices) {
+            if (isAdjustmentLabel(i, lines)) drop.add(i)
+            if (isAdjustmentAmount(i, lines)) drop.add(i)
+        }
+        if (drop.isEmpty()) return text
+        return lines.filterIndexed { i, _ -> i !in drop }.joinToString("\n")
+    }
+
     /** 超过这个长度的节点是整条消息/整段描述，不是一笔。 */
     private const val MAX_SHORT_CHARS = 24
 
@@ -152,10 +253,19 @@ object PaymentShape {
         if (texts.isEmpty()) return Verdict.ManyTransactions("屏幕上没有可读文字")
 
         // 只看短节点里的金额。长的多半是整条消息/整段描述。
-        val amountNodes = texts.filter { t ->
-            t.length <= MAX_SHORT_CHARS && t.any { it.isDigit() } && AMOUNT.containsMatchIn(t)
-        }
-        val plain = amountNodes.noLabelIn()
+        // **带下标**：调整项要靠相邻行判定（见 isAdjustmentAmount）。
+        val amountIdx = texts.withIndex()
+            .filter { (_, t) ->
+                t.length <= MAX_SHORT_CHARS && t.any { it.isDigit() } && AMOUNT.containsMatchIn(t)
+            }
+            .map { it.index to it.value }
+        val amountNodes = amountIdx.map { it.second }
+
+        // 调整项（立减金/优惠/红包…）的金额先摘出去——它是这一笔的加减法，
+        // 留在里面会被数成第二笔记录，把真实的支付整屏挡掉。
+        val adjustments = amountIdx.filter { (i, _) -> isAdjustmentAmount(i, texts) }
+            .map { it.second }.toSet()
+        val plain = amountNodes.filterNot { it in adjustments }.noLabelIn()
         val component = amountNodes.filter { node -> COMPONENT_LABELS.any { node.contains(it) } }
 
         if (plain.size >= MANY_THRESHOLD) {

@@ -319,6 +319,16 @@ class KapiAccessibilityService : AccessibilityService() {
                 // 和"这一屏压根没读过"在日志里长得一模一样——
                 // 23:33 那次漏记就是这么查了半天才发现不是没事件，是事件被吞了。
                 Log.w(TAG, "$pkg 不是一笔支付：${w.why}")
+                // 原始行序一并打出来。误判排查缺的就是这个：
+                // `uiautomator dump` 的节点顺序和无障碍原始树**不一样**
+                // （它按布局排序，原始树按 DOM），照着 dump 的顺序推邻接关系
+                // 一定会推错——2026-10-01 修支付宝立减金时就是这么错的，
+                // 单元测试用的是 dump 顺序、通过了，真机却没生效。
+                warnThrottled(
+                    pkg,
+                    "这一屏的原始行序（判邻接关系只能用这个，不能用 uiautomator dump）：\n" +
+                        nodes.joinToString(" │ ") { it.text }.take(700),
+                )
                 return false
             }
             is PaymentShape.Verdict.OneTransaction -> {

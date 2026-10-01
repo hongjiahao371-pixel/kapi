@@ -5,6 +5,7 @@ import kapi.core.auto.PaymentShape.Verdict
 import kapi.core.llm.Direction
 import kapi.core.llm.LocalTextParser
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -232,6 +233,123 @@ class RealScreenFalsePositiveTest {
         assertEquals(
             "账单列表页不该被判定成刚发生的一笔",
             false,
+            gate is PaymentGate.Verdict.LooksLikePayment,
+        )
+    }
+
+    // --------------------------------- 支付宝支付详情页：立减金把真支付挡掉了（误杀）
+
+    /**
+     * 2026-10-01 realme RMX3852 / 支付宝 12.12.30.8000 支付详情页。
+     *
+     * 下面是**服务自己打出来的原始行序**（`KapiA11y` 日志里的「原始行序」），
+     * 不是 `uiautomator dump` 的顺序——后者是反的。第一版修法照着 dump 写，
+     * 单测绿、真机不生效，白跑一轮。
+     *
+     * 这是**反向**的错：不是把假账当真账，而是把**真账挡掉**。
+     * 用户看到的现象是"点开支付详情页，什么都没记"，界面上没有任何异常提示。
+     *
+     * 那一屏有两个金额，而它们是同一笔的两项：
+     * ```
+     * -1.98 │ 交通银行立减金        ← 值在前，标签在后
+     * 支出244.93元 │ 微雪**店        ← 订单金额 + 商户
+     * ```
+     * `-1.98` 自己不带任何标签，而 `交通银行立减金` 在它**下一行**，
+     * 于是被数成第二个"无标签金额"，撞上阈值 2 整屏挡掉。
+     *
+     * 危害等级和假账一样高：漏记是**静默**的，用户以为记了、其实没有。
+     */
+    private val alipayPaymentDetail = listOf(
+        "账单详情",
+        "返回",
+        "对此订单有疑问",
+        "往来流水证明",
+        "AA收款",
+        "查看往来记录",
+        "申请商家售后",
+        "添加",
+        "备注",
+        "开关",
+        "计入收支",
+        "买软件",
+        "为您推荐",
+        "请选择",
+        "标签",
+        "数码电器",
+        "账单分类",
+        "我的消费图鉴",
+        "账单管理",
+        "更多",
+        "共1件",
+        "微雪 ESP32-P4开发板 支持WIFI6和蓝牙5 4.3寸触控屏幕小智AI语音",
+        "O1CN012PMIq41QBehQyMbEP_!!2206714651938",
+        "交易详情",
+        "已领取14积分",
+        "支付奖励",
+        "交通银行信用卡(5894)",
+        "付款方式",
+        "2026-09-29 16:03:25",
+        "2026-09-29 16:03:25",
+        "支付时间",
+        "-1.98",
+        "交通银行立减金",
+        "极速付款",
+        "管理极速付款",
+        "等待确认收货",
+        "支出244.93元",
+        "微雪**店",
+    ).map { Node(it) }
+
+    @Test
+    fun `alipay detail with a discount amount is still one payment`() {
+        val v = PaymentShape.inspect(alipayPaymentDetail)
+        assertTrue(
+            "立减金是这一笔的加减法，不能让它把真支付整屏挡掉，实际 $v",
+            v is Verdict.OneTransaction,
+        )
+    }
+
+    @Test
+    fun `alipay detail keeps the order amount not the discount`() {
+        val r = LocalTextParser.parse(
+            alipayPaymentDetail.joinToString("\n") { it.text },
+            1_700_000_000_000L,
+        )
+        assertNotNull("这一屏应该解析得出来", r)
+        assertEquals("要的是订单金额 244.93，不是立减金 1.98", 24493L, r!!.amountsMinor.first())
+    }
+
+    /**
+     * 反向保护：调整项**不能**把紧挨着它的真消费一起摘掉。
+     *
+     * 调整项的判定是"下一行是调整项标签"。万一把方向做成双向，
+     * 下面这屏的 `支出55元` 会因为**下一行**是「交通银行立减金」被误摘，
+     * 整屏就只剩一个「立减金」，落到"没有任何一笔消费"那一档。
+     */
+    @Test
+    fun `a discount label does not swallow the neighbouring real spend`() {
+        val nodes = listOf("-1.98", "交通银行立减金", "支出55元").map { Node(it) }
+        val v = PaymentShape.inspect(nodes)
+        assertTrue("立减金旁边的真消费必须放行，实际 $v", v is Verdict.OneTransaction)
+    }
+
+    /**
+     * 同一屏在**支付门**上也必须放行。
+     *
+     * 形状闸修好之后真机仍然没记上，日志是
+     * `丢弃[A11Y/com.eg.android.AlipayGphone]：出现了促销词「立减」`——
+     * 形状闸数的是"有几笔"，支付门查的是"这是不是促销页"，
+     * 而 `交通银行立减金` 那一行对整屏子串匹配是当 promo 命中的。
+     *
+     * 两道门问的问题不同，但前提必须是同一件事：**立减金是这一笔的一部分，
+     * 不是另一个页面。** 只修一道，另一道照样把真支付丢掉。
+     */
+    @Test
+    fun `alipay detail passes the payment gate too not just the shape gate`() {
+        val text = alipayPaymentDetail.joinToString("\n") { it.text }
+        val gate = PaymentGate.verdict(text)
+        assertTrue(
+            "支付宝支付详情页必须被支付门放行，实际 $gate",
             gate is PaymentGate.Verdict.LooksLikePayment,
         )
     }

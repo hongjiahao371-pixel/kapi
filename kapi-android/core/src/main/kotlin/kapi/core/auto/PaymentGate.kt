@@ -221,10 +221,22 @@ object PaymentGate {
     private val DONE_HINTS = STRONG_VERBS + listOf("已支付", "已到账", "已收款", "已退款")
 
     fun verdict(text: String?): Verdict {
-        // 用 [AutoBook.normalizeForJudging] 而不是算指纹那个 [AutoBook.normalize]：
-        // 后者删掉全部空白，会把相邻两笔金额粘成一个长小数，于是数不出钱。
-        // 理由和踩到的坑见 normalizeForJudging 的注释。
-        val t = AutoBook.normalizeForJudging(text)
+        // ## 顺序不能反：先剔调整项行，再归一化
+        //
+        // 剔调整项（立减金/优惠/红包…）依赖**行结构**——要靠"某一行的下一行是不是
+        // 标签"来判断。而 [AutoBook.normalizeForJudging] 会把连续空白压成一个空格，
+        // 换行也在内，等它跑完整段已经是一行了，再也分不出哪一行是标签。
+        //
+        // 2026-10-01 realme 真机踩过：支付宝支付详情页有一行 `交通银行立减金`，
+        // 整屏子串匹配判成促销页，一笔真实的 244.93 被丢掉：
+        // ```
+        // 丢弃[A11Y/com.eg.android.AlipayGphone]：出现了促销词「立减」
+        // ```
+        // 而"这一笔减了 1.98"是**这一笔的明细**，它不说明页面性质。
+        // 同一个理由让形状闸把它排除在"独立记录"之外（见 [PaymentShape]）。
+        val t = AutoBook.normalizeForJudging(
+            PaymentShape.withoutAdjustmentRows(text.orEmpty()),
+        )
         if (t.isEmpty()) return Verdict.NotPayment("没有可读的文本")
 
         val lower = t.lowercase(Locale.ROOT)
@@ -265,7 +277,8 @@ object PaymentGate {
         // 宁可多一条草稿，也不能把真支付挡在外面。
         if (strong != null) return Verdict.LooksLikePayment
 
-        // 促销页：有钱、有"支付"字样，但描述的是"你可以省多少"而不是"你付了多少"
+        // 促销页：有钱、有"支付"字样，但描述的是"你可以省多少"而不是"你付了多少"。
+        // 调整项行在上面已经从整段里剔掉了，这里直接查剩下的。
         PROMO_HINTS.firstOrNull { lower.contains(it) }?.let {
             return Verdict.NotPayment("出现了促销词「$it」")
         }
