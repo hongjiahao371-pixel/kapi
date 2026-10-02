@@ -330,4 +330,72 @@ class LocalTextParserTest {
         assertNotNull(r)
         assertEquals(Direction.EXPENSE, r!!.direction)
     }
+
+    /**
+     * 金额行质量排序（2026-10-02 真机话费页，用户现场验证时抓到）。
+     *
+     * 同一页两次读取建了两条草稿：折叠态选「支出49.5元」✓，展开态的商品名
+     * 「云南手机充值**50元**电信话费直充快充」在文本序里先出现，面额 50 被
+     * 咬走当金额、商户也锚错成「更多」——同一笔因金额不同不触发合并。
+     * 修复：带方向/实付词的行永远优先于长行（商品名）里的数字。
+     */
+    @Test
+    fun phoneCreditPagePicksThePaidAmountNotTheFaceValueInProductName() {
+        val collapsed = LocalTextParser.parse(
+            """
+            账单详情
+            返回
+            手机充值
+            商品说明
+            中国银行储蓄卡(0416)
+            付款方式
+            2026-07-07 15:21:56
+            支付时间
+            交易成功
+            支出49.5元
+            中国电信官方旗舰店
+            """.trimIndent(),
+            FIXED_NOW,
+        )
+        assertNotNull(collapsed)
+        assertEquals(4950L, collapsed!!.amountsMinor.first())
+        assertEquals("中国电信官方旗舰店", collapsed.merchant)
+
+        val expanded = LocalTextParser.parse(
+            """
+            账单详情
+            返回
+            话费一般30分钟内到账。月初为充值高峰期，会有延迟到账情况。
+            话费
+            账单分类
+            更多
+            共1件
+            中国电信官方旗舰店 云南手机充值50元电信话费直充快充 电信充值
+            O1CN01lfspde22JqfPTX7PP_!!0-item_pic
+            交易详情
+            中国电信官方
+            交易对象
+            180 8795 3510
+            充值号码
+            手机充值
+            商品说明
+            中国银行储蓄卡(0416)
+            付款方式
+            2026-07-07 15:21:56
+            支付时间
+            交易成功
+            支出49.5元
+            中国电信官方旗舰店
+            """.trimIndent(),
+            FIXED_NOW,
+        )
+        assertNotNull(expanded)
+        assertEquals(
+            "商品名里的面额 50 不能赢过实付行",
+            4950L,
+            expanded!!.amountsMinor.first(),
+        )
+        assertEquals("中国电信官方旗舰店", expanded.merchant)
+        assertEquals(Direction.EXPENSE, expanded.direction)
+    }
 }

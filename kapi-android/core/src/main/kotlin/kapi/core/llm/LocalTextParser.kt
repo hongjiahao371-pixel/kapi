@@ -385,6 +385,12 @@ object LocalTextParser {
      * 被全过滤掉的那条规则**不算命中**，继续往下试——这样
      * 「闲鱼100元以下免密支付 / 支出55元」这一屏里，`\d+\s*元` 规则虽然
      * 匹到了两个数，但第一个不可信之后剩下的 55 元仍然会被留下。
+     *
+     * 命中之后还要**按行质量排序**（[lineRank]）：2026-10-02 真机话费页，
+     * 展开态的商品名「云南手机充值**50元**电信话费直充快充」在文本序里
+     * 先于「支出49.5元」——按原序取第一个就是 50 元，而实际支付是 49.5。
+     * 更糟的是同一页两次读取（折叠/展开）选中不同金额，合并判据同额才并，
+     * 于是**同一笔建了两条草稿**。带方向词的实付行永远赢过商品名里的数字。
      */
     private fun amountMatches(t: String): List<Pair<IntRange, Long>> {
         val out = LinkedHashMap<Long, IntRange>()
@@ -397,11 +403,33 @@ object LocalTextParser {
             }
             if (out.isNotEmpty()) break // 命中更可靠的模式就不再往下试
         }
-        return out.map { it.value to it.key }
+        return out.map { it.value to it.key }.sortedBy { (range, _) -> lineRank(t, range) }
+    }
+
+    /**
+     * 金额候选所在行的质量分（小者胜）。
+     *
+     * 0 = 行里带方向/实付词（`支出49.5元`、`实付 ¥88.00`）——这是账本要的那一笔
+     * 1 = 短行（≤24 字，`-80.00`、`¥23.50` 这类干净金额行）
+     * 2 = 长行——商品名/描述里的数字（`云南手机充值50元电信话费直充快充`），
+     *     只配当最后候选
+     */
+    private fun lineRank(t: String, range: IntRange): Int {
+        val line = lineAt(t, range.first)
+        return when {
+            AMOUNT_LINE_SIGNALS.any { line.contains(it) } -> 0
+            line.length <= 24 -> 1
+            else -> 2
+        }
     }
 
     private fun extractAmounts(t: String): List<Long> =
         amountMatches(t).map { it.second }.filter { it > 0 }.take(3)
+
+    /** [lineRank] 最高优先级（0 分）的行信号：说明这行说的是"这笔实付了多少"。 */
+    private val AMOUNT_LINE_SIGNALS = listOf(
+        "支出", "收入", "实付", "实收", "付款金额", "支付金额", "消费金额", "交易金额",
+    )
 
     /**
      * 商户名猜测。
