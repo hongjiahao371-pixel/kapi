@@ -45,8 +45,12 @@ object NoteComposer {
      */
     private val PLATFORMS = listOf(
         "淘宝", "天猫", "闲鱼", "京东", "拼多多", "美团", "饿了么",
-        "抖音", "盒马", "飞猪", "携程", "12306",
+        "抖音", "盒马", "飞猪", "携程", "12306", "小红书",
     )
+
+    /** 微信转账详情页标题里的对象：「转账-转给加油无忧无虑」/「转账-来自view」。 */
+    private val TITLE_TO = Regex("""转账-转给(.{1,20})""")
+    private val TITLE_FROM = Regex("""转账-来自(.{1,20})""")
 
     /** 对方账户值尾部的掩码号（`啦啦啦(朱娜娜) 153******10` → 只留名字）。 */
     private val MASK_TAIL = Regex("""\s+[0-9*]{6,}$""")
@@ -72,11 +76,15 @@ object NoteComposer {
 
         // 1. 转账：对方是谁，比平台/商品优先——转账页的「商品说明」可能是
         //    「转账收款到余额宝」这类功能描述，不是商品。
+        //    微信转账详情页没有「对方账户」字段，对象只在**标题行**里
+        //    （2026-10-02 OPPO 真机：「转账-转给加油无忧无虑」「转账-来自view」）。
         val counterparty = (field("对方账户") ?: field("收款方"))?.replace(MASK_TAIL, "")?.trim()
         if (!counterparty.isNullOrEmpty()) {
             val paidByMe = field("付款方式") != null
             return if (paidByMe) "转给$counterparty" else "收到${counterparty}转账"
         }
+        TITLE_TO.find(rawText)?.let { return "转给${it.groupValues[1].trim()}" }
+        TITLE_FROM.find(rawText)?.let { return "收到${it.groupValues[1].trim()}转账" }
 
         // 2. 退款页（2026-10-02 真机样本：`退款成功 / 退款方式 / 查看原账单`，
         //    没有商品说明也没有对方账户）。原单商户拿不到，只标「退款」——
