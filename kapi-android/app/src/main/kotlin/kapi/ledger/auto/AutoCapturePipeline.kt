@@ -2,6 +2,7 @@ package kapi.ledger.auto
 
 import android.util.Log
 import kapi.core.auto.AutoBook
+import kapi.core.auto.OwnAccount
 import kapi.core.auto.PaymentGate
 import kapi.core.auto.PaymentId
 import kapi.core.llm.LocalTextParser
@@ -65,6 +66,18 @@ class AutoCapturePipeline(
 
         /** 丢弃。[reason] 写进日志，用来调支付门。 */
         data class Ignored(val reason: String) : Outcome
+
+        /**
+         * 记成了一笔**自己口袋之间的转账**，不是消费。
+         *
+         * [fromAccountId] / [toAccountId] 为 null 表示两端没能对应到账本里的真实账户
+         * （余额宝这些子钱包目前还不是 account 表里的行），这时**不入账**，只留日志——
+         * 宁可少一条，也不要把它算成支出。
+         */
+        data class Transfer(
+            val txnId: String?,
+            val why: String,
+        ) : Outcome
     }
 
     suspend fun capture(input: CaptureInput): Outcome {
@@ -139,6 +152,20 @@ class AutoCapturePipeline(
 
         val ledgerId = repository.defaultLedgerId()
         val direction = parsed.direction.name
+
+        // 4.5 自转账——在合并**之前**分出去
+        //
+        // 位置是刻意的：放在合并前面，是因为同额同向同窗口的判据分不出
+        // 「自己的钱在挪」和「真的花掉了」。账户余额→余额宝 12100 和
+        // 别的 12100 支出在那一层长得一模一样，并成一条就是静默丢账。
+        //
+        // 放在分流前面，是因为它压根不该进"收支"：两端都是自己的钱包，
+        // 用户什么都没买（支付宝自己也把这一笔的「计入收支」关着）。
+        // 2026-10-01 realme 上它被记成了 `12100 EXPENSE / 商户=None`。
+        val own = OwnAccount.judge(text.lines())
+        if (own is OwnAccount.Verdict.SelfTransfer) {
+            return postSelfTransfer(own, best.amountMinor, parsed.occurredAt, ledgerId)
+        }
 
         // 5. 跨来源合并
         //
@@ -243,6 +270,82 @@ class AutoCapturePipeline(
         db.autoDraftDao().purgeOlderThan(before)
         val left = db.autoDraftDao().count()
         if (left != removed) Log.i(TAG, "清理过期草稿 $removed → $left")
+    }
+
+    /**
+     * 记一笔**自己口袋之间的挪动**。
+     *
+     * ## 为什么对不上账户就不入账
+     *
+     * 账本里的 `account` 表只有 4 个种子（现金 / 银行卡 / 支付宝 / 微信），
+     * `余额宝`、`账户余额`、`花呗` 这些**子钱包还不是行**。所以
+     * `账户余额 → 余额宝` 两端都会落到「支付宝」身上，记出来是
+     * `支付宝 → 支付宝`，余额一动不动，只是把一条消费换成了一条空转账。
+     *
+     * 这时候再退一步、只写日志，是因为用户要的就是"不记收支"：
+     * 写一条 `categoryId = null` 的支出照样会出现在收支里，而
+     * `toAccountId` 填不出真实账户时它也不是一笔真正的转账。
+     * **宁可账本里没有这一条，也不要有一条方向错、分类空的记录。**
+     *
+     * 子钱包进 `account` 表是另一件事（要做账户管理），在那之前
+     * 这一类只在日志里留痕。
+     */
+    private suspend fun postSelfTransfer(
+        own: OwnAccount.Verdict.SelfTransfer,
+        amountMinor: Long,
+        at: Long,
+        ledgerId: String,
+    ): Outcome {
+        val fromId = own.from?.let { accountIdOfWallet(it) }
+        val toId = own.to?.let { accountIdOfWallet(it) }
+        val why = "自转账：${own.why}"
+        if (fromId == null || toId == null || fromId == toId) {
+            Log.i(
+                TAG,
+                "$why，两端对应不到账本里的不同账户（from=${own.from}→「$fromId」, " +
+                    "to=${own.to}→「$toId」），只记日志不入账 $amountMinor",
+            )
+            return Outcome.Transfer(null, why + "，未入账（子钱包还不是账户）")
+        }
+        val txn = editor.createTransaction(
+            amountMinor = amountMinor,
+            // 转账的 direction 只影响它在账本里怎么显示，余额是由
+            // accountId → toAccountId 表达的。记 EXPENSE 是因为
+            // 「钱从 A 出去了」；收支统计会把 toAccountId 非空的行排除。
+            direction = "EXPENSE",
+            accountId = fromId,
+            toAccountId = toId,
+            occurredAt = at,
+            ledgerId = ledgerId,
+            deviceId = deviceId(),
+            merchant = own.to,
+            categoryId = null,
+            source = LocalEditWriter.SOURCE_LOCAL_FALLBACK,
+            confidence = 1.0,
+        )
+        Log.i(TAG, "自转账已入账 ${txn.id}：$fromId → $toId，$amountMinor")
+        return Outcome.Transfer(txn.id, why)
+    }
+
+    /** 支付宝自己的子钱包 → 账本里的支付宝账户。 */
+    private val ALIPAY_WALLETS = listOf("余额宝", "账户余额", "花呗")
+
+    /** 微信自己的子钱包 → 账本里的微信账户。 */
+    private val WECHAT_WALLETS = listOf("零钱", "零钱通", "存钱罐")
+
+    /**
+     * 一个钱包名对应到账本里的哪个账户。
+     *
+     * 只能对到**平台**层面：余额宝和账户余额都属于支付宝，零钱属于微信。
+     * 对不上就返回 null，让调用方走"不入账"那条路。
+     */
+    private fun accountIdOfWallet(name: String): String? {
+        val n = name.trim()
+        return when {
+            ALIPAY_WALLETS.any { n.contains(it) } -> "A3" // 支付宝
+            WECHAT_WALLETS.any { n.contains(it) } -> "A4" // 微信
+            else -> null
+        }
     }
 
     // ------------------------------------------------------------ 内部
