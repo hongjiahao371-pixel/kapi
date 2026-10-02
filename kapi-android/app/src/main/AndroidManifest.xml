@@ -89,6 +89,10 @@
           所以它必须**可选**，且不能是唯一的一条路。
         -->
         <service
+            android:name=".auto.BillOverlayService"
+            android:exported="false" />
+
+        <service
             android:name=".auto.KapiAccessibilityService"
             android:exported="false"
             android:label="@string/auto_a11y_label"

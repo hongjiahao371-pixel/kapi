@@ -85,6 +85,16 @@ class AutoBookStore(context: Context) {
         get() = prefs.getFloat(KEY_THRESHOLD, 0.5f).toDouble()
         set(v) = prefs.edit().putFloat(KEY_THRESHOLD, v.toFloat()).apply()
 
+    /**
+     * 识别后弹出悬浮窗确认（不再只进待确认）。
+     *
+     * 默认开启；悬浮窗还需要「显示在其它应用上层」特殊权限——未授权时
+     * [BillOverlayService.show] 静默跳过，草稿照旧走待确认兜底，什么都不丢。
+     */
+    var overlayConfirmEnabled: Boolean
+        get() = prefs.getBoolean(KEY_OVERLAY_CONFIRM, true)
+        set(v) = prefs.edit().putBoolean(KEY_OVERLAY_CONFIRM, v).apply()
+
     var dedupeWindowMs: Long
         get() = AutoBook.effectiveWindowMs(prefs.getLong(KEY_WINDOW, AutoBook.DEFAULT_WINDOW_MS))
         set(v) = prefs.edit().putLong(KEY_WINDOW, AutoBook.effectiveWindowMs(v)).apply()
@@ -246,6 +256,7 @@ class AutoBookStore(context: Context) {
         private const val KEY_STAMPS = "handled_stamps"
         private const val KEY_ID_STAMPS = "handled_txn_ids"
         private const val KEY_DEDUP_V2 = "dedup_semantics_v2"
+        private const val KEY_OVERLAY_CONFIRM = "overlay_confirm_enabled"
 
         /**
          * 默认监听包名。

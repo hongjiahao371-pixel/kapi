@@ -372,7 +372,7 @@ class KapiAccessibilityService : AccessibilityService() {
         val pipeline = runCatching { container.autoCapture }.getOrNull() ?: return false
         scope.launch {
             runCatching {
-                pipeline.capture(
+                val outcome = pipeline.capture(
                     AutoCapturePipeline.CaptureInput(
                         channel = AutoBook.CaptureChannel.A11Y,
                         originPackage = pkg,
@@ -380,6 +380,17 @@ class KapiAccessibilityService : AccessibilityService() {
                         occurredAt = now,
                     )
                 )
+                // 草稿建好后弹悬浮窗请用户当场确认。三个前置缺一不可：
+                // 只对 Drafted 弹（入账/合并/自转账不需要人再点）、用户开过
+                // 开关、以及悬浮窗权限已授——没授时 show() 静默跳过，草稿
+                // 走待确认兜底，什么都不丢。
+                if (
+                    outcome is AutoCapturePipeline.Outcome.Drafted &&
+                    container.autoBookStore.overlayConfirmEnabled &&
+                    android.provider.Settings.canDrawOverlays(this@KapiAccessibilityService)
+                ) {
+                    BillOverlayService.show(applicationContext, outcome.draftId)
+                }
             }.onFailure {
                 Log.w(TAG, "读屏捕获失败：${it.javaClass.name}: ${it.message}", it)
             }

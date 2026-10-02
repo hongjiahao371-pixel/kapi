@@ -32,6 +32,9 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Sync
+import android.provider.Settings
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -894,6 +897,64 @@ private fun AutoBookSection(
                     .background(ExpenseRed.copy(alpha = 0.07f))
                     .padding(12.dp),
             )
+        }
+
+        // ---- 悬浮窗确认 ----
+        //
+        // 识别到支付后当场弹窗（占屏 2/3），类目已归好，用户点确认/不记了/忽略。
+        // 需要系统的「显示在其它应用上层」特殊权限——这个权限设置页给不了，
+        // 只能跳系统设置让用户手动开；没授权时悬浮窗静默跳过，草稿走待确认。
+        Spacer(Modifier.height(12.dp))
+        val canOverlay = remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+        var overlayOn by remember { mutableStateOf(store.overlayConfirmEnabled && canOverlay.value) }
+        val lifecycleOwner2 = LocalLifecycleOwner.current
+        DisposableEffect(lifecycleOwner2) {
+            val obs = LifecycleEventObserver { _, e ->
+                if (e == Lifecycle.Event.ON_RESUME) {
+                    // 从授权页回来时重读授权状态；授权到手后自动把开关补开
+                    canOverlay.value = Settings.canDrawOverlays(context)
+                    if (canOverlay.value && store.overlayConfirmEnabled) overlayOn = true
+                }
+            }
+            lifecycleOwner2.lifecycle.addObserver(obs)
+            onDispose { lifecycleOwner2.lifecycle.removeObserver(obs) }
+        }
+        SettingsCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("悬浮窗确认", style = MaterialTheme.typography.titleMedium, color = Ink)
+                    Text(
+                        if (canOverlay.value) "识别后当场弹出，确认或不记，类目可改"
+                        else "需要「显示在其它应用上层」权限，点此去授权",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (canOverlay.value) InkSoft else Brand,
+                    )
+                }
+                Switch(
+                    checked = overlayOn,
+                    onCheckedChange = { v ->
+                        when {
+                            v && !canOverlay.value -> {
+                                // 跳系统授权页；回来时 ON_RESUME 钩子重读并自动补开
+                                context.startActivity(
+                                    Intent(
+                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse("package:" + context.packageName),
+                                    ),
+                                )
+                            }
+                            v -> {
+                                store.overlayConfirmEnabled = true
+                                overlayOn = true
+                            }
+                            else -> {
+                                store.overlayConfirmEnabled = false
+                                overlayOn = false
+                            }
+                        }
+                    },
+                )
+            }
         }
 
         Spacer(Modifier.height(14.dp))

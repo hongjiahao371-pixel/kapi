@@ -183,6 +183,8 @@ interface SyncStateDao {
 
 @Dao
 interface AutoDraftDao {
+    @Query("SELECT * FROM auto_draft WHERE id = :id LIMIT 1")
+    suspend fun byId(id: String): AutoDraftEntity?
 
     @Query("SELECT * FROM auto_draft ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<AutoDraftEntity>>
