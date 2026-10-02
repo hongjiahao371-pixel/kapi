@@ -202,4 +202,71 @@ class LocalTextParserTest {
         )!!
         assertEquals("星巴克", r.merchant)
     }
+
+    /**
+     * 千分位金额（2026-10-02 realme 真机）。
+     *
+     * 支付宝账单页对 ≥1000 的金额写 `10,000.00`。修复前这笔**整笔解析失败**
+     * （真机日志：「没解析出金额」）——裸金额正则从逗号后只咬出尾段 `000.00`，
+     * Money 读成 0，被 `filter { it > 0 }` 过滤，整屏无候选 → 大额转账静默漏记。
+     * 原文 = 记账本列表里「啦啦啦(朱娜娜)-转账」详情页的服务读屏原文。
+     */
+    @Test
+    fun alipayCommaAmountsFromTheRealTransferDetail() {
+        val r = LocalTextParser.parse(
+            "啦啦啦(朱娜娜)-转账\n-10,000.00\n一般\n10月01日 星期四 / 余额宝\n详情\n返回",
+            FIXED_NOW,
+        )
+        assertNotNull("千分位金额必须能解析出来", r)
+        assertEquals(10_000_00L, r!!.amountsMinor.first())
+        assertEquals(Direction.EXPENSE, r.direction)
+    }
+
+    /**
+     * 截断是比漏记更危险的兄弟：`\d+(?:[.,]\d{1,2})?` 对 `¥12,100.00` 只捕获
+     * 到 `12,1`，Money 把它当**小数逗号**读成 12.1 元——金额错 100 倍还入了账。
+     * 三个捕获组模式（¥ 前缀 / 元 后缀 / 字段标签）逐一钉死。
+     */
+    @Test
+    fun commaGroupedAmountsAreCapturedWholeNotTruncated() {
+        // ¥ 前缀：修复前捕获 `12,10` → Money 当小数逗号读成 12.1 元
+        assertEquals(
+            12_100_00L,
+            LocalTextParser.parse("支付宝\n¥12,100.00\n余额宝", FIXED_NOW)!!.amountsMinor.first(),
+        )
+        // 元 后缀：修复前 `\d+` 回退匹配到 `100` → 100 元（错 100 倍）
+        assertEquals(
+            12_100_00L,
+            LocalTextParser.parse("支出12,100元\n余额宝", FIXED_NOW)!!.amountsMinor.first(),
+        )
+        // 字段标签：修复前捕获 `1,36` → 1.36 元
+        assertEquals(
+            1_360_11L,
+            LocalTextParser.parse("订单金额:1,360.11\n信用卡还款", FIXED_NOW)!!.amountsMinor.first(),
+        )
+    }
+
+    /** 无单位无符号的千分位裸金额（列表页写法 `12,100.00` / 转账页 `12,100`）。 */
+    @Test
+    fun bareCommaAmountWithoutUnitOrSymbolStillParses() {
+        assertEquals(
+            12_100_00L,
+            LocalTextParser.parse("转账收款到余额宝\n12,100.00\n2026-10-01", FIXED_NOW)!!.amountsMinor.first(),
+        )
+        assertEquals(
+            12_100_00L,
+            LocalTextParser.parse("转账收款到余额宝\n12,100\n余额宝", FIXED_NOW)!!.amountsMinor.first(),
+        )
+    }
+
+    /** 千分位的尾段不能变成第二笔 0 元候选，半截分组 `1,36` 不能被洗成 1.36。 */
+    @Test
+    fun commaAmountsLeaveNoPhantomTailCandidates() {
+        val r = LocalTextParser.parse("支出:10,030.10\n收入:12,100.00", FIXED_NOW)!!
+        assertTrue(
+            "候选里不该出现尾段咬出来的 0 元/错值：${r.amountsMinor}",
+            r.amountsMinor.all { it in listOf(10_030_10L, 12_100_00L) },
+        )
+        assertNull("半截分组不是金额，更不能当小数逗号读成 1.36", parse("1,36"))
+    }
 }

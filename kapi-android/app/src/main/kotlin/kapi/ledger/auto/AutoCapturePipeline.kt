@@ -164,7 +164,7 @@ class AutoCapturePipeline(
         // 2026-10-01 realme 上它被记成了 `12100 EXPENSE / 商户=None`。
         val own = OwnAccount.judge(text.lines())
         if (own is OwnAccount.Verdict.SelfTransfer) {
-            return postSelfTransfer(own, best.amountMinor, parsed.occurredAt, ledgerId)
+            return postSelfTransfer(own, best.amountMinor, parsed.occurredAt, ledgerId, text)
         }
 
         // 5. 跨来源合并
@@ -289,12 +289,22 @@ class AutoCapturePipeline(
      *
      * 子钱包进 `account` 表是另一件事（要做账户管理），在那之前
      * 这一类只在日志里留痕。
+     *
+     * ## 为什么要把原文带进日志
+     *
+     * 2026-10-02 真机首战命中「信用卡还款」判据，但 `from`/`to` 都是 null——
+     * 屏上明明有 `付款方式 / 余额宝`。没有原文就没法判断是「值在标签前」的
+     * 取值方向在这类页上不成立，还是相邻重复节点把上一行占了（[OwnAccount.judge]
+     * 的 KDoc 要求先折叠重复行，这里传的是原始行）。而「原始行序」那行日志
+     * 只在形状闸**挡下**时才打，自转账是放行路径，永远轮不到它。
+     * 带上原文，下次真机一出现就能定位，不用再猜。
      */
     private suspend fun postSelfTransfer(
         own: OwnAccount.Verdict.SelfTransfer,
         amountMinor: Long,
         at: Long,
         ledgerId: String,
+        rawText: String?,
     ): Outcome {
         val fromId = own.from?.let { accountIdOfWallet(it) }
         val toId = own.to?.let { accountIdOfWallet(it) }
@@ -303,7 +313,8 @@ class AutoCapturePipeline(
             Log.i(
                 TAG,
                 "$why，两端对应不到账本里的不同账户（from=${own.from}→「$fromId」, " +
-                    "to=${own.to}→「$toId」），只记日志不入账 $amountMinor",
+                    "to=${own.to}→「$toId」），只记日志不入账 $amountMinor" +
+                    "｜原文前 120 字=${rawText?.take(120)?.replace('\n', '|') ?: "(无文字)"}",
             )
             return Outcome.Transfer(null, why + "，未入账（子钱包还不是账户）")
         }
