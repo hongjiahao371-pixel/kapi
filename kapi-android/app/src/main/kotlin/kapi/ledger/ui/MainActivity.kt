@@ -211,9 +211,10 @@ fun KapiRoot() {
         return
     }
 
+    // 待确认已从底栏撤下（2026-10-02）：悬浮窗确认成为主路径，草稿的入口
+    // 降级到 设置→自动记账→去看待确认。底栏只留日常三屏。
     val tabs = listOf(
         Screen.Ledger to "账本",
-        Screen.Drafts to "待确认",
         Screen.Stats to "统计",
         Screen.Settings to "设置",
     )
@@ -228,7 +229,7 @@ fun KapiRoot() {
 
     val dark = isSystemInDarkTheme()
 
-    val tabOrder = remember { listOf(Screen.Ledger, Screen.Drafts, Screen.Stats, Screen.Settings) }
+    val tabOrder = remember { listOf(Screen.Ledger, Screen.Stats, Screen.Settings) }
 
     // 滚动状态分**两套**：真实内容一套，磨砂副本一套。
     //
@@ -306,6 +307,7 @@ fun KapiRoot() {
                 onOpenAccounts = { backStack = backStack + Screen.Accounts },
                 llmStore = container.llmStore,
                 onOpenDrafts = { backStack = listOf(Screen.Drafts) },
+                draftCount = draftCount,
                 autoBookStore = container.autoBookStore,
                 transfer = container.transfer,
                 deviceId = container.tokenStore.deviceId,
@@ -349,7 +351,7 @@ fun KapiRoot() {
         BottomBar(
             current = current,
             tabs = tabs,
-            badge = draftCount,
+            badge = 0, // 待确认已撤下底栏；漏掉的弹窗在 设置→自动记账 里看
             onSelect = ::goToTab,
             onRecord = { backStack = backStack + Screen.Add },
             dark = dark,
@@ -465,7 +467,7 @@ private fun BottomBar(
                     TabItem(
                         label = tab.second,
                         selected = current === tab.first,
-                        badge = if (tab.first is Screen.Drafts) badge else 0,
+                        badge = 0,
                         icon = iconFor(tab.first, selected = current == tab.first),
                         onClick = { onSelect(tab.first) },
                         modifier = Modifier.weight(1f),

@@ -105,6 +105,7 @@ fun SyncSettingsScreen(
     onOpenDrafts: () -> Unit = {},
     transfer: LedgerImportExport? = null,
     deviceId: String = "",
+    draftCount: Int = 0,
     // 和底栏的磨砂副本共用同一个滚动状态，否则玻璃里磨出来的是另一个位置。
     scrollState: ScrollState = rememberScrollState(),
     modifier: Modifier = Modifier,
@@ -383,6 +384,7 @@ fun SyncSettingsScreen(
                 AutoBookSection(
                     store = autoBookStore,
                     onOpenDrafts = onOpenDrafts,
+                    pendingCount = draftCount,
                 )
             }
 
@@ -828,6 +830,7 @@ private fun TransferSection(
 private fun AutoBookSection(
     store: kapi.ledger.auto.AutoBookStore,
     onOpenDrafts: () -> Unit,
+    pendingCount: Int = 0,
 ) {
     val context = LocalContext.current
     var a11yOn by remember { mutableStateOf(store.accessibilityEnabled) }
@@ -962,7 +965,12 @@ private fun AutoBookSection(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.glassClickable { onOpenDrafts() },
         ) {
-            Text("去看待确认", style = MaterialTheme.typography.labelLarge, color = Brand)
+            Text(
+                if (pendingCount > 0) "去看待确认（$pendingCount 笔待处理）"
+                else "去看待确认",
+                style = MaterialTheme.typography.labelLarge,
+                color = Brand,
+            )
             Spacer(Modifier.width(4.dp))
             Icon(
                 Icons.Filled.ChevronRight, null,
