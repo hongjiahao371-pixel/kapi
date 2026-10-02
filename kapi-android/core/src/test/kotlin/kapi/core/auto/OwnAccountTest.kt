@@ -227,4 +227,33 @@ class OwnAccountTest {
             v,
         )
     }
+
+    /**
+     * 名词命中路径也必须把两端算出来（2026-10-02 真机缺陷）：
+     * 「信用卡还款」页当天日志是 `from=null, to=null`——屏上明明有
+     * `付款方式 / 余额宝`。原因是名词表命中直接 return，没算 sides。
+     *
+     * 这一屏还是**值在标签后**的页面（mcode dump 树序，与上面夹具相反），
+     * 靠日期探针取值——两类方向都要能读。
+     */
+    @Test
+    fun `repayment page with value-after layout records both ends`() {
+        val v = OwnAccount.judge(
+            listOf(
+                "招商银行", "1360.11元", "还款成功",
+                "创建时间", "2026-10-01 11:26:54",
+                "付款方式", "余额宝",
+                "还款到", "招商银行（9590）洪佳豪",
+                "处理进度", "提交银行处理", "10-01 11:26", "银行处理中",
+                "10-01 11:27", "银行入账成功",
+                "进度说明", "银行反馈已入账，如有疑问请联系银行客服",
+                "借还款说明", "信用卡还款",
+                "支付奖励", "已领取5积分", "更多",
+            ),
+        )
+        assertTrue("信用卡还款是自转账，实际 $v", v is OwnAccount.Verdict.SelfTransfer)
+        val t = v as OwnAccount.Verdict.SelfTransfer
+        assertEquals("余额宝", t.from)
+        assertEquals("招商银行（9590）洪佳豪", t.to)
+    }
 }

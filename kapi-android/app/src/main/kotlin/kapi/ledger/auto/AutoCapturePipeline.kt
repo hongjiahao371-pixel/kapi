@@ -2,6 +2,7 @@ package kapi.ledger.auto
 
 import android.util.Log
 import kapi.core.auto.AutoBook
+import kapi.core.auto.NoteComposer
 import kapi.core.auto.OwnAccount
 import kapi.core.auto.PaymentGate
 import kapi.core.auto.PaymentId
@@ -189,6 +190,9 @@ class AutoCapturePipeline(
                 sources = mergeSources(existing, channel),
                 evidenceCount = existing.evidenceCount + 1,
                 rawText = existing.rawText + RAW_SEPARATOR + text.take(MAX_RAW),
+                // 首读可能是半屏（字段还没渲染完），备注合成不出来；后续某次
+                // 读到了完整屏就把空备注补上。已有备注绝不被覆盖。
+                note = existing.note ?: NoteComposer.compose(text),
             )
             db.autoDraftDao().upsert(merged)
             // 日志要说清是哪种合并。同源合并是"这一屏被读到两次"，
@@ -209,7 +213,7 @@ class AutoCapturePipeline(
             direction = direction,
             occurredAt = parsed.occurredAt,
             merchant = best.merchant,
-            note = null,
+            note = NoteComposer.compose(text),
             accountId = guessAccountId(pkg),
             source = channel.name,
             confidence = parsed.confidence,

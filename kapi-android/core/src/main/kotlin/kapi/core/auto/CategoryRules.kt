@@ -49,12 +49,19 @@ object CategoryRules {
      * [merchantOnly] 的规则只在商户名里找——用来放那些**绝不能**从商品标题里
      * 认的词。比如"外卖"：商户名叫"某某外卖"说明是外卖，但商品标题里出现"外卖"
      * 往往只是在描述一个菜名（「黄焖鸡外卖套餐」），那笔仍然是餐饮里的正餐。
+     *
+     * [rawOnly] 的规则**只在账单原文里找**（商户轮跳过）——用来放平台名。
+     * 商户 `杭州淘宝通信技术有限公司` 含"淘宝"，但淘宝什么稿都卖：商户轮若参与，
+     * 淘宝上买的耳机就永远轮不到数码（商户轮会先扫完全部规则）。放到原文轮，
+     * 具体品类词先判，全落空了才轮到平台名兜底——而商户名本身就在原文里，
+     * 纯平台消费照样能兜到「购物」。
      */
     private data class Rule(
         val major: String,
         val minor: String?,
         val keywords: List<String>,
         val merchantOnly: Boolean = false,
+        val rawOnly: Boolean = false,
     )
 
     // ==================================================================
@@ -172,7 +179,7 @@ object CategoryRules {
         )),
         Rule("购物", "母婴", listOf("奶粉", "尿不湿", "母婴", "童装", "孕婴", "玩具", "积木")),
         Rule("购物", "图书", listOf("图书", "书店", "当当", "新华书店", " kindle", " Kindle")),
-        Rule("购物", "家居", listOf("家具", "沙发", "床垫", "收纳", "宜家", "林氏木业", "全友", "顾家")),
+        Rule("购物", "家居", listOf("家具", "沙发", "床垫", "收纳", "宜家", "林氏木业", "全友", "顾家", "家居")),
         Rule("购物", "宠物", listOf("宠物", "猫粮", "狗粮", "猫砂", "宠物医院", "宠物店")),
 
         // ---------- 居住 ----------
@@ -186,6 +193,9 @@ object CategoryRules {
         Rule("通讯", "快递", listOf("快递", "运费", "顺丰", "圆通", "中通", "申通", "菜鸟", "京东物流", "邮政")),
 
         // ---------- 日用 ----------
+        // 「日用百货」是支付宝**账单分类**字段的原值（2026-10-02 真机 TP-LINK
+        // 摄像头页），整串只出现在分类位，不会误伤别的话。
+        Rule("日用", null, listOf("日用百货")),
         Rule("日用", "超市", listOf(
             "超市", "沃尔玛", "家乐福", "永辉", "盒马", "大润发", "山姆", "华润万家", "苏果",
         )),
@@ -209,6 +219,10 @@ object CategoryRules {
         Rule("医疗", "药品", listOf("药店", "药房", "大药房", "医药", "买药", "同仁堂", "益丰", "大参林", "老百姓大药房")),
         Rule("医疗", "口腔", listOf("牙科", "口腔", "洗牙", "正畸", "镶牙", "补牙")),
         Rule("医疗", "保健", listOf("保健品", "维生素", "蛋白粉", "益生菌")),
+        // 保险（2026-10-02 真机好医保页：商品「2026.9月保费缴清-好医保·长期医疗」，
+        // 页面分类值「保险」）。「保险」二字子串已覆盖「好医保」；「车险」被更靠前的
+        // 交通/车辆保养抢走，是刻意的——车险归交通不属于医疗。
+        Rule("医疗", "保险", listOf("保险", "保费", "保单", "投保", "健康险")),
         Rule("医疗", null, listOf("医院", "门诊", "挂号", "急诊", "住院", "体检", "诊所", "输液")),
 
         // ---------- 教育 ----------
@@ -220,6 +234,16 @@ object CategoryRules {
         // ---------- 人情 ----------
         Rule("人情", "红包", listOf("红包", "压岁钱", "份子钱"), merchantOnly = true),
         Rule("人情", "礼物", listOf("鲜花", "礼品", "礼物", "送礼")),
+
+        // ---------- 平台兜底（购物，rawOnly） ----------
+        // **rawOnly + 刻意放在几乎最后**：平台什么稿都卖，"淘宝"本身的分类信息量
+        // 是零。商户轮不参与（见 [Rule.rawOnly] 的 KDoc——否则淘宝商户的耳机永远
+        // 轮不到数码）；原文轮里具体品类词全部落空后才轮到它——那时"至少知道
+        // 是在淘宝上买的"也比"未分类"强。2026-10-02 真机：「先用后付」页商户是
+        // `杭州淘宝通信技术有限公司`，此前整页判 null。
+        // 闲鱼单独一档（二手），查库查不到「购物/二手」时 AutoCategory 会退回顶级。
+        Rule("购物", "二手", listOf("闲鱼"), rawOnly = true),
+        Rule("购物", null, listOf("淘宝", "天猫", "拼多多"), rawOnly = true),
 
         // ---------- 其他 ----------
         Rule("其他", "罚款", listOf("罚款", "违章", "滞纳金")),
@@ -264,10 +288,11 @@ object CategoryRules {
         val raw = merchant?.trim().orEmpty()
         val m = if (PLACEHOLDER_MERCHANTS.any { raw.contains(it) }) "" else raw
 
-        // 1. 商户名。merchantOnly 的规则在这一轮。
+        // 1. 商户名。第一轮只跑 merchantOnly 的规则，第二轮跑其余——
+        // rawOnly 的（平台名）两轮都不参与，只在原文轮兜底。
         if (m.isNotEmpty()) {
             for (r in rules) {
-                if (!r.merchantOnly) continue
+                if (!r.merchantOnly || r.rawOnly) continue
                 if (r.keywords.any { m.contains(it, ignoreCase = true) }) {
                     return Path(r.major, r.minor)
                 }
@@ -275,7 +300,7 @@ object CategoryRules {
         }
         if (m.isNotEmpty()) {
             for (r in rules) {
-                if (r.merchantOnly) continue
+                if (r.merchantOnly || r.rawOnly) continue
                 if (r.keywords.any { m.contains(it, ignoreCase = true) }) {
                     return Path(r.major, r.minor)
                 }

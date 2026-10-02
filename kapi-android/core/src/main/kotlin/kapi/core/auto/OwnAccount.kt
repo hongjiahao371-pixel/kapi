@@ -101,36 +101,25 @@ object OwnAccount {
     /**
      * 从「付款方式」/「收款方」这类标签上取**值**。
      *
-     * 取值方向和 [PaymentId.valueNear] 一致：**值在标签前面**。
-     * 2026-10-01 realme 支付宝转账详情页的原始行序就是这么排的：
-     * ```
-     * 余额宝
-     * 付款方式
-     * ```
-     * 原因和 `PaymentId` 里记的一样——读屏按 DOM 顺序报节点，不按视觉上的上下。
-     *
-     * 差别在取值规则：[PaymentId.clean] 要 ≥12 位字母数字（交易号），
-     * 而账户名是「余额宝」三个汉字，所以这里只做**非空 + 不是标签本身**的判断。
+     * 取值走 [ScreenFields]：先用页面日期行探明这一页值在标签前还是后，
+     * 再按同一方向取——2026-10-02 realme 实测两种方向**都存在**
+     * （转账页值在前、富账单详情页值在后），写死任何一侧都会在另一半
+     * 页面上静默取错。取不到返回 null。
      */
-    private fun valueBefore(lines: List<String>, label: String): String? {
-        for (i in lines.indices) {
-            if (!lines[i].trim().equals(label, ignoreCase = true)) continue
-            val prev = lines.getOrNull(i - 1)?.trim().orEmpty()
-            if (prev.isEmpty() || prev == label) continue
-            return prev
-        }
-        return null
-    }
+    private fun valueOf(lines: List<String>, label: String): String? =
+        ScreenFields.valueNear(lines, label, ScreenFields.orientation(lines))
 
     /**
      * 这一屏的两端分别是谁。
      *
      * `from` 来自 `付款方式`——那是**账户**字段，子串匹配安全。
      *
-     * `to` 有三个来源，可信度**不一样**，所以必须分开记：
+     * `to` 有四个来源，可信度**不一样**，所以必须分开记：
      * 1. 标题行里的 `收款到X` —— **应用自己写的说明**，说"收款到余额宝"就是余额宝
-     * 2. `收款方` 标签前的值
-     * 3. `对方账户` 标签前的值
+     * 2. `收款方` 标签旁的值
+     * 3. `对方账户` 标签旁的值
+     * 4. `还款到` 标签旁的值（信用卡还款页的"去处"字段；值是自己的卡，
+     *    所以只影响日志里的 from/to 记录，判自转账靠的是名词表）
      *
      * 2 和 3 装的是**人名或店名**，子串匹配在那里是危险的：有一家便利店就叫
      * 「余额宝便利店」，按子串它就是我们的钱包，于是往那儿付的 20 块会被
@@ -150,10 +139,11 @@ object OwnAccount {
     fun sides(lines: List<String>): Sides {
         val credited = lines.firstNotNullOfOrNull { CREDIT_TO.find(it)?.groupValues?.get(1) }
         val to = credited
-            ?: valueBefore(lines, "收款方")
-            ?: valueBefore(lines, "对方账户")
+            ?: valueOf(lines, "收款方")
+            ?: valueOf(lines, "对方账户")
+            ?: valueOf(lines, "还款到")
         return Sides(
-            from = valueBefore(lines, "付款方式"),
+            from = valueOf(lines, "付款方式"),
             to = to,
             toFromCreditLabel = credited != null,
         )
@@ -184,16 +174,22 @@ object OwnAccount {
     /**
      * 判这一屏是不是自己的钱在挪动。
      *
-     * @param lines **已经去掉相邻重复节点**的行序列（见 [PaymentShape]）
+     * 名词表命中和两端判断**都要算 sides**：2026-10-02 真机上「信用卡还款」
+     * 页记成了 `from=null, to=null`——名词路径直接 return，没算两端，日志里
+     * 两端全空，对着 dump 才发现屏上明明有 `付款方式 / 余额宝`。先把两端
+     * 算出来再下结论，日志才留得住证据。
+     *
+     * @param lines 读屏行序列（内部会先折叠相邻重复节点）
      */
-    fun judge(lines: List<String>): Verdict {
+    fun judge(rawLines: List<String>): Verdict {
+        val lines = ScreenFields.collapse(rawLines)
+        val s = sides(lines)
         for (w in SELF_TRANSFER_WORDS) {
             if (lines.any { it.contains(w) }) {
-                return Verdict.SelfTransfer(null, null, "交易类型名命中「$w」")
+                return Verdict.SelfTransfer(s.from, s.to, "交易类型名命中「$w」")
             }
         }
 
-        val s = sides(lines)
         val toOwn = if (s.toFromCreditLabel) isOwnWallet(s.to) else isOwnWalletExact(s.to)
         return if (isOwnWallet(s.from) && toOwn) {
             Verdict.SelfTransfer(
