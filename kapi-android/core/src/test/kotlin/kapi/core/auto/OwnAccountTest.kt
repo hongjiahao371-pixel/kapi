@@ -229,6 +229,43 @@ class OwnAccountTest {
     }
 
     /**
+     * 理财通申购/赎回（2026-10-02 微信样本，mcode 扫描：9/17 两笔 7600/8800）：
+     * 申购记成支出、赎回记成收入都会污染月度统计——钱只是从银行卡搬进
+     * 理财通再搬回来。两端字段在页面上不全（赎回页只有「收款方式」），
+     * 靠名词表拦截；理财通还不是账户行，拦截后走「只记日志」。
+     */
+    @Test
+    fun `licaitong purchase and redemption are self transfers`() {
+        val purchase = OwnAccount.judge(
+            listOf(
+                "购买理财通-活期+",
+                "7600.00",
+                "当前状态",
+                "已付款",
+                "付款方式",
+                "中国银行储蓄卡(0416)",
+                "交易单号",
+            ),
+        )
+        assertTrue("理财通申购是划转，实际 $purchase", purchase is OwnAccount.Verdict.SelfTransfer)
+
+        val redemption = OwnAccount.judge(
+            listOf(
+                "理财通赎回-活期 +",
+                "800.00",
+                "当前状态",
+                "已到账",
+                "收款方式",
+                "中国银行储蓄卡(0416)",
+                "取出产品",
+                "活期 +",
+                "交易单号",
+            ),
+        )
+        assertTrue("理财通赎回是划转，实际 $redemption", redemption is OwnAccount.Verdict.SelfTransfer)
+    }
+
+    /**
      * 名词命中路径也必须把两端算出来（2026-10-02 真机缺陷）：
      * 「信用卡还款」页当天日志是 `from=null, to=null`——屏上明明有
      * `付款方式 / 余额宝`。原因是名词表命中直接 return，没算 sides。
