@@ -130,29 +130,37 @@ class LedgerRepository(
             .filter { db.accountDao().byId(it.id) == null }
         if (missingAccounts.isNotEmpty()) db.accountDao().upsertAll(missingAccounts)
 
-        val missingCategories = (DEFAULT_EXPENSE_CATEGORIES.mapIndexed { i, n ->
-            CategoryEntity("cat-$i", ledgerId, null, n, kind = "EXPENSE", sortOrder = i)
-        } + DEFAULT_INCOME_CATEGORIES.mapIndexed { i, n ->
-            CategoryEntity("inc-$i", ledgerId, null, n, kind = "INCOME", sortOrder = i)
-        }).filter { db.categoryDao().byId(it.id) == null }
-        if (missingCategories.isNotEmpty()) db.categoryDao().upsertAll(missingCategories)
-
-        // ---- 细分类（2026-10-01）----
+        // ---- 细分类（2026-10-01；2026-10-03 重修 id 方案）----
         //
         // 顶级分类只有 11 个，`餐饮` 底下什么都不分——可包子铺和火锅在用户的生活里
         // 根本不是一回事，`购物` 更极端：一件 T 恤和一台显示器放在同一栏，
         // 那栏数字没有任何意义。
         //
         // 顶级分类的 id 和名字**一个字都不改**：已有的库里已经有 `cat-0`…`cat-10`，
-        // 改名会让用户的历史账目指向不存在的分类。细分类是新行，用
-        // `cat-<顶级序号>-<细类序号>`，靠 `parentId` 串起来。
+        // 改名会让用户的历史账目指向不存在的分类。
+        //
+        // **细类 id 为什么是 `cat-m-<顶级序号>-<细类名>`**：原来是位置序号
+        // `cat-<i>-<j>`，规则表里一插队（烘焙、零食都是后来插进餐饮中间的），
+        // j 位置整体后移，存量库里 j 位被旧名字占住——烘焙静默漏铺、「正餐」
+        // 被重复建了三行（2026-10-03 OPPO 真机实证）。名字派生的 id 不随顺序漂移。
         //
         // 细分类清单不写在这里，而是从 [CategoryRules] 取——**规则表是唯一的权威**。
         // 两处各写一份的话，加了规则忘了铺库、或铺了库没有规则，两边都会对不上。
+        val expenseRows = db.categoryDao().allForPush().filter { it.kind == "EXPENSE" && !it.deleted }
+        val existingTopNames = expenseRows.filter { it.parentId == null }.map { it.name }.toSet()
+        val existingMinorNames = expenseRows.filter { it.parentId != null }.map { it.name }.toSet()
+
+        val missingCategories = (DEFAULT_EXPENSE_CATEGORIES.mapIndexed { i, n ->
+            CategoryEntity("cat-$i", ledgerId, null, n, kind = "EXPENSE", sortOrder = i)
+        } + DEFAULT_INCOME_CATEGORIES.mapIndexed { i, n ->
+            CategoryEntity("inc-$i", ledgerId, null, n, kind = "INCOME", sortOrder = i)
+        }).filter { db.categoryDao().byId(it.id) == null && it.name !in existingTopNames }
+        if (missingCategories.isNotEmpty()) db.categoryDao().upsertAll(missingCategories)
+
         val subCategories = DEFAULT_EXPENSE_CATEGORIES.flatMapIndexed { i, major ->
             CategoryRules.minors(major).mapIndexed { j, minor ->
                 CategoryEntity(
-                    id = "cat-$i-$j",
+                    id = "cat-m-$i-$minor",
                     ledgerId = ledgerId,
                     parentId = "cat-$i",
                     name = minor,
@@ -160,8 +168,22 @@ class LedgerRepository(
                     sortOrder = j,
                 )
             }
-        }.filter { db.categoryDao().byId(it.id) == null }
+        }.filter { db.categoryDao().byId(it.id) == null && it.name !in existingMinorNames }
         if (subCategories.isNotEmpty()) db.categoryDao().upsertAll(subCategories)
+
+        // ---- 历史重复行合并（2026-10-03，一次性，幂等）----
+        // 位置 id 时代的 bug 在设备上留下了同名细类多行（「正餐」×3）。收敛到
+        // id 最小的一行：账目改指向，重复行**改名**再软删——byName 不滤 deleted
+        // （AutoCategory 在用，不能顺手改语义），不改名软删行会被 LIMIT 1 查回来。
+        // 跑完再跑无重复组，天然幂等。
+        for ((_, dups) in expenseRows.filter { it.parentId != null }.groupBy { it.parentId to it.name }) {
+            if (dups.size < 2) continue
+            val keep = dups.minByOrNull { it.id }!!
+            for (dup in dups.filter { it.id != keep.id }) {
+                db.txnDao().repointCategory(dup.id, keep.id)
+                db.categoryDao().update(dup.copy(name = dup.name + "·重复", deleted = true))
+            }
+        }
 
         // 上面铺的这套分类/账户要**推上去**，否则 NAS 上永远没有参考数据：
         // 换一台手机连过来，拉到的账目里的 category_id 指向一个不存在的行，
@@ -240,6 +262,12 @@ class LedgerRepository(
 
         private val DEFAULT_EXPENSE_CATEGORIES = listOf(
             "餐饮", "交通", "购物", "居住", "娱乐", "医疗", "教育", "通讯", "日用", "人情", "其他",
+            // ---- 2026-10-02 竞品对齐追加（钱迹一级分类清单）----
+            // **只增不改**：cat-0…cat-10 的 id 和名字一字不动（改了会打断已有库的
+            // 历史账目），新的追加在 cat-11 起。ensureSeeded 幂等，存量设备下次
+            // 启动自动补行，新分类随参考数据推给 NAS。旧「娱乐/旅行」「购物/宠物」
+            // 的行保留——历史账目还指着它们，只是规则不再往那里判新账。
+            "育儿", "旅行", "宠物",
         )
 
         private val DEFAULT_INCOME_CATEGORIES = listOf(

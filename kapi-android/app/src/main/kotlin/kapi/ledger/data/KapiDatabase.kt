@@ -91,6 +91,10 @@ interface TxnDao {
     @Update
     suspend fun update(row: TxnEntity)
 
+    /** 细类合并时改指向：同一 (父类, 名字) 的重复行收敛到保留行（2026-10-03）。 */
+    @Query("UPDATE txn SET categoryId = :to WHERE categoryId = :from")
+    suspend fun repointCategory(from: String, to: String)
+
     @Transaction
     suspend fun applyBatch(rows: List<TxnEntity>) {
         rows.forEach { upsertAll(listOf(it)) }

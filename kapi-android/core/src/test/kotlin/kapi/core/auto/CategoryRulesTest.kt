@@ -279,9 +279,67 @@ class CategoryRulesTest {
      */
     @Test
     fun `宠物品牌只凭商户名归档，不依赖页面角标`() {
-        assertEquals("购物/宠物", exp("小佩网络科技（上海）有限公司")?.text)
-        assertEquals("购物/宠物", exp("PETKIT旗舰店", "智能喂食器\n商品说明")?.text)
-        assertEquals("购物/宠物", exp("波奇宠物商城")?.text)
+        assertEquals("宠物", exp("小佩网络科技（上海）有限公司")?.text)
+        assertEquals("宠物", exp("PETKIT旗舰店", "智能喂食器\n商品说明")?.text)
+        assertEquals("宠物", exp("波奇宠物商城")?.text)
+    }
+
+    // ------------------------------------------ 2026-10-02 竞品对齐（钱迹一级分类清单）
+
+    /** 零食独立细类：高频小额，混进正餐后客单价被淹没。 */
+    @Test
+    fun `零食归餐饮的独立细类`() {
+        assertEquals("餐饮/零食", exp("三只松鼠旗舰店", "碧根果每日坚果500g\n商品说明")?.text)
+        assertEquals("餐饮/零食", exp("良品铺子", "香辣鸭脖卤味礼包\n商品说明")?.text)
+        assertEquals("餐饮/零食", exp("来伊份", "薯片膨化食品\n商品说明")?.text)
+    }
+
+    /** 旅行顶级：住宿与游玩词收进来；机票/火车刻意留在交通。 */
+    @Test
+    fun `旅行是独立顶级，机票火车仍归交通`() {
+        assertEquals("旅行/酒店住宿", exp("全季酒店")?.text)
+        assertEquals("旅行/酒店住宿", exp("某某民宿", "湖景大床房1晚\n商品说明")?.text)
+        assertEquals("旅行/景点门票", exp(null, "黄山风景区门票成人票\n商品说明")?.text)
+        // 出行方式不拽进旅行：飞行未必是度假（出差/探亲），交通 8 细类是既有强项
+        assertEquals("交通/飞机", exp("中国东方航空", "机票\n商品说明")?.text)
+        assertEquals("交通/火车", exp(null, "12306\n火车票\n商品说明")?.text)
+    }
+
+    /** 育儿顶级：钱迹的「孩子」，此前完全空白。 */
+    @Test
+    fun `育儿消费归新顶级`() {
+        assertEquals("育儿/奶粉尿布", exp("爱他美官方旗舰店", "幼儿配方奶粉3段800g\n商品说明")?.text)
+        assertEquals("育儿/奶粉尿布", exp(null, "帮宝适一级帮纸尿裤NB76\n商品说明")?.text)
+        assertEquals("育儿/玩具绘本", exp("乐高官方旗舰店", "积木玩具\n商品说明")?.text)
+        assertEquals("育儿/幼教学费", exp(null, "某某幼儿园9月保教费\n商品说明")?.text)
+        assertEquals("育儿/亲子游玩", exp(null, "亲子乐园家庭套票\n商品说明")?.text)
+        // 判不出细类的"东西"落育儿顶级
+        assertEquals("育儿", exp("巴拉巴拉童装旗舰店")?.text)
+    }
+
+    /** 育儿词迁移后，原归属不再抢：母婴剩孕产词、学费档不再认幼儿园。 */
+    @Test
+    fun `育儿词从母婴服饰教育迁出后不回流`() {
+        // 孕妇装/月子中心是妈妈的消费，留购物/母婴
+        assertEquals("购物/母婴", exp(null, "孕妇装秋冬套装\n商品说明")?.text)
+        assertEquals("购物/母婴", exp("某月子中心")?.text)
+        // 成人衣服仍是服饰
+        assertEquals("购物/服饰", exp("优衣库", "摇粒绒外套\n商品说明")?.text)
+    }
+
+    /** 宠物顶级细类：口粮/医疗分档；猫狗单字不收（猫眼/热狗是子串地雷）。 */
+    @Test
+    fun `宠物顶级分口粮与医疗，猫狗单字不收`() {
+        assertEquals("宠物/口粮", exp(null, "皇家猫粮1.5kg\n商品说明")?.text)
+        assertEquals("宠物/宠物医疗", exp("瑞鹏宠物医院")?.text)
+        // 猫眼电影不能被「猫」字抢成宠物——交通银行式子串事故
+        assertEquals("娱乐/电影", exp("猫眼电影", "某影片影票\n商品说明")?.text)
+    }
+
+    /** 演出门票仍是娱乐：旅行规则在娱乐之后，演唱会门票不被景点门票抢走。 */
+    @Test
+    fun `演唱会门票归演出不归旅行`() {
+        assertEquals("娱乐/演出", exp("大麦网", "演唱会门票\n商品说明")?.text)
     }
 
     // ------------------------------------------ 2025-06~2026-08 历史扫描（mcode 三轮）
