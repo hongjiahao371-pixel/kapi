@@ -29,6 +29,7 @@ import kapi.core.llm.LocalTextParser
 import kapi.core.llm.Money
 import kapi.ledger.container
 import kapi.ledger.data.CategoryEntity
+import kapi.ledger.data.AccountEntity
 import kapi.ledger.data.AutoDraftEntity
 import kapi.ledger.data.LedgerRepository
 import kapi.ledger.sync.LocalEditWriter
@@ -96,6 +97,11 @@ class BillOverlayService : Service() {
 
     /** 用户在窗上改过的金额（展示串，确认时经 Money.parse 回 minor；null = 没改）。 */
     private var pickedAmount: String? = null
+
+    /** 用户在窗上选过的账户 id（null = 没改，沿用草稿/推断账户）。 */
+    private var pickedAccountId: String? = null
+
+    private var allAccounts: List<AccountEntity> = emptyList()
 
     /**
      * 已记录模式的合成展示实体：没有草稿行，金额/方向/商户/时间全部来自
@@ -219,6 +225,12 @@ class BillOverlayService : Service() {
                     .observeForLedger(LedgerRepository.DEFAULT_LEDGER_ID)
                     .first()
                     .filter { !it.deleted && it.kind == result.direction.name }
+            }
+            allAccounts = withContext(Dispatchers.IO) {
+                container.db.accountDao()
+                    .observeForLedger(LedgerRepository.DEFAULT_LEDGER_ID)
+                    .first()
+                    .filter { !it.deleted }
             }
             val rd = recordedDraft ?: return@launch
             showWindow(rd, recordedResolvedCategoryId, recordedCategories, null)
@@ -371,7 +383,40 @@ class BillOverlayService : Service() {
         }
         row("商户", draft.merchant ?: "（未识别）")
         row("时间", SimpleDateFormat("M月d日 HH:mm", Locale.CHINA).format(Date(draft.occurredAt)))
-        row("账户", accountName ?: "默认账户")
+
+        // ---- 账户芯片行（点击切换入账账户）
+        val effectiveAccountId = draft.accountId ?: guessAccountId(recordedPkg)
+        card.addView(
+            title("账户（点击切换）", 12, "#666F80").apply { setPadding(0, dp(14), 0, dp(2)) },
+        )
+        val accountChipRow = HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false }
+        val accountChipWrap = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+        accountChipRow.addView(accountChipWrap)
+
+        fun renderAccountChips(selectedId: String?) {
+            accountChipWrap.removeAllViews()
+            for (acct in allAccounts) {
+                val isSel = selectedId == acct.id
+                val chip = TextView(ctx).apply {
+                    text = acct.name
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    setPadding(dp(12), dp(5), dp(12), dp(5))
+                    val r = GradientDrawable()
+                    r.cornerRadius = dp(14).toFloat()
+                    r.setColor(Color.parseColor(if (isSel) "#1A14B8A6" else "#0A000000"))
+                    if (isSel) r.setStroke(Math.max(1, dp(1)), Color.parseColor("#1414B8A6"))
+                    background = r
+                    setTextColor(Color.parseColor(if (isSel) "#14B8A6" else "#5A6475"))
+                    setOnClickListener { renderAccountChips(acct.id) }
+                }
+                accountChipWrap.addView(chip)
+                val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                lp.marginEnd = dp(6)
+                chip.layoutParams = lp
+            }
+        }
+        renderAccountChips(effectiveAccountId)
+
         row("来源", "自动读屏 · 待你确认")
 
         // ---- 类目：已归好的结果显示 + 点芯片可改
