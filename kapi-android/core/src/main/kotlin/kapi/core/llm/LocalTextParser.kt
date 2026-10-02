@@ -177,12 +177,15 @@ object LocalTextParser {
      * 3. 两侧的方向词按**字符距离**排序，最近的赢。
      * 4. 距离相同（正前方 vs 正后方）→ 判支出。钱的默认归属是"我付出去了"，
      *    这也是老代码在两个都没命中时的兜底，保持一致。
-     * 5. 全文根本没有方向词 → 判支出，**但置信度要压低**（见 [parse]）。
+     * 5. 全文根本没有方向词 → 判支出，**但有一种结构例外**：见
+     *    [isReceivedMoneyShape]——支付宝收款详情页整屏没有方向词，
+     *    唯一的方向证据是「对方账户」在而「付款方式」不在。
      */
     private fun decideDirection(
         t: String,
         amountStart: Int,
         amountEnd: Int,
+        receivedShape: Boolean = false,
     ): Direction {
         val center = (amountStart + amountEnd) / 2
 
@@ -204,13 +207,43 @@ object LocalTextParser {
         val income = nearest(INCOME_HINTS)
         val expense = nearest(EXPENSE_HINTS)
         return when {
-            income == null && expense == null -> Direction.EXPENSE
+            income == null && expense == null ->
+                if (receivedShape) Direction.INCOME else Direction.EXPENSE
             income == null -> Direction.EXPENSE
             expense == null -> Direction.INCOME
             expense <= income -> Direction.EXPENSE
             else -> Direction.INCOME
         }
     }
+
+    /**
+     * 「对方账户」在、而「付款方式 / 付款账户」不在——这笔钱是**进来的**。
+     *
+     * ## 2026-10-02 realme 真机的完整对照（6 页富账单详情）
+     *
+     * | 页 | 金额节点 | 对方账户 | 付款方式 | 真实方向 |
+     * |---|---|---|---|---|
+     * | 转账-盖被吱 +12100 | `12100元` | ✓ | **✗** | 收入 |
+     * | 转账-啦啦啦 -10000 | `支出10000元` | ✓ | ✓ | 支出（「支出」前缀命中词表） |
+     * | 转账收款到余额宝 12100 | `12100元` | ✗ | ✓ | 自转账（OwnAccount 拦） |
+     * | 信用卡还款 1360.11 | `1360.11元` | ✗ | ✓ | 自转账（OwnAccount 拦） |
+     * | 商户消费 -20 | `支出20元` | ✗ | ✓ | 支出 |
+     *
+     * 关键事实：**收入的金额节点是裸的**——屏幕上画着 `+12,100.00`，
+     * 无障碍节点文本却是 `12100元`（+号、千分位、小数点全被支付宝自己丢了），
+     * 整屏没有「收入/到账/收款」任何一个方向词。老兜底在这种页上把真收入
+     * 判成支出。而每一类**支出**页都带「付款方式」行或「支出」前缀，
+     * 所以「对方账户 + 无付款方式」只在收款页成立——这是结构性证据，
+     * 不是词表能覆盖的（[AutoBook] 的 OwnAccount 注释里记过同一个事实：
+     * 「对方账户」两个方向都会出现，所以单独它不够，必须配上付款方式缺席）。
+     *
+     * 只在**词表完全没命中**的兜底分支生效：有方向词的屏（包括带「支出」
+     * 前缀的转账支出页）一律照旧，结构判断不去和词表抢。
+     */
+    private fun isReceivedMoneyShape(t: String): Boolean =
+        t.contains("对方账户") &&
+            !t.contains("付款方式") &&
+            !t.contains("付款账户")
 
     /**
      * **账户状态**词。出现时，附近的数字是"账户里有多少钱"，不是"花了多少钱"。
@@ -319,10 +352,13 @@ object LocalTextParser {
             .replace("收款方式", "")
 
         val span = amountSpan(t)
+        // 结构判据必须看**原始**文本：directionText 已经剥掉了「付款方式」，
+        // 在它上面判「付款方式缺席」永远为真。
+        val receivedShape = isReceivedMoneyShape(t)
         val dir = if (span.isEmpty()) {
-            decideDirection(directionText, 0, directionText.length)
+            decideDirection(directionText, 0, directionText.length, receivedShape)
         } else {
-            decideDirection(directionText, span.first, span.last + 1)
+            decideDirection(directionText, span.first, span.last + 1, receivedShape)
         }
 
         val merchant = guessMerchant(t, amounts)

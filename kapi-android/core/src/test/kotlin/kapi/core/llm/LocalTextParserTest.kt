@@ -269,4 +269,65 @@ class LocalTextParserTest {
         )
         assertNull("半截分组不是金额，更不能当小数逗号读成 1.36", parse("1,36"))
     }
+
+    /**
+     * 收款详情页的方向（2026-10-02 realme 真机，mcode 副手采集的 6 页对照）。
+     *
+     * 收入的金额节点是**裸的**：屏幕画着 `+12,100.00`，无障碍节点文本只有
+     * `12100元`（+号/千分位/小数点被支付宝丢掉），整屏没有收入词。老兜底把
+     * 这种页判成支出——真收入记成支出，整本账是歪的。
+     *
+     * 结构判据：`对方账户` 在而 `付款方式` 不在 ⇒ 钱是进来的。支出页对照样本
+     * 全部带付款方式行或「支出」前缀（02/05/03/01 四页对照，见
+     * isReceivedMoneyShape 的 KDoc）。
+     */
+    @Test
+    fun receivedTransferDetailIsIncomeEvenWithoutAnyDirectionWord() {
+        // 无推荐位的收款详情页（页面变体，「转账红包」推荐块不保证存在）
+        val r = LocalTextParser.parse(
+            "盖被吱\n12100元\n交易成功\n2026-10-01 08:54:39\n创建时间\n转账\n转账备注\n" +
+                "盖被吱 181******39\n对方账户\n更多\n账单管理\n计入收支\n开关\n添加\n备注",
+            FIXED_NOW,
+        )
+        assertNotNull(r)
+        assertEquals(12_100_00L, r!!.amountsMinor.first())
+        assertEquals("收款页兜底必须是收入", Direction.INCOME, r.direction)
+    }
+
+    /** 真机 04 页原样（带「转账红包」推荐位）：收入词命中，结果一致。 */
+    @Test
+    fun realReceivedTransferPageWithPromoBlockIsStillIncome() {
+        val r = LocalTextParser.parse(
+            "盖被吱\n12100元\n交易成功\n2026-10-01 08:54:39\n创建时间\n转账\n转账备注\n" +
+                "盖被吱 181******39\n对方账户\n更多\n账单管理\n我的消费图鉴\n转账红包\n" +
+                "账单分类\n请选择\n标签\n为您推荐\n转账红包\n开关\n计入收支",
+            FIXED_NOW,
+        )
+        assertNotNull(r)
+        assertEquals(Direction.INCOME, r!!.direction)
+    }
+
+    /** 支出转账页（02 对照）：有付款方式行，结构判据不得生效，「支出」前缀说了算。 */
+    @Test
+    fun expenseTransferWithPaymentMethodStaysExpense() {
+        val r = LocalTextParser.parse(
+            "啦啦啦(朱娜娜)\n支出10000元\n交易成功\n2026-10-01 08:54:54\n创建时间\n" +
+                "余额宝\n付款方式\n转账\n转账备注\n啦啦啦(朱娜娜) 18******\n对方账户",
+            FIXED_NOW,
+        )
+        assertNotNull(r)
+        assertEquals(10_000_00L, r!!.amountsMinor.first())
+        assertEquals(Direction.EXPENSE, r.direction)
+    }
+
+    /** 微信转账详情页（文档样本）：没有「对方账户」结构，老兜底照旧判支出。 */
+    @Test
+    fun wechatTransferDetailWithoutCounterpartyFieldKeepsExpenseFallback() {
+        val r = LocalTextParser.parse(
+            "等待对方确认收钱\n当前状态\n-0.10\n转账-转给橘生",
+            FIXED_NOW,
+        )
+        assertNotNull(r)
+        assertEquals(Direction.EXPENSE, r!!.direction)
+    }
 }
