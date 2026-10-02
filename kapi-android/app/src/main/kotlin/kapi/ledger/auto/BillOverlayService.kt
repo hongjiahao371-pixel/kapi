@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -153,10 +154,15 @@ class BillOverlayService : Service() {
             WindowManager.LayoutParams.MATCH_PARENT,
             (screenH * 2) / 3,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_BLUR_BEHIND,
             PixelFormat.TRANSLUCENT,
         )
         params.gravity = Gravity.BOTTOM
+        // 真实背景模糊：白卡之下是被虚化的原 App（对标 iOS 底部弹窗玻璃质感）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            params.blurBehindRadius = dp(40)
+        }
         card.translationY = params.height.toFloat() // 初始沉在屏外，入场时滑上来
         root = card
         wm.addView(card, params)
@@ -185,12 +191,25 @@ class BillOverlayService : Service() {
 
         val card = LinearLayout(ctx)
         card.orientation = LinearLayout.VERTICAL
-        card.setPadding(dp(20), dp(18), dp(20), dp(18))
+        card.setPadding(dp(24), dp(10), dp(24), dp(24))
         val bg = GradientDrawable()
-        bg.setColor(Color.parseColor("#F00E1420"))
+        bg.setColor(Color.parseColor("#F2FFFFFF"))
         bg.cornerRadius = dp(28).toFloat()
-        bg.setStroke(Math.max(1, dp(1)), Color.parseColor("#2EFFFFFF"))
+        bg.setStroke(Math.max(1, dp(1)), Color.parseColor("#14000000"))
         card.background = bg
+
+        // 顶部抓握条 32x4dp，暗示可下滑/可拖走
+        val grab = View(ctx)
+        grab.layoutParams = LinearLayout.LayoutParams(dp(32), dp(4)).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            topMargin = dp(8)
+            bottomMargin = dp(12)
+        }
+        val grabBg = GradientDrawable()
+        grabBg.cornerRadius = dp(2).toFloat()
+        grabBg.setColor(Color.parseColor("#33000000"))
+        grab.background = grabBg
+        card.addView(grab)
 
         fun title(text: String, size: Int, color: String, bold: Boolean = false): TextView =
             TextView(ctx).apply {
@@ -200,14 +219,20 @@ class BillOverlayService : Service() {
                 this.typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
             }
 
-        // ---- 标题行
+        // ---- 标题行：标题 + 来源小字（左），✕（右）
         val head = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+        head.gravity = Gravity.CENTER_VERTICAL
+        val headTexts = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        headTexts.addView(title("识别到一笔支付", 13, "#171E2E", bold = true))
+        headTexts.addView(
+            title("自动读屏 · 待你确认", 11, "#9AA3B2").apply { setPadding(0, dp(2), 0, 0) },
+        )
         head.addView(
-            title("识别到一笔支付", 16, "#E6FFFFFF").apply {
+            headTexts.apply {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             },
         )
-        val close = title("✕", 16, "#99FFFFFF")
+        val close = title("✕", 16, "#9AA3B2")
         close.setPadding(dp(16), 0, dp(4), 0)
         close.setOnClickListener { removeWindow() }
         head.addView(close)
@@ -216,14 +241,14 @@ class BillOverlayService : Service() {
         // ---- 金额（可改）+ 方向
         // 识别错金额的纠正路径就在窗上：优惠/原价误拾、面额vs实付，直接改数字
         // 确认即可，不用删稿等重录（重录会被 90 天去重挡住）。
-        val directionColor = if (draft.direction == "INCOME") "#4CD98A" else "#FF7A65"
+        val directionColor = if (draft.direction == "INCOME") "#12A594" else "#E5484D"
         val amountRow = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
         amountRow.gravity = Gravity.CENTER_VERTICAL
-        val sign = title(if (draft.direction == "INCOME") "+" else "-", 40, directionColor, bold = true)
+        val sign = title(if (draft.direction == "INCOME") "+" else "-", 44, directionColor, bold = true)
         amountRow.addView(sign)
         val amountEdit = EditText(ctx).apply {
             setText(Money.toYuanDisplay(draft.amountMinor))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 40f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 44f)
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(Color.parseColor(directionColor))
             setBackgroundResource(android.R.color.transparent)
@@ -248,9 +273,9 @@ class BillOverlayService : Service() {
         // ---- 字段行
         fun row(label: String, value: String) {
             val r = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-            r.addView(title(label, 13, "#8AFFFFFF").apply { layoutParams = LinearLayout.LayoutParams(dp(76), LinearLayout.LayoutParams.WRAP_CONTENT) })
-            r.addView(title(value, 13, "#E6FFFFFF"))
-            card.addView(r, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also { it.topMargin = dp(8) })
+            r.addView(title(label, 12, "#666F80").apply { layoutParams = LinearLayout.LayoutParams(dp(64), LinearLayout.LayoutParams.WRAP_CONTENT) })
+            r.addView(title(value, 14, "#171E2E"))
+            card.addView(r, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also { it.topMargin = dp(10) })
         }
         row("商户", draft.merchant ?: "（未识别）")
         row("时间", SimpleDateFormat("M月d日 HH:mm", Locale.CHINA).format(Date(draft.occurredAt)))
@@ -260,12 +285,12 @@ class BillOverlayService : Service() {
         // ---- 类目：已归好的结果显示 + 点芯片可改
         val resolved = categories.firstOrNull { it.id == resolvedCategoryId }
         card.addView(
-            title("类目（点下方可修改）", 13, "#8AFFFFFF").apply { setPadding(0, dp(14), 0, dp(2)) },
+            title("类目（点下方可修改）", 12, "#666F80").apply { setPadding(0, dp(18), 0, dp(2)) },
         )
         val categoryValue = title(
             resolved?.let { it.parentTextOrNull(categories) ?: it.name } ?: "未分类",
-            16,
-            "#7FE6D9",
+            15,
+            "#14B8A6",
             bold = true,
         )
         card.addView(categoryValue)
@@ -292,12 +317,13 @@ class BillOverlayService : Service() {
                 val chip = TextView(ctx).apply {
                     text = cat.name
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                    setPadding(dp(14), dp(6), dp(14), dp(6))
+                    setPadding(dp(14), dp(7), dp(14), dp(7))
                     val r = GradientDrawable()
                     r.cornerRadius = dp(16).toFloat()
-                    r.setColor(Color.parseColor(if (selected) "#337FE6D9" else "#22FFFFFF"))
+                    r.setColor(Color.parseColor(if (selected) "#1A14B8A6" else "#0A000000"))
+                    if (selected) r.setStroke(Math.max(1, dp(1)), Color.parseColor("#1414B8A6"))
                     background = r
-                    setTextColor(Color.parseColor(if (selected) "#7FE6D9" else "#CCFFFFFF"))
+                    setTextColor(Color.parseColor(if (selected) "#14B8A6" else "#5A6475"))
                     setOnClickListener {
                         picked = cat
                         pickedCategory = cat
@@ -320,12 +346,13 @@ class BillOverlayService : Service() {
                         val chip = TextView(ctx).apply {
                             text = kid.name
                             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                            setPadding(dp(12), dp(4), dp(12), dp(4))
+                            setPadding(dp(12), dp(5), dp(12), dp(5))
                             val r = GradientDrawable()
                             r.cornerRadius = dp(14).toFloat()
-                            r.setColor(Color.parseColor(if (selected) "#337FE6D9" else "#1AFFFFFF"))
+                            r.setColor(Color.parseColor(if (selected) "#1A14B8A6" else "#0A000000"))
+                            if (selected) r.setStroke(Math.max(1, dp(1)), Color.parseColor("#1414B8A6"))
                             background = r
-                            setTextColor(Color.parseColor(if (selected) "#7FE6D9" else "#AAFFFFFF"))
+                            setTextColor(Color.parseColor(if (selected) "#14B8A6" else "#5A6475"))
                             setOnClickListener {
                                 picked = kid
                                 pickedCategory = kid
@@ -347,14 +374,19 @@ class BillOverlayService : Service() {
 
         // ---- 备注（可改）
         card.addView(
-            title("备注", 13, "#8AFFFFFF").apply { setPadding(0, dp(12), 0, dp(2)) },
+            title("备注", 12, "#666F80").apply { setPadding(0, dp(16), 0, dp(2)) },
         )
         val noteEdit = EditText(ctx).apply {
             hint = "可留空"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.parseColor("#66FFFFFF"))
+            setTextColor(Color.parseColor("#171E2E"))
+            setHintTextColor(Color.parseColor("#9AA3B2"))
             setBackgroundResource(android.R.color.transparent)
+            val nb = GradientDrawable()
+            nb.cornerRadius = dp(10).toFloat()
+            nb.setColor(Color.parseColor("#0A000000"))
+            background = nb
+            setPadding(dp(12), dp(9), dp(12), dp(9))
             setText(pickedNote ?: draft.note.orEmpty())
             maxLines = 2
         }
@@ -378,21 +410,21 @@ class BillOverlayService : Service() {
                 setTypeface(typeface, Typeface.BOLD)
                 setTextColor(Color.parseColor(textColor))
                 val r = GradientDrawable()
-                r.cornerRadius = dp(14).toFloat()
+                r.cornerRadius = dp(16).toFloat()
                 r.setColor(Color.parseColor(bgColor))
                 background = r
                 setOnClickListener { onClick() }
             }
-            val lp = LinearLayout.LayoutParams(0, dp(46), weight)
+            val lp = LinearLayout.LayoutParams(0, dp(48), weight)
             lp.marginEnd = dp(10)
             b.layoutParams = lp
             buttons.addView(b)
         }
-        button("不记了", "#FF8A80", "#22FFFFFF", 1f) { onDiscard() }
-        button("稍后", "#CCFFFFFF", "#22FFFFFF", 1f) { removeWindow() }
-        // 主按钮亮底深字，视觉上压过两个次级按钮
-        button("确认入账", "#0F1515", "#7FE6D9", 1.2f) { onConfirm(draft) }
-        card.addView(buttons, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46)).also { it.topMargin = dp(16) })
+        button("不记了", "#E5484D", "#14E5484D", 1f) { onDiscard() }
+        button("稍后", "#666F80", "#0F000000", 1f) { removeWindow() }
+        // 主按钮青底白字实心，视觉上压过两个次级按钮
+        button("确认入账", "#FFFFFF", "#14B8A6", 1.2f) { onConfirm(draft) }
+        card.addView(buttons, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)).also { it.topMargin = dp(20) })
         return card
     }
 
