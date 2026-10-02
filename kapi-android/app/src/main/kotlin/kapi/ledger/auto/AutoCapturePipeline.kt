@@ -120,7 +120,11 @@ class AutoCapturePipeline(
 
         val text = input.rawText ?: return Outcome.Ignored("没有文字")
 
-        // 2. 指纹去重——整条管线唯一的自动丢弃点
+        // 2. 指纹去重——**只查询，不落戳**。落戳推迟到真正产出记录之后：
+        // 旧版在门检之前落戳，被门拒掉的页面也留 90 天戳——加载态误杀时代的
+        // 微信转账页，门修好后同一笔永远录不进来（2026-10-02 -1200 现场实证）。
+        // 误杀期间页面被门丢弃不留痕；门修好后的第一次读取正常建稿并落戳，
+        // 后续重开由本查询挡掉。同一页短时间内的多次读取由第 5 步同源合并兜住。
         //
         // 账单详情页上带平台交易号时**改用交易号去重**，而且换的是两样东西：
         // 判据（硬 ID 而非文本哈希）和窗口（90 天而非 3 分钟）。理由见
@@ -128,10 +132,14 @@ class AutoCapturePipeline(
         // 用户隔几天再点开同一笔账单就会多一条重复记录。
         val payId = PaymentId.authoritative(text)
         val fingerprint = payId?.key ?: AutoBook.exactFingerprint(channel, text)
+        fun markSeen() {
+            if (payId != null) autoStore.markTxnIdSeen(fingerprint, now)
+            else autoStore.markFingerprintSeen(fingerprint, now)
+        }
         val duplicate = if (payId != null) {
-            autoStore.isDuplicateTxnId(fingerprint, now)
+            autoStore.hasSeenTxnId(fingerprint, now)
         } else {
-            autoStore.isDuplicate(fingerprint, now)
+            autoStore.hasSeenFingerprint(fingerprint, now)
         }
         if (duplicate) {
             return Outcome.Ignored(
@@ -167,7 +175,7 @@ class AutoCapturePipeline(
         // 2026-10-01 realme 上它被记成了 `12100 EXPENSE / 商户=None`。
         val own = OwnAccount.judge(text.lines())
         if (own is OwnAccount.Verdict.SelfTransfer) {
-            return postSelfTransfer(own, best.amountMinor, parsed.occurredAt, ledgerId, text)
+            return postSelfTransfer(own, best.amountMinor, parsed.occurredAt, ledgerId, text) { markSeen() }
         }
 
         // 5. 跨来源合并
@@ -205,6 +213,7 @@ class AutoCapturePipeline(
                 "跨来源"
             }
             Log.i(TAG, "$kind 合并：并入 ${merged.id}，来源 ${merged.sources}，证据 ${merged.evidenceCount} 条")
+            markSeen()
             return Outcome.Merged(merged.id, merged.sources)
         }
 
@@ -251,6 +260,7 @@ class AutoCapturePipeline(
                 confidence = parsed.confidence,
             )
             Log.i(TAG, "已入账 ${txn.id}：${routed.reason}")
+            markSeen()
             return Outcome.Posted(txn.id, routed.reason)
         }
 
@@ -260,6 +270,7 @@ class AutoCapturePipeline(
         )
         db.autoDraftDao().upsert(withDupCheck)
         Log.i(TAG, "新草稿 ${withDupCheck.id}：${withDupCheck.amountMinor} $direction，$why")
+        markSeen()
         return Outcome.Drafted(withDupCheck.id, why)
     }
 
@@ -311,6 +322,7 @@ class AutoCapturePipeline(
         at: Long,
         ledgerId: String,
         rawText: String?,
+        markSeen: () -> Unit,
     ): Outcome {
         val fromId = resolveWalletAccount(own.from)
         val toId = resolveWalletAccount(own.to)
@@ -343,6 +355,7 @@ class AutoCapturePipeline(
         val fromName = db.accountDao().byId(fromId)?.name ?: fromId
         val toName = db.accountDao().byId(toId)?.name ?: toId
         Log.i(TAG, "自转账已入账 ${txn.id}：$fromName → $toName，$amountMinor")
+        markSeen()
         return Outcome.Transfer(txn.id, why)
     }
 

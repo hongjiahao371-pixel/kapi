@@ -39,6 +39,20 @@ class AutoBookStore(context: Context) {
      */
     private val idStamps: MutableMap<String, Long> by lazy { loadStamps(KEY_ID_STAMPS) }
 
+    init {
+        // 2026-10-02 去重语义迁移（v2）：旧版在门检**之前**落戳，被门拒掉的页面
+        // 也留了 90 天戳——「加载中」误杀时代的微信转账页，门修好后同一笔永远
+        // 录不进来。历史毒戳无法与正常戳区分，一次性清空（代价：迁移当天同一页
+        // 重开可能多一条草稿，同源合并层会并掉，可接受）。
+        if (!prefs.getBoolean(KEY_DEDUP_V2, false)) {
+            prefs.edit()
+                .remove(KEY_STAMPS).remove(KEY_ID_STAMPS)
+                .putBoolean(KEY_DEDUP_V2, true)
+                .apply()
+            Log.w(TAG, "去重语义迁移 v2：清空历史去重戳（旧版在门检前落戳会毒化去重表）")
+        }
+    }
+
     /**
      * 读屏通路开关。
      *
@@ -81,50 +95,69 @@ class AutoBookStore(context: Context) {
         set(v) = prefs.edit().putStringSet(KEY_PACKAGES, v).apply()
 
     /**
-     * 这个指纹在窗口内是不是已经记过了。
+     * 这个指纹在窗口内是不是已经记过了。**只查询，不落戳。**
      *
      * @return true = 重复，调用方**必须丢弃**。false = 新的一笔，调用方去处理，
-     *         并且这次调用已经把时刻记下来了。
+     *         处理**真正产出记录之后**再调 [markFingerprintSeen] 落戳。
      *
      * 名字用肯定式（`isDuplicate`）而不是"要不要记"，是因为唯一可能的误用就是
      * 把 true/false 写反，而那种错误在账本里表现为凭空多一笔或凭空少一笔，
      * 两者都不报错。
      */
-    fun isDuplicate(fingerprint: String, now: Long = System.currentTimeMillis()): Boolean {
+    fun hasSeenFingerprint(fingerprint: String, now: Long = System.currentTimeMillis()): Boolean {
         if (fingerprint.isEmpty()) return false // 没读到文本时不参与去重
         synchronized(lock) {
             val previous = stamps[fingerprint] ?: 0L
-            if (AutoBook.isDuplicate(previous, now, dedupeWindowMs)) {
-                return true
-            }
+            return AutoBook.isDuplicate(previous, now, dedupeWindowMs)
+        }
+    }
+
+    /**
+     * 真正产出记录（草稿/入账/合并）之后才落戳。
+     *
+     * ## 为什么检查和落戳必须分开（2026-10-02）
+     *
+     * 旧版 `isDuplicate` 是检查+落戳原子操作，管线在第 2 步（门检之前）调用——
+     * 被门拒掉的页面**也留了 90 天戳**。微信 H5 的「加载中」哨兵误杀期间
+     * （见 PaymentGate.SETTLED_FIELD_HINTS），所有微信转账页都被门拒却留了戳，
+     * 门修好之后同一笔永远录不进来（-1200 现场实证：修复包上读取，
+     * 「交易号…已经记过」）。新语义：只在真正产出记录后落戳，门拒不留痕。
+     */
+    fun markFingerprintSeen(fingerprint: String, now: Long = System.currentTimeMillis()) {
+        if (fingerprint.isEmpty()) return
+        synchronized(lock) {
             stamps[fingerprint] = now
             purgeLocked(now)
             persistLocked()
-            return false
         }
     }
 
     /**
      * 这个平台交易号在 [AutoBook.HARD_ID_WINDOW_MS] 内是不是已经记过了。
+     * **只查询，不落戳**——落戳见 [markTxnIdSeen]。
      *
-     * 和 [isDuplicate] 刻意分开：窗口固定 90 天、不跟用户设置走，判据也更强——
+     * 和 [hasSeenFingerprint] 刻意分开：窗口固定 90 天、不跟用户设置走，判据也更强——
      * 同一个微信交易单号只可能是一笔，返回 true 就**一定**可以直接丢弃，
      * 不必并成草稿让用户看。
      *
      * 单独一张表的另一个理由是持久化：用户在微信里翻账单是常事，昨天看过的那笔今天
      * 又点开第二次是常事，3 分钟窗口早就过了，重复会直接进账本。文本指纹挡不住这个。
      */
-    fun isDuplicateTxnId(txnKey: String, now: Long = System.currentTimeMillis()): Boolean {
+    fun hasSeenTxnId(txnKey: String, now: Long = System.currentTimeMillis()): Boolean {
         if (txnKey.isEmpty()) return false
         synchronized(lock) {
             val previous = idStamps[txnKey] ?: 0L
-            if (AutoBook.isDuplicateId(previous, now)) {
-                return true
-            }
+            return AutoBook.isDuplicateId(previous, now)
+        }
+    }
+
+    /** 真正产出记录之后落交易号戳（90 天硬去重窗口）。 */
+    fun markTxnIdSeen(txnKey: String, now: Long = System.currentTimeMillis()) {
+        if (txnKey.isEmpty()) return
+        synchronized(lock) {
             idStamps[txnKey] = now
             purgeIdsLocked(now)
             persistLocked()
-            return false
         }
     }
 
@@ -212,6 +245,7 @@ class AutoBookStore(context: Context) {
         private const val KEY_PACKAGES = "watched_packages"
         private const val KEY_STAMPS = "handled_stamps"
         private const val KEY_ID_STAMPS = "handled_txn_ids"
+        private const val KEY_DEDUP_V2 = "dedup_semantics_v2"
 
         /**
          * 默认监听包名。
