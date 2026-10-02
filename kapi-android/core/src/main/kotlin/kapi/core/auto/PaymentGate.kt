@@ -180,6 +180,23 @@ object PaymentGate {
     )
 
     /**
+     * 「页面已渲染完毕」的字段证据。
+     *
+     * 2026-10-02 微信 H5（realme + OPPO 双机，mcode 三轮扫描）：微信账单详情页
+     * 有一个**常驻**的懒加载哨兵节点「加载中」，稳定排在无障碍节点流第一位、
+     * 与 转账单号/付款方式/收款时间 等已渲染字段**共存**——按词直接拦，微信
+     * 转账/收款类详情页被 100% 永久丢弃（停留 7 秒与 11 秒结果相同，见
+     * mcode 扫描报告）。加载词只在屏幕**没有**这些证据时才拦：真正还在
+     * 加载的屏（9-30「-3.99/加载中」假账）既没有强动词也没有字段。
+     */
+    private val SETTLED_FIELD_HINTS = listOf(
+        "交易单号", "转账单号", "商户单号", "订单号", "当前状态",
+    )
+    // 证据门槛刻意是**单号级**字段，不含支付时间/付款方式这类普通字段：
+    // 支付宝半屏真机（10-01）上「支付时间 + 金额」先渲染出来而金额是错的，
+    // 普通字段不足以证明页面已定型（半屏用例钉在 RealScreenFalsePositiveTest）。
+
+    /**
      * 金额的宽松形态，够用来数"这段文字里有几笔钱"。
      *
      * **必须和 [kapi.core.llm.LocalTextParser.AMOUNT_PATTERNS] 认的东西一致。**
@@ -288,8 +305,14 @@ object PaymentGate {
         // 沉降延迟（KapiAccessibilityService 的 SETTLE_DELAY_MS）是 1.2 秒，
         // 那是个**估计值**：支付宝这一屏的详情是异步补的，1.2 秒不够。
         // 与其赌延迟调大到多少合适，不如让屏自己说"我还没准备好"。
-        LOADING_HINTS.firstOrNull { lower.contains(it) }?.let {
-            return Verdict.NotPayment("页面还在加载中（命中「$it」），这一屏不是最终形态")
+        // 加载词只在**没有已渲染证据**时才拦——微信 H5 的常驻「加载中」哨兵
+        // 与已渲染字段共存（见 SETTLED_FIELD_HINTS 的 KDoc）。
+        val settled = STRONG_VERBS.any { lower.contains(it.lowercase(Locale.ROOT)) } ||
+            SETTLED_FIELD_HINTS.any { lower.contains(it) }
+        if (!settled) {
+            LOADING_HINTS.firstOrNull { lower.contains(it) }?.let {
+                return Verdict.NotPayment("页面还在加载中（命中「$it」），这一屏不是最终形态")
+            }
         }
 
         // 会话/消息列表页：在看任何动词之前挡掉。

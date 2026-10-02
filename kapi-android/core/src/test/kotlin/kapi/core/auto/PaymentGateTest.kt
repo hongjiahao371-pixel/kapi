@@ -17,6 +17,30 @@ class PaymentGateTest {
         assertTrue("本该挡下（$because），实际放行了：$text", v is Verdict.NotPayment)
     }
 
+    /** 微信商家账单详情页 + 常驻「加载中」哨兵（2026-10-02 realme 微信，mcode 扫描报告）。 */
+    private val wechatDetailWithSentinel = """
+        加载中
+        本服务由财付通提供
+        查看往来转账
+        申请转账电子凭证
+        定位到聊天位置
+        对订单有疑惑
+        账单服务
+        product_SZ_20250908128421809
+        商户单号
+        4200002542202509081739157531
+        交易单号
+        零钱
+        付款方式
+        2025年9月8日 09:24:15
+        收款时间
+        交易成功
+        -18.00
+        深圳市腾讯计算机系统有限公司
+        当前状态
+        支付成功
+    """.trimIndent()
+
     // ---------------------------------------------------- 真实支付通知
 
     @Test
@@ -366,5 +390,23 @@ class PaymentGateTest {
             val v = PaymentGate.verdict(bad)
             assertTrue("空输入必须挡下，实际 $v", v is Verdict.NotPayment)
         }
+    }
+
+    /**
+     * 微信 H5 的常驻「加载中」哨兵（2026-10-02 真机，mcode 扫描）：
+     * 详情页节点流第一位永远有个「加载中」，与 转账单号/付款方式/收款时间
+     * 等已渲染字段共存。按词直接拦 = 微信转账/收款页 100% 永久丢弃
+     * （真机停留 7 秒与 11 秒结果相同）。加载词必须给「已渲染证据」让路。
+     */
+    @Test
+    fun wechatResidentLoadingSentinelDoesNotBlockRenderedDetailPages() {
+        accept(wechatDetailWithSentinel)
+    }
+
+    /** 真正在加载的屏（9-30 的 -3.99/加载中 假账）：没有字段没有动词，照拦。 */
+    @Test
+    fun genuinelyLoadingScreenWithOnlyAnAmountIsStillBlocked() {
+        reject("加载中\n-3.99", "半屏加载，金额不可信")
+        reject("加载中", "纯加载屏")
     }
 }
