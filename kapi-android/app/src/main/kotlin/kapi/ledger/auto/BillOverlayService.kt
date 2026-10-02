@@ -22,10 +22,15 @@ import android.widget.EditText
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
+import kapi.core.auto.AutoBook
+import kapi.core.auto.PaymentId
+import kapi.core.auto.NoteComposer
+import kapi.core.llm.LocalTextParser
 import kapi.core.llm.Money
 import kapi.ledger.container
 import kapi.ledger.data.CategoryEntity
 import kapi.ledger.data.AutoDraftEntity
+import kapi.ledger.data.LedgerRepository
 import kapi.ledger.sync.LocalEditWriter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CoroutineScope
@@ -75,6 +80,14 @@ class BillOverlayService : Service() {
     /** 当前窗上那笔草稿。同一时刻只显示一笔——新草稿来了直接顶掉旧的（旧稿留待确认）。 */
     private var currentDraftId: String? = null
 
+    private enum class Mode { CONFIRM, RECORDED }
+
+    private var mode = Mode.CONFIRM
+
+    /** 当前窗的原文指纹与弹出时刻：同一页的事件流会在几秒内反复触发，去重弹窗自己。 */
+    private var lastShownKey: String? = null
+    private var lastShownAtMs: Long = 0
+
     /** 用户在窗上改过的类目（null = 没改，确认时用 AutoCategory 的解析结果）。 */
     private var pickedCategory: CategoryEntity? = null
 
@@ -83,6 +96,17 @@ class BillOverlayService : Service() {
 
     /** 用户在窗上改过的金额（展示串，确认时经 Money.parse 回 minor；null = 没改）。 */
     private var pickedAmount: String? = null
+
+    /**
+     * 已记录模式的合成展示实体：没有草稿行，金额/方向/商户/时间全部来自
+     * 账单原文解析，「再记一次」按它入账。
+     */
+    private var recordedDraft: AutoDraftEntity? = null
+    private var recordedResolvedCategoryId: String? = null
+    private var recordedCategories: List<CategoryEntity> = emptyList()
+    private var recordedPkg: String? = null
+    private var recordedRawText: String? = null
+    private var recordedOccurredAt: Long = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -94,14 +118,25 @@ class BillOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val draftId = intent?.getStringExtra(EXTRA_DRAFT_ID)
-        if (draftId != null) show(draftId)
+        when (intent?.getStringExtra(EXTRA_MODE)) {
+            MODE_RECORDED -> {
+                val text = intent.getStringExtra(EXTRA_RAW_TEXT) ?: return START_NOT_STICKY
+                val at = intent.getLongExtra(EXTRA_OCCURRED_AT, System.currentTimeMillis())
+                val pkg = intent.getStringExtra(EXTRA_PKG)
+                showRecorded(text, at, pkg)
+            }
+            else -> {
+                val draftId = intent?.getStringExtra(EXTRA_DRAFT_ID)
+                if (draftId != null) showConfirm(draftId)
+            }
+        }
         return START_NOT_STICKY
     }
 
-    /** 入口：管线在 Drafted 之后调用。无悬浮窗权限时静默跳过（草稿走兜底）。 */
-    private fun show(draftId: String) {
+    /** 入口一：管线在 Drafted 之后调用（没记录过的账单）。无权限时静默跳过。 */
+    private fun showConfirm(draftId: String) {
         if (!Settings.canDrawOverlays(this)) return
+        mode = Mode.CONFIRM
         currentDraftId = draftId
         pickedCategory = null
         pickedNote = null
@@ -134,6 +169,62 @@ class BillOverlayService : Service() {
         }
     }
 
+    /**
+     * 入口二：去重命中（这笔之前记过）之后调用。没有草稿行，信息从账单
+     * 原文现解析；解析不出金额（非支付页/加载残屏）就静默跳过。
+     */
+    private fun showRecorded(text: String, at: Long, pkg: String?) {
+        if (!Settings.canDrawOverlays(this)) return
+        mode = Mode.RECORDED
+        currentDraftId = null
+        pickedCategory = null
+        pickedNote = null
+        pickedAmount = null
+        recordedRawText = text
+        recordedOccurredAt = at
+        recordedPkg = pkg
+        scope.launch {
+            val result = LocalTextParser.parse(text, at) ?: return@launch
+            recordedDraft = AutoDraftEntity(
+                id = "",
+                ledgerId = LedgerRepository.DEFAULT_LEDGER_ID,
+                amountMinor = result.amountsMinor.firstOrNull() ?: 0L,
+                direction = result.direction.name,
+                occurredAt = result.occurredAt,
+                merchant = result.merchant,
+                note = NoteComposer.compose(text),
+                accountId = null,
+                source = LocalEditWriter.SOURCE_LOCAL_FALLBACK,
+                confidence = result.confidence,
+                fingerprint = "",
+                createdAt = System.currentTimeMillis(),
+                originPackage = pkg,
+                rawText = text.take(2000),
+                sources = "A11Y",
+                evidenceCount = 1,
+            )
+            recordedResolvedCategoryId = withContext(Dispatchers.IO) {
+                runCatching {
+                    AutoCategory.resolve(
+                        db = container.db,
+                        ledgerId = LedgerRepository.DEFAULT_LEDGER_ID,
+                        merchant = result.merchant,
+                        rawText = text,
+                        direction = result.direction.name,
+                    )
+                }.getOrNull()
+            }
+            recordedCategories = withContext(Dispatchers.IO) {
+                container.db.categoryDao()
+                    .observeForLedger(LedgerRepository.DEFAULT_LEDGER_ID)
+                    .first()
+                    .filter { !it.deleted && it.kind == result.direction.name }
+            }
+            val rd = recordedDraft ?: return@launch
+            showWindow(rd, recordedResolvedCategoryId, recordedCategories, null)
+        }
+    }
+
     // ------------------------------------------------------------ 窗口
 
     private fun showWindow(
@@ -154,15 +245,13 @@ class BillOverlayService : Service() {
             WindowManager.LayoutParams.MATCH_PARENT,
             (screenH * 2) / 3,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_BLUR_BEHIND,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT,
         )
         params.gravity = Gravity.BOTTOM
-        // 真实背景模糊：白卡之下是被虚化的原 App（对标 iOS 底部弹窗玻璃质感）
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            params.blurBehindRadius = dp(40)
-        }
+        // 刻意**不做**背景模糊：悬浮窗下面是用户正在看的账单详情页，
+        // 模糊它等于把用户要看的内容糊掉（2026-10-02 用户反馈）。
+        // 白卡的「玻璃感」由高不透明度+描边+投影表达，不吃背景。
         card.translationY = params.height.toFloat() // 初始沉在屏外，入场时滑上来
         root = card
         wm.addView(card, params)
@@ -193,10 +282,11 @@ class BillOverlayService : Service() {
         card.orientation = LinearLayout.VERTICAL
         card.setPadding(dp(24), dp(10), dp(24), dp(24))
         val bg = GradientDrawable()
-        bg.setColor(Color.parseColor("#F2FFFFFF"))
+        bg.setColor(Color.parseColor("#F7FFFFFF"))
         bg.cornerRadius = dp(28).toFloat()
         bg.setStroke(Math.max(1, dp(1)), Color.parseColor("#14000000"))
         card.background = bg
+        card.elevation = dp(10).toFloat()
 
         // 顶部抓握条 32x4dp，暗示可下滑/可拖走
         val grab = View(ctx)
@@ -241,7 +331,9 @@ class BillOverlayService : Service() {
         // ---- 金额（可改）+ 方向
         // 识别错金额的纠正路径就在窗上：优惠/原价误拾、面额vs实付，直接改数字
         // 确认即可，不用删稿等重录（重录会被 90 天去重挡住）。
-        val directionColor = if (draft.direction == "INCOME") "#12A594" else "#E5484D"
+        // 已记录模式没有草稿行，展示数据全部来自账单原文解析
+        val direction = draft.direction
+        val directionColor = if (direction == "INCOME") "#12A594" else "#E5484D"
         val amountRow = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
         amountRow.gravity = Gravity.CENTER_VERTICAL
         val sign = title(if (draft.direction == "INCOME") "+" else "-", 44, directionColor, bold = true)
@@ -420,19 +512,29 @@ class BillOverlayService : Service() {
             b.layoutParams = lp
             buttons.addView(b)
         }
-        button("不记了", "#E5484D", "#14E5484D", 1f) { onDiscard() }
-        button("稍后", "#666F80", "#0F000000", 1f) { removeWindow() }
-        // 主按钮青底白字实心，视觉上压过两个次级按钮
-        button("确认入账", "#FFFFFF", "#14B8A6", 1.2f) { onConfirm(draft) }
+        if (mode == Mode.RECORDED) {
+            // 已记录：这笔在账本里已有，问用户要不要再记一次
+            button("不记了", "#666F80", "#0F000000", 1f) { removeWindow() }
+            button("再记一次", "#FFFFFF", "#14B8A6", 1.2f) { onReRecord(draft) }
+        } else {
+            button("不记了", "#E5484D", "#14E5484D", 1f) { onDiscard() }
+            button("稍后", "#666F80", "#0F000000", 1f) { removeWindow() }
+            // 主按钮青底白字实心，视觉上压过两个次级按钮
+            button("确认入账", "#FFFFFF", "#14B8A6", 1.2f) { onConfirm(draft) }
+        }
         card.addView(buttons, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)).also { it.topMargin = dp(20) })
         return card
     }
 
     // ------------------------------------------------------------ 动作
 
-    /** 不记了：删草稿，什么都不记。 */
+    /** 不记了：删草稿，什么都不记。已记录模式没有草稿，等于「不记」。 */
     private fun onDiscard() {
-        val id = currentDraftId ?: return
+        val id = currentDraftId
+        if (id == null) {
+            removeWindow()
+            return
+        }
         scope.launch {
             withContext(Dispatchers.IO) { container.db.autoDraftDao().delete(id) }
             removeWindow()
@@ -484,6 +586,61 @@ class BillOverlayService : Service() {
         }
     }
 
+    /**
+     * 已记录模式的「再记一次」：绕过去重，按窗上信息（金额可改/类目可改/
+     * 备注可改）直接入账。入账后落 90 天戳——别再反复提示。
+     */
+    private fun onReRecord(draft: AutoDraftEntity) {
+        val pickedCategoryFinal = pickedCategory
+        val noteFinal = pickedNote ?: draft.note
+        val amountFinal = pickedAmount
+            ?.let { Money.parse(it)?.minor }
+            ?.takeIf { it > 0 }
+            ?: draft.amountMinor
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val categoryId = pickedCategoryFinal?.id
+                        ?: AutoCategory.resolve(
+                            db = container.db,
+                            ledgerId = draft.ledgerId,
+                            merchant = draft.merchant,
+                            rawText = draft.rawText,
+                            direction = draft.direction,
+                        )
+                    container.editor.createTransaction(
+                        amountMinor = amountFinal,
+                        direction = draft.direction,
+                        accountId = guessAccountId(recordedPkg),
+                        occurredAt = draft.occurredAt,
+                        ledgerId = draft.ledgerId,
+                        deviceId = container.tokenStore.deviceId,
+                        note = noteFinal,
+                        merchant = draft.merchant,
+                        categoryId = categoryId,
+                        source = LocalEditWriter.SOURCE_LOCAL_FALLBACK,
+                        confidence = draft.confidence,
+                    )
+                    if (draft.rawText != null) {
+                        val key = PaymentId.authoritative(draft.rawText)?.key
+                            ?: AutoBook.exactFingerprint(AutoBook.CaptureChannel.A11Y, draft.rawText!!)
+                        container.autoBookStore.markFingerprintSeen(key, System.currentTimeMillis())
+                    }
+                }
+                removeWindow()
+            }.onFailure {
+                android.util.Log.w("BillOverlay", "再记一次失败：${it.javaClass.name}: ${it.message}", it)
+            }
+        }
+    }
+
+    /** 来源 App → 平台级账户。与 AutoCapturePipeline.guessAccountId 同一张映射。 */
+    private fun guessAccountId(pkg: String?): String = when (pkg) {
+        "com.tencent.mm" -> "A4"
+        "com.eg.android.AlipayGphone", "com.alipay.mobile.androidclient", "com.unionpay" -> "A3"
+        else -> "A2"
+    }
+
     private fun CategoryEntity.parentTextOrNull(categories: List<CategoryEntity>): String? =
         parentId?.let { pid -> categories.firstOrNull { it.id == pid }?.let { "${it.name}/$name" } } ?: name
 
@@ -491,13 +648,30 @@ class BillOverlayService : Service() {
         parentId ?: id
 
     companion object {
+        private const val EXTRA_MODE = "mode"
+        private const val MODE_CONFIRM = "confirm"
+        private const val MODE_RECORDED = "recorded"
         private const val EXTRA_DRAFT_ID = "draft_id"
+        private const val EXTRA_RAW_TEXT = "raw_text"
+        private const val EXTRA_OCCURRED_AT = "occurred_at"
+        private const val EXTRA_PKG = "pkg"
         private const val AUTO_HIDE_MS = 90_000L
 
-        /** 管线 Drafted 之后调用。无悬浮窗权限时静默跳过。 */
+        /** 管线 Drafted 之后调用（没记录过的账单）。无悬浮窗权限时静默跳过。 */
         fun show(context: Context, draftId: String) {
             val intent = Intent(context, BillOverlayService::class.java)
+                .putExtra(EXTRA_MODE, MODE_CONFIRM)
                 .putExtra(EXTRA_DRAFT_ID, draftId)
+            context.startService(intent)
+        }
+
+        /** 去重命中（已记录）之后调用：弹「当前账单已记录」。 */
+        fun showRecorded(context: Context, rawText: String, occurredAt: Long, pkg: String?) {
+            val intent = Intent(context, BillOverlayService::class.java)
+                .putExtra(EXTRA_MODE, MODE_RECORDED)
+                .putExtra(EXTRA_RAW_TEXT, rawText)
+                .putExtra(EXTRA_OCCURRED_AT, occurredAt)
+                .putExtra(EXTRA_PKG, pkg)
             context.startService(intent)
         }
     }

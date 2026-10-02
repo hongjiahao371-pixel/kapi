@@ -67,8 +67,12 @@ class AutoCapturePipeline(
         /** 并进了已有的草稿——跨来源的同一笔。 */
         data class Merged(val draftId: String, val sources: String) : Outcome
 
-        /** 丢弃。[reason] 写进日志，用来调支付门。 */
-        data class Ignored(val reason: String) : Outcome
+        /**
+         * 丢弃。[reason] 写进日志，用来调支付门。[duplicate]=true 表示是**去重层**
+         * 拦下的（这笔之前已经记过）——悬浮窗用它区分两种弹法：
+         * duplicate=true → 「当前账单已记录」弹窗；false → 确认新账单弹窗。
+         */
+        data class Ignored(val reason: String, val duplicate: Boolean = false) : Outcome
 
         /**
          * 记成了一笔**自己口袋之间的转账**，不是消费。
@@ -148,6 +152,7 @@ class AutoCapturePipeline(
                 } else {
                     "指纹 $fingerprint 在去重窗口里，丢弃"
                 },
+                duplicate = true,
             )
         }
 

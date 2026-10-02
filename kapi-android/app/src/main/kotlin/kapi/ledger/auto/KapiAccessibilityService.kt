@@ -385,11 +385,16 @@ class KapiAccessibilityService : AccessibilityService() {
                 // 开关、以及悬浮窗权限已授——没授时 show() 静默跳过，草稿
                 // 走待确认兜底，什么都不丢。
                 if (
-                    outcome is AutoCapturePipeline.Outcome.Drafted &&
                     container.autoBookStore.overlayConfirmEnabled &&
                     android.provider.Settings.canDrawOverlays(this@KapiAccessibilityService)
                 ) {
-                    BillOverlayService.show(applicationContext, outcome.draftId)
+                    // Drafted（新账单）与 Merged（并进已有草稿）都要弹——
+                    // 「每次进入详情页都弹」是用户定的完整形态
+                    if (outcome is AutoCapturePipeline.Outcome.Drafted) {
+                        BillOverlayService.show(applicationContext, outcome.draftId)
+                    } else if (outcome is AutoCapturePipeline.Outcome.Merged) {
+                        BillOverlayService.show(applicationContext, outcome.draftId)
+                    }
                 }
             }.onFailure {
                 Log.w(TAG, "读屏捕获失败：${it.javaClass.name}: ${it.message}", it)
