@@ -230,6 +230,27 @@ object PaymentShape {
         ADJUSTMENT_LABELS.any { texts[idx].contains(it) }
 
     /**
+     * 红包**页**的结构性标志。
+     *
+     * 2026-10-02 真机（用户现场翻到「支付宝红包」详情页）：整页被形状闸挡掉——
+     * 「支出0.1元」的邻居行含「红包」，被 [isAdjustmentAmount] 当成
+     * "这笔交易的红包抵扣"剔掉，plain 归零。但在这类页上**红包是交易类型
+     * 本身**（标题 支付宝红包 / 字段 红包说明 / 说明值 发普通红包），
+     * 不是哪一笔的折扣明细。
+     *
+     * 只收**结构性**的字样（标题/专属字段/说明值），不收「红包」单词——
+     * 支付页上的「红包抵扣 -0.5」仍然要按调整项剔（那是这笔的加减法）。
+     * 两者的区别是页面上有没有这些专属结构，而不是红包二字出没出现。
+     */
+    private val RED_PACKET_PAGE_WORDS = listOf(
+        "支付宝红包", "红包说明", "发普通红包", "发口令红包",
+    )
+
+    /** 这一屏是不是红包的详情/结果页（两个消费方：[inspect] 与 [withoutAdjustmentRows]）。 */
+    fun isRedPacketPage(text: String): Boolean =
+        RED_PACKET_PAGE_WORDS.any { text.contains(it) }
+
+    /**
      * 剔掉调整项行（标签 + 它那个金额），剩下的才是"页面本身在讲什么"。
      *
      * ## 支付门为什么也需要它
@@ -245,8 +266,12 @@ object PaymentShape {
      * 所以同一份"哪些行属于调整项"的判断要给两道门共用——它们问的问题不同
      * （一个问"有几笔"，一个问"这是不是促销页"），但前提是同一件事：
      * **立减金是这一笔的一部分，不是另一个页面。**
+     *
+     * 红包页整页豁免（[isRedPacketPage]）：剔行会把金额行本身删掉
+     * （「支出0.1元」的下一行含「红包」），门直接死于"没有金额"。
      */
     fun withoutAdjustmentRows(text: String): String {
+        if (isRedPacketPage(text)) return text
         val lines = text.lines()
         if (lines.size < 2) return text
         val drop = HashSet<Int>()
@@ -355,9 +380,16 @@ object PaymentShape {
         // 留在里面会被数成第二笔记录，把真实的支付整屏挡掉。
         // 构成项（订单金额/合计…）的值同理：标签在上一行、值在下一行，
         // 那个值自己不带任何词，不摘就会被当独立一笔（见 isComponentValue）。
-        val explained = amountIdx
-            .filter { (i, _) -> isAdjustmentAmount(i, texts) || isComponentValue(i, texts) }
-            .map { it.second }.toSet()
+        // **红包页豁免**：红包页上「红包」是交易类型，金额就是这一笔——
+        // 见 [isRedPacketPage] 的 KDoc（2026-10-02 真机，用户现场翻到）。
+        val redPacketPage = isRedPacketPage(texts.joinToString("\n"))
+        val explained = if (redPacketPage) {
+            emptySet()
+        } else {
+            amountIdx
+                .filter { (i, _) -> isAdjustmentAmount(i, texts) || isComponentValue(i, texts) }
+                .map { it.second }.toSet()
+        }
         val plain = amountNodes.filterNot { it in explained }.noLabelIn()
         val component = amountNodes.filter { node -> COMPONENT_LABELS.any { node.contains(it) } }
 
