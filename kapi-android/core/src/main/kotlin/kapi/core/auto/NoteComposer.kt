@@ -83,12 +83,21 @@ object NoteComposer {
         // 3. 平台消费：淘宝买东西 → 「淘宝平台消费」，带商品说明就续在后面。
         val product = productOf(lines, ::field)
         val platform = PLATFORMS.firstOrNull { rawText.contains(it) }
-        if (platform != null) {
-            return product?.let { "${platform}平台消费·${shorten(it)}" } ?: "${platform}平台消费"
+        val base = when {
+            platform != null -> product?.let { "${platform}平台消费·${shorten(it)}" } ?: "${platform}平台消费"
+            product != null -> shorten(product)
+            else -> null
         }
 
-        // 4. 普通商户消费：有商品行就备注商品（NYCD 皮带轮），没有就 null。
-        return product?.let { shorten(it) }
+        // 4. 自动续费前缀：周期性扣款是对账时最想先看到的属性
+        // （2026-10-02 用户口头描述就是「小佩自动续费」）。页面证据：
+        // `管理自动续费` / `XXX自动续费`（状态词 自动扣款成功 的页不含它，
+        // 别拿状态词判）。没有商品/平台时单独「自动续费」也比空着有用。
+        return when {
+            !rawText.contains("自动续费") -> base
+            base != null -> "自动续费·$base"
+            else -> "自动续费"
+        }
     }
 
     /**

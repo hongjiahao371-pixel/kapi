@@ -290,11 +290,11 @@ class NoteComposerTest {
         assertTrue("应取保费商品名：$note", note.startsWith("2026.9月保费缴清"))
     }
 
-    /** 自动续费页（dump 19）：商品说明 = 套餐名。 */
+    /** 自动续费页（dump 19）：套餐名备注 + 自动续费前缀（用户口径「小佩自动续费」）。 */
     @Test
-    fun `auto renew note is the plan name`() {
+    fun `auto renew note is prefixed and carries the plan name`() {
         assertEquals(
-            "基础套餐连续包月",
+            "自动续费·基础套餐连续包月",
             NoteComposer.compose(
                 """
                 小佩网络科技（上海）有限公司
@@ -310,6 +310,17 @@ class NoteComposerTest {
                 基础套餐连续包月
                 商品说明
                 """.trimIndent(),
+            ),
+        )
+    }
+
+    /** 只有「管理自动续费」、没有商品说明的订阅页：单独「自动续费」也比空着有用。 */
+    @Test
+    fun `auto renew without product still notes the recurrence`() {
+        assertEquals(
+            "自动续费",
+            NoteComposer.compose(
+                "某服务有限公司\n支出15.00元\n支付成功\n管理自动续费\n付款方式\n余额宝",
             ),
         )
     }

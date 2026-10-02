@@ -269,4 +269,16 @@ class CategoryRulesTest {
         // 闲鱼单独一档
         assertEquals("购物/二手", exp(null, "闲鱼\n对方账户\n支出55元")?.text)
     }
+
+    /**
+     * 品牌词（2026-10-02 用户指认：小佩是宠物品牌 PETKIT）。
+     * 关键是**不靠页面角标**：夹具里没有「宠物」二字，商户名自己就能归对——
+     * 页面自带的分类值（账单分类/推荐位）不是每屏都有。
+     */
+    @Test
+    fun `宠物品牌只凭商户名归档，不依赖页面角标`() {
+        assertEquals("购物/宠物", exp("小佩网络科技（上海）有限公司")?.text)
+        assertEquals("购物/宠物", exp("PETKIT旗舰店", "智能喂食器\n商品说明")?.text)
+        assertEquals("购物/宠物", exp("波奇宠物商城")?.text)
+    }
 }
