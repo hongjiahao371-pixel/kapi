@@ -292,7 +292,7 @@ class BillOverlayService : Service() {
 
         val card = LinearLayout(ctx)
         card.orientation = LinearLayout.VERTICAL
-        card.setPadding(dp(24), dp(10), dp(24), dp(24))
+        card.setPadding(dp(20), dp(8), dp(20), dp(20))
         val bg = GradientDrawable()
         bg.setColor(Color.parseColor("#F7FFFFFF"))
         bg.cornerRadius = dp(28).toFloat()
@@ -304,8 +304,8 @@ class BillOverlayService : Service() {
         val grab = View(ctx)
         grab.layoutParams = LinearLayout.LayoutParams(dp(32), dp(4)).apply {
             gravity = Gravity.CENTER_HORIZONTAL
-            topMargin = dp(8)
-            bottomMargin = dp(12)
+            topMargin = dp(6)
+            bottomMargin = dp(8)
         }
         val grabBg = GradientDrawable()
         grabBg.cornerRadius = dp(2).toFloat()
@@ -321,46 +321,51 @@ class BillOverlayService : Service() {
                 this.typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
             }
 
-        // ---- 标题行：标题 + 来源小字（左），✕（右）
-        val head = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-        head.gravity = Gravity.CENTER_VERTICAL
-        val headTexts = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        headTexts.addView(title("识别到一笔支付", 13, "#171E2E", bold = true))
-        headTexts.addView(
-            title("自动读屏 · 待你确认", 11, "#9AA3B2").apply { setPadding(0, dp(2), 0, 0) },
-        )
+        // ---- 标题行：标题真居中（左右等权占位），✕ 靠右
+        val head = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        head.addView(View(ctx), LinearLayout.LayoutParams(0, dp(22), 1f))
+        head.addView(title("识别到一笔支付", 13, "#666F80"))
         head.addView(
-            headTexts.apply {
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            title("✕", 16, "#9AA3B2").apply {
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                setPadding(dp(8), 0, 0, 0)
+                setOnClickListener { removeWindow() }
+                layoutParams = LinearLayout.LayoutParams(0, dp(22), 1f)
             },
         )
-        val close = title("✕", 16, "#9AA3B2")
-        close.setPadding(dp(16), 0, dp(4), 0)
-        close.setOnClickListener { removeWindow() }
-        head.addView(close)
         card.addView(head)
 
-        // ---- 金额（可改）+ 方向
+        // ---- 金额（可改）：大字居中
         // 识别错金额的纠正路径就在窗上：优惠/原价误拾、面额vs实付，直接改数字
         // 确认即可，不用删稿等重录（重录会被 90 天去重挡住）。
-        // 已记录模式没有草稿行，展示数据全部来自账单原文解析
         val direction = draft.direction
         val directionColor = if (direction == "INCOME") "#12A594" else "#E5484D"
-        val amountRow = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-        amountRow.gravity = Gravity.CENTER_VERTICAL
-        val sign = title(if (draft.direction == "INCOME") "+" else "-", 44, directionColor, bold = true)
-        amountRow.addView(sign)
+        val amountRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        val amountRowLp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).also { it.topMargin = dp(14); it.bottomMargin = dp(14) }
+        amountRow.addView(title(if (direction == "INCOME") "+" else "-", 32, directionColor, bold = true))
         val amountEdit = EditText(ctx).apply {
             setText(Money.toYuanDisplay(draft.amountMinor))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 44f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 32f)
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(Color.parseColor(directionColor))
             setBackgroundResource(android.R.color.transparent)
+            gravity = Gravity.CENTER
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or
                 android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
-            setPadding(dp(6), dp(10), 0, 0)
-            val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            layoutParams = lp
+            setPadding(dp(4), dp(4), 0, dp(4))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
         }
         pickedAmount = Money.toYuanDisplay(draft.amountMinor)
         amountEdit.addTextChangedListener(object : TextWatcher {
@@ -372,160 +377,232 @@ class BillOverlayService : Service() {
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
         })
         amountRow.addView(amountEdit)
-        card.addView(amountRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        card.addView(amountRow, amountRowLp)
 
-        // ---- 字段行
-        fun row(label: String, value: String) {
-            val r = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-            r.addView(title(label, 12, "#666F80").apply { layoutParams = LinearLayout.LayoutParams(dp(64), LinearLayout.LayoutParams.WRAP_CONTENT) })
-            r.addView(title(value, 14, "#171E2E"))
-            card.addView(r, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also { it.topMargin = dp(10) })
+        // ---- 内嵌浅灰字段卡：所有字段行装在这里，行间 1dp 分隔线
+        val fieldCard = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(2), dp(14), dp(2))
         }
-        row("商户", draft.merchant ?: "（未识别）")
-        row("时间", SimpleDateFormat("M月d日 HH:mm", Locale.CHINA).format(Date(draft.occurredAt)))
-
-        // ---- 账户芯片行（点击切换入账账户）
-        val effectiveAccountId = draft.accountId ?: guessAccountId(recordedPkg)
+        val fieldBg = GradientDrawable()
+        fieldBg.setColor(Color.parseColor("#F5F6FA"))
+        fieldBg.cornerRadius = dp(16).toFloat()
+        fieldCard.background = fieldBg
         card.addView(
-            title("账户（点击切换）", 12, "#666F80").apply { setPadding(0, dp(14), 0, dp(2)) },
+            fieldCard,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
         )
-        val accountChipRow = HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false }
-        val accountChipWrap = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-        accountChipRow.addView(accountChipWrap)
 
-        fun renderAccountChips(selectedId: String?) {
-            accountChipWrap.removeAllViews()
-            for (acct in allAccounts) {
-                val isSel = selectedId == acct.id
-                val chip = TextView(ctx).apply {
-                    text = acct.name
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                    setPadding(dp(12), dp(5), dp(12), dp(5))
-                    val r = GradientDrawable()
-                    r.cornerRadius = dp(14).toFloat()
-                    r.setColor(Color.parseColor(if (isSel) "#1A14B8A6" else "#0A000000"))
-                    if (isSel) r.setStroke(Math.max(1, dp(1)), Color.parseColor("#1414B8A6"))
-                    background = r
-                    setTextColor(Color.parseColor(if (isSel) "#14B8A6" else "#5A6475"))
-                    setOnClickListener { renderAccountChips(acct.id) }
-                }
-                accountChipWrap.addView(chip)
-                val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                lp.marginEnd = dp(6)
-                chip.layoutParams = lp
+        fun divider() {
+            val line = View(ctx)
+            line.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                Math.max(1, dp(1)),
+            ).also { it.marginStart = dp(2); it.marginEnd = dp(2) }
+            line.setBackgroundColor(Color.parseColor("#1A000000"))
+            fieldCard.addView(line)
+        }
+
+        fun label(text: String): TextView = title(text, 14, "#666F80").apply {
+            layoutParams = LinearLayout.LayoutParams(dp(56), LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+
+        fun plainRow(labelText: String, valueText: String) {
+            val r = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
             }
+            r.addView(label(labelText))
+            r.addView(
+                title(valueText, 15, "#171E2E").apply {
+                    gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                },
+            )
+            fieldCard.addView(
+                r,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(44),
+                ),
+            )
         }
-        renderAccountChips(effectiveAccountId)
 
-        row("来源", "自动读屏 · 待你确认")
+        // 可展开行：点整行切换面板显隐，箭头 › / ‹ 指示状态
+        fun expandableRow(labelText: String, valueText: String, panel: View): TextView {
+            val r = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                isClickable = true
+            }
+            val value = title(valueText, 15, "#171E2E").apply {
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            val arrow = title("›", 16, "#9AA3B2")
+            r.addView(label(labelText))
+            r.addView(value)
+            r.addView(arrow)
+            r.setOnClickListener {
+                val open = panel.visibility != View.VISIBLE
+                panel.visibility = if (open) View.VISIBLE else View.GONE
+                arrow.text = if (open) "‹" else "›"
+            }
+            fieldCard.addView(
+                r,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(44),
+                ),
+            )
+            return value
+        }
 
-        // ---- 类目：已归好的结果显示 + 点芯片可改
-        val resolved = categories.firstOrNull { it.id == resolvedCategoryId }
-        card.addView(
-            title("类目（点下方可修改）", 12, "#666F80").apply { setPadding(0, dp(18), 0, dp(2)) },
-        )
-        val categoryValue = title(
-            resolved?.let { it.parentTextOrNull(categories) ?: it.name } ?: "未分类",
-            15,
-            "#14B8A6",
-            bold = true,
-        )
-        card.addView(categoryValue)
+        // 面板只创建不挂载：由调用方决定插在哪一行之后（否则会跑到字段卡顶部）
+        fun chipPanel(): Pair<HorizontalScrollView, LinearLayout> {
+            val sv = HorizontalScrollView(ctx).apply {
+                isHorizontalScrollBarEnabled = false
+                visibility = View.GONE
+            }
+            val wrap = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+            sv.addView(wrap)
+            return sv to wrap
+        }
 
-        var picked = resolved
-        val chipRow = HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false }
-        val chipWrap = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-        chipRow.addView(chipWrap)
-        val minorRow = HorizontalScrollView(ctx).apply {
+        fun panelLp(): LinearLayout.LayoutParams =
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).also { it.bottomMargin = dp(10) }
+
+        fun chip(text: String, selected: Boolean, onPick: () -> Unit): TextView =
+            TextView(ctx).apply {
+                this.text = text
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                setPadding(dp(14), dp(7), dp(14), dp(7))
+                val r = GradientDrawable()
+                r.cornerRadius = dp(16).toFloat()
+                r.setColor(Color.parseColor(if (selected) "#1A14B8A6" else "#FFFFFFFF"))
+                r.setStroke(
+                    Math.max(1, dp(1)),
+                    Color.parseColor(if (selected) "#1414B8A6" else "#0A000000"),
+                )
+                background = r
+                setTextColor(Color.parseColor(if (selected) "#14B8A6" else "#5A6475"))
+                setOnClickListener { onPick() }
+            }
+
+        fun addChip(wrap: LinearLayout, view: TextView, margin: Int) {
+            wrap.addView(view)
+            view.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).also { it.marginEnd = dp(margin) }
+        }
+
+        // ---- 面板：账户芯片
+        val (accountPanel, accountWrap) = chipPanel()
+
+        // ---- 面板：类目芯片（大类 + 细类）
+        val (categoryPanel, categoryWrap) = chipPanel()
+        val minorPanel = HorizontalScrollView(ctx).apply {
             isHorizontalScrollBarEnabled = false
             visibility = View.GONE
         }
         val minorWrap = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+        minorPanel.addView(minorWrap)
 
+        // ---- 字段行
+        plainRow("商户", draft.merchant ?: "（未识别）")
+        divider()
+        plainRow("时间", SimpleDateFormat("M月d日 HH:mm", Locale.CHINA).format(Date(draft.occurredAt)))
+        divider()
+
+        val effectiveAccountId = draft.accountId ?: guessAccountId(recordedPkg)
+        val accountValue = expandableRow("账户", accountName ?: "默认账户", accountPanel)
+        fieldCard.addView(accountPanel, panelLp())
+        fun renderAccountChips(selectedId: String?) {
+            accountWrap.removeAllViews()
+            for (acct in allAccounts) {
+                val isSel = selectedId == acct.id
+                val c = chip(acct.name, isSel) {
+                    accountValue.text = acct.name
+                    renderAccountChips(acct.id)
+                }
+                addChip(accountWrap, c, 6)
+            }
+        }
+        renderAccountChips(effectiveAccountId)
+        divider()
+
+        // ---- 类目：已归好的结果显示 + 点行展开芯片
+        val resolved = categories.firstOrNull { it.id == resolvedCategoryId }
+        val categoryValue = expandableRow(
+            "类目",
+            resolved?.let { it.parentTextOrNull(categories) ?: it.name } ?: "未分类",
+            categoryPanel,
+        )
+        var picked = resolved
         fun refreshChips() {
-            chipWrap.removeAllViews()
+            categoryWrap.removeAllViews()
             minorWrap.removeAllViews()
+            minorPanel.visibility = View.GONE
             val majors = categories.filter { it.parentId == null }
             val minorsOf: (String) -> List<CategoryEntity> = { pid ->
                 categories.filter { it.parentId == pid }
             }
             for (cat in majors) {
                 val selected = picked?.id == cat.id || (picked == null && resolved?.topParentId(categories) == cat.id)
-                val chip = TextView(ctx).apply {
-                    text = cat.name
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                    setPadding(dp(14), dp(7), dp(14), dp(7))
-                    val r = GradientDrawable()
-                    r.cornerRadius = dp(16).toFloat()
-                    r.setColor(Color.parseColor(if (selected) "#1A14B8A6" else "#0A000000"))
-                    if (selected) r.setStroke(Math.max(1, dp(1)), Color.parseColor("#1414B8A6"))
-                    background = r
-                    setTextColor(Color.parseColor(if (selected) "#14B8A6" else "#5A6475"))
-                    setOnClickListener {
-                        picked = cat
-                        pickedCategory = cat
-                        categoryValue.text = cat.name
-                        refreshChips()
-                    }
+                val c = chip(cat.name, selected) {
+                    picked = cat
+                    pickedCategory = cat
+                    categoryValue.text = cat.name
+                    refreshChips()
                 }
-                chipWrap.addView(chip)
-                val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                lp.marginEnd = dp(8)
-                chip.layoutParams = lp
+                addChip(categoryWrap, c, 8)
             }
             // 细分类行：选中大类且它有子类时出现
             picked?.let { p ->
                 val kids = minorsOf(p.id)
                 if (kids.isNotEmpty()) {
-                    minorRow.visibility = View.VISIBLE
+                    minorPanel.visibility = View.VISIBLE
                     for (kid in kids) {
                         val selected = picked?.id == kid.id
-                        val chip = TextView(ctx).apply {
-                            text = kid.name
-                            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                            setPadding(dp(12), dp(5), dp(12), dp(5))
-                            val r = GradientDrawable()
-                            r.cornerRadius = dp(14).toFloat()
-                            r.setColor(Color.parseColor(if (selected) "#1A14B8A6" else "#0A000000"))
-                            if (selected) r.setStroke(Math.max(1, dp(1)), Color.parseColor("#1414B8A6"))
-                            background = r
-                            setTextColor(Color.parseColor(if (selected) "#14B8A6" else "#5A6475"))
-                            setOnClickListener {
-                                picked = kid
-                                pickedCategory = kid
-                                categoryValue.text = "${p.name}/${kid.name}"
-                                refreshChips()
-                            }
+                        val c = chip(kid.name, selected) {
+                            picked = kid
+                            pickedCategory = kid
+                            categoryValue.text = "${p.name}/${kid.name}"
+                            refreshChips()
                         }
-                        minorWrap.addView(chip)
-                        val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                        lp.marginEnd = dp(6)
-                        chip.layoutParams = lp
+                        addChip(minorWrap, c, 6)
                     }
                 }
             }
         }
         refreshChips()
-        card.addView(chipRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also { it.topMargin = dp(8) })
-        card.addView(minorRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also { it.topMargin = dp(6) })
+        fieldCard.addView(categoryPanel, panelLp())
+        fieldCard.addView(minorPanel, panelLp())
+        divider()
 
         // ---- 备注（可改）
-        card.addView(
-            title("备注", 12, "#666F80").apply { setPadding(0, dp(16), 0, dp(2)) },
-        )
+        val noteRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        noteRow.addView(label("备注"))
         val noteEdit = EditText(ctx).apply {
-            hint = "可留空"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            hint = "点此添加"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             setTextColor(Color.parseColor("#171E2E"))
             setHintTextColor(Color.parseColor("#9AA3B2"))
             setBackgroundResource(android.R.color.transparent)
-            val nb = GradientDrawable()
-            nb.cornerRadius = dp(10).toFloat()
-            nb.setColor(Color.parseColor("#0A000000"))
-            background = nb
-            setPadding(dp(12), dp(9), dp(12), dp(9))
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
             setText(pickedNote ?: draft.note.orEmpty())
-            maxLines = 2
+            maxLines = 1
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         noteEdit.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(e: Editable?) {
@@ -535,11 +612,18 @@ class BillOverlayService : Service() {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
         })
-        card.addView(noteEdit)
+        noteRow.addView(noteEdit)
+        fieldCard.addView(
+            noteRow,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(44),
+            ),
+        )
 
-        // ---- 按钮行：不记了 / 稍后 / 确认入账
+        // ---- 底部双按钮：各 50%
         val buttons = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-        fun button(label: String, textColor: String, bgColor: String, weight: Float, onClick: () -> Unit) {
+        fun button(label: String, textColor: String, bgColor: String, stroke: String?, onClick: () -> Unit) {
             val b = TextView(ctx).apply {
                 text = label
                 gravity = Gravity.CENTER
@@ -549,25 +633,29 @@ class BillOverlayService : Service() {
                 val r = GradientDrawable()
                 r.cornerRadius = dp(16).toFloat()
                 r.setColor(Color.parseColor(bgColor))
+                stroke?.let { r.setStroke(Math.max(1, dp(1)), Color.parseColor(it)) }
                 background = r
                 setOnClickListener { onClick() }
             }
-            val lp = LinearLayout.LayoutParams(0, dp(48), weight)
-            lp.marginEnd = dp(10)
+            val lp = LinearLayout.LayoutParams(0, dp(48), 1f)
+            lp.marginEnd = dp(6)
             b.layoutParams = lp
             buttons.addView(b)
         }
         if (mode == Mode.RECORDED) {
             // 已记录：这笔在账本里已有，问用户要不要再记一次
-            button("不记了", "#666F80", "#0F000000", 1f) { removeWindow() }
-            button("再记一次", "#FFFFFF", "#14B8A6", 1.2f) { onReRecord(draft) }
+            button("不记了", "#666F80", "#FFFFFFFF", "#1A000000") { removeWindow() }
+            button("再记一次", "#FFFFFF", "#14B8A6", null) { onReRecord(draft) }
         } else {
-            button("不记了", "#E5484D", "#14E5484D", 1f) { onDiscard() }
-            button("稍后", "#666F80", "#0F000000", 1f) { removeWindow() }
-            // 主按钮青底白字实心，视觉上压过两个次级按钮
-            button("确认入账", "#FFFFFF", "#14B8A6", 1.2f) { onConfirm(draft) }
+            button("不记了", "#666F80", "#FFFFFFFF", "#1A000000") { onDiscard() }
+            button("确认入账", "#FFFFFF", "#14B8A6", null) { onConfirm(draft) }
         }
-        card.addView(buttons, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)).also { it.topMargin = dp(20) })
+        card.addView(
+            buttons,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)).also {
+                it.topMargin = dp(18)
+            },
+        )
         return card
     }
 
