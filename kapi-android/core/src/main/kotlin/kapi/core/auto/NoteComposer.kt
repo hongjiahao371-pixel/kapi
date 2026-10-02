@@ -108,15 +108,18 @@ object NoteComposer {
     }
 
     /**
-     * 商品名的三个来源，按可信度：
+     * 商品名的来源，按可信度：
      * 1. `商品说明` 字段的值（绝大多数订单页有）
-     * 2. `共N件` 数量行的**上一行**（收起态订单页的「交易详情」块）
-     * 3. `交易详情` 标签 → 商品图资源 ID → **商品名**（保险页没有数量行标记，
-     *    2026-10-02 真机好医保页：商品名紧跟在图片行后面；图片行本身已被
-     *    [ScreenFields.isUsableValue] 拒掉，所以直接找「图片行的下一行」）
+     * 2. `缴费说明` 字段的值——**缴费类页面没有商品说明**，这一栏是它的对应物
+     *    （2026-10-02 真机水费页：`缴费说明 = 水费-碧桂****务集团股份有限公司…`；
+     *    燃气小程序页有商品说明，水费老页面只有缴费说明，备注因此空了一笔）
+     * 3. `共N件` 数量行的**上一行**（收起态订单页的「交易详情」块）
+     * 4. `交易详情` 标签 → 商品图资源 ID → **商品名**（保险页没有数量行标记；
+     *    图片行本身已被 [ScreenFields.isUsableValue] 拒掉，所以直接找图片行的下一行）
      */
     private fun productOf(lines: List<String>, field: (String) -> String?): String? {
         field("商品说明")?.let { return it }
+        field("缴费说明")?.let { return it }
         for (i in lines.indices) {
             if (QTY_MARKER.matches(lines[i])) {
                 val prev = lines.getOrNull(i - 1)?.trim().orEmpty()

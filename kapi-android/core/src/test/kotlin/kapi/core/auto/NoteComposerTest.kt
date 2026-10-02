@@ -338,6 +338,30 @@ class NoteComposerTest {
         assertEquals("支付宝小程序燃气缴费", note)
     }
 
+    /**
+     * 水费页没有商品说明，缴费目的在「缴费说明」字段（2026-10-02 真机，
+     * 用户现场打开的那笔 45.2 元——修复前这条备注是空的）。
+     */
+    @Test
+    fun `utility page notes the payment memo field`() {
+        val note = NoteComposer.compose(
+            """
+            昆明水务集团（通用水务)
+            支出45.2元
+            交易成功
+            150176465 *桂****务集团股份有限公司昆明分公司
+            户号
+            水费-碧桂****务集团股份有限公司昆明分公司
+            缴费说明
+            余额宝
+            付款方式
+            2026-08-05 12:02:10
+            创建时间
+            """.trimIndent(),
+        )
+        assertEquals("水费-碧桂****务集团股份有限公司昆明分公司", note)
+    }
+
     /** 退款页（dump 13 树序）：无对象无商品，只标「退款」。 */
     @Test
     fun `refund page notes just the refund`() {
