@@ -127,6 +127,9 @@ object NoteComposer {
      */
     private fun productOf(lines: List<String>, field: (String) -> String?): String? {
         field("商品说明")?.let { return it }
+        // 微信的字段名是「商品」（2026-10-02 OPPO 真机：商品=云AFM6585-奥斯迪
+        // 商务中心A座（沃尔玛），停车场的车牌照+位置，进备注正合适）
+        field("商品")?.let { return it }
         field("缴费说明")?.let { return it }
         for (i in lines.indices) {
             if (QTY_MARKER.matches(lines[i])) {

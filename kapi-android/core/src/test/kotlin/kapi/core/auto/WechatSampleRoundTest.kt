@@ -121,4 +121,47 @@ class WechatSampleRoundTest {
         assertEquals(500_00L, r.amountsMinor.first())
         assertEquals(Direction.EXPENSE, r.direction)
     }
+
+    /** 麦当劳（OPPO 库真机草稿）：商户全称「云南滇美餐饮」毫无品类信息，靠品牌词。 */
+    @Test
+    fun `mcdonald goes to fast food`() {
+        assertEquals(
+            "餐饮/正餐",
+            CategoryRules.classify(
+                "麦当劳",
+                "商家小程序 麦当劳\n商户全称\n云南滇美餐饮有限公司\n商品\n麦当劳\n支付成功",
+                income = false,
+            )?.text,
+        )
+    }
+
+    /** 象子茶铺茶（OPPO 库真机草稿）：「茶铺」进茶饮词表。 */
+    @Test
+    fun `teahouse goes to coffee tea`() {
+        assertEquals(
+            "餐饮/咖啡茶饮",
+            CategoryRules.classify("象子茶铺茶", "支出13元\n交易成功", income = false)?.text,
+        )
+    }
+
+    /** 微信的商品字段名是「商品」，停车页备注=车牌照+停车场。 */
+    @Test
+    fun `wechat product field feeds the note`() {
+        val note = NoteComposer.compose(
+            """
+            速停车
+            支出2元
+            支付成功
+            云AFM6585-奥斯迪商务中心A座（沃尔玛）
+            商品
+            银联商务支付股份有限公司
+            收单机构
+            厦门泊云速停车科技有限公司
+            商户全称
+            零钱通
+            支付方式
+            """.trimIndent(),
+        )
+        assertEquals("云AFM6585-奥斯迪商务中心A座（沃尔玛）", note)
+    }
 }
