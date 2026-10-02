@@ -325,6 +325,19 @@ class NoteComposerTest {
         )
     }
 
+    /**
+     * 退款判据必须是**状态词**（2026-10-02 全量审计）：普通支出页上长着
+     * 「申请退款/查看退款」入口按钮——燃气/药店/餐饮三页都只有裸「退款」
+     * 二字，不能因此把支出标成退款。
+     */
+    @Test
+    fun `refund entry button is not a refund`() {
+        val note = NoteComposer.compose(
+            "某燃气公司\n支出100元\n交易成功\n支付宝小程序燃气缴费\n商品说明\n查看退款\n更多",
+        )
+        assertEquals("支付宝小程序燃气缴费", note)
+    }
+
     /** 退款页（dump 13 树序）：无对象无商品，只标「退款」。 */
     @Test
     fun `refund page notes just the refund`() {

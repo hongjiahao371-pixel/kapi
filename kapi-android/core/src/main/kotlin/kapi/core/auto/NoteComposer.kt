@@ -53,6 +53,9 @@ object NoteComposer {
 
     private val QTY_MARKER = Regex("""^共\d+件$""")
 
+    /** 说明这笔钱**已经退了**的状态词；入口按钮（申请/查看退款）不算。 */
+    private val REFUND_STATUS = listOf("退款成功", "全额退款", "已退款", "退款方式")
+
     /** 备注上限。再长确认页放不下，也没有对账价值。 */
     private const val MAX_CHARS = 30
 
@@ -78,7 +81,11 @@ object NoteComposer {
         // 2. 退款页（2026-10-02 真机样本：`退款成功 / 退款方式 / 查看原账单`，
         //    没有商品说明也没有对方账户）。原单商户拿不到，只标「退款」——
         //    方向和金额已经说明这是钱回来了，备注点到为止。
-        if (rawText.contains("退款")) return "退款"
+        //    **判据必须是状态词**：普通支出页上长着「申请退款/查看退款」入口
+        //    按钮（2026-10-02 审计，燃气/药店/餐饮页），单词「退款」会把它们
+        //    全部误标。
+        val refunded = REFUND_STATUS.any { rawText.contains(it) }
+        if (refunded) return "退款"
 
         // 3. 平台消费：淘宝买东西 → 「淘宝平台消费」，带商品说明就续在后面。
         val product = productOf(lines, ::field)

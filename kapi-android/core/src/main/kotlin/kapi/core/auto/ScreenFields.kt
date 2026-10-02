@@ -101,11 +101,15 @@ object ScreenFields {
     fun valueNear(lines: List<String>, label: String, orientation: Orientation?): String? {
         for (i in lines.indices) {
             val l = lines[i]
-            // 同行写法。「付款方式」这一行本身 equals label，startsWith 也会命中，
-            // 但 removePrefix 后剩空串，自然落空。
+            // 同行写法（`交易单号：xxx` / `付款方式 零钱`）必须带分隔符——
+            // 「收款方全称」这种**连写的另一个标签**不算（2026-10-02 审计抓到：
+            // 前缀匹配把「全称」咬出来当成了对方名字，备注成了「转给全称」）。
             if (l.startsWith(label) && l.length > label.length) {
-                val rest = l.removePrefix(label).trimStart(' ', '：', ':')
-                if (isUsableValue(rest)) return rest
+                val sep = l[label.length]
+                if (sep == '：' || sep == ':' || sep == ' ') {
+                    val rest = l.substring(label.length + 1).trim()
+                    if (isUsableValue(rest)) return rest
+                }
             }
             if (l != label) continue
             val first = when (orientation) {
