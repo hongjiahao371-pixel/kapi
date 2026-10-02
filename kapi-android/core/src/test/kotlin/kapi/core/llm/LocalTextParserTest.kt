@@ -320,6 +320,22 @@ class LocalTextParserTest {
         assertEquals(Direction.EXPENSE, r.direction)
     }
 
+    /**
+     * 优惠/原价行不得抢走实付（2026-10-02 微信「腾讯文档会员」页真机，
+     * 用户在悬浮窗上发现：草稿金额成了优惠的 5 元，实付 13 元）。
+     * 结构：原价行（划线）→ 优惠行 → 实付在裸金额模式里。
+     */
+    @Test
+    fun discountAndOriginalPriceLinesNeverBeatThePaidAmount() {
+        val r = parse(
+            "深圳市腾讯计算机系统有限公司\n-13.00\n原价\n¥18.00\n优惠\n" +
+                "中国银行首绑有礼优惠￥5.00\n当前状态\n支付成功\n支付时间\n" +
+                "商品\n腾讯文档会员\n付款方式\n中国银行储蓄卡(0416)",
+        )
+        assertNotNull(r)
+        assertEquals("实付 13 元，不是原价 18 也不是优惠 5", 1300L, r!!.amountsMinor.first())
+    }
+
     /** 微信转账详情页（文档样本）：没有「对方账户」结构，老兜底照旧判支出。 */
     @Test
     fun wechatTransferDetailWithoutCounterpartyFieldKeepsExpenseFallback() {

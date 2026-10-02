@@ -265,6 +265,10 @@ object LocalTextParser {
     private val PROMO = listOf(
         "免密支付", "免密", "立减", "满减", "领券", "券后", "限时", "秒杀",
         "拼团", "首单", "新人专享", "最高可省", "随机立减", "开卡", "抽红包",
+        // 2026-10-02 微信「腾讯文档会员」页：优惠行「中国银行首绑有礼优惠￥5.00」
+        // 被当成实付金额（真正的实付 -13.00 在裸金额模式里被短路跳过）。
+        // 「原价」同行：划线原价 ¥18.00 也不是实付。
+        "优惠", "原价", "首绑",
     )
 
     /**
@@ -391,6 +395,15 @@ object LocalTextParser {
      * 先于「支出49.5元」——按原序取第一个就是 50 元，而实际支付是 49.5。
      * 更糟的是同一页两次读取（折叠/展开）选中不同金额，合并判据同额才并，
      * 于是**同一笔建了两条草稿**。带方向词的实付行永远赢过商品名里的数字。
+     *
+     * ## 跨模式收集（2026-10-02 微信，第二处同族缺陷）
+     *
+     * 原先「某模式一命中就 break」：微信「腾讯文档会员」页上，
+     * `原价 ¥18.00`（划线）和 `优惠 …￥5.00` 都是带 ￥ 的行，¥ 模式先命中
+     * 就短路——真正的实付 `-13.00` 在**后面的裸金额模式**里，永远没机会。
+     * 改为全模式收集（按 minor 去重），排序时把「优惠/原价邻居行」的候选
+     * 压到最后（[lineRank] 的 3 分档）。trustworthyLine 的否定词表同步补
+     * 「优惠/原价」：优惠行自身整行被否定是第一道闸，邻接降权是第二道。
      */
     private fun amountMatches(t: String): List<Pair<IntRange, Long>> {
         val out = LinkedHashMap<Long, IntRange>()
@@ -401,7 +414,6 @@ object LocalTextParser {
                 if (!trustworthyLine(lineAt(t, m.range.first))) continue
                 if (!out.containsKey(money.minor)) out[money.minor] = m.range
             }
-            if (out.isNotEmpty()) break // 命中更可靠的模式就不再往下试
         }
         return out.map { it.value to it.key }.sortedBy { (range, _) -> lineRank(t, range) }
     }
@@ -410,17 +422,45 @@ object LocalTextParser {
      * 金额候选所在行的质量分（小者胜）。
      *
      * 0 = 行里带方向/实付词（`支出49.5元`、`实付 ¥88.00`）——这是账本要的那一笔
-     * 1 = 短行（≤24 字，`-80.00`、`¥23.50` 这类干净金额行）
-     * 2 = 长行——商品名/描述里的数字（`云南手机充值50元电信话费直充快充`），
-     *     只配当最后候选
+     * 1 = 干净短行（≤24 字，且自己与紧邻行都不含优惠/原价标记）
+     * 2 = 长行——商品名/描述里的数字（`云南手机充值50元电信话费直充快充`）
+     * 3 = **优惠/原价邻接**的金额——它是折扣额或划线原价，不是实付
+     *     （2026-10-02 微信「腾讯文档会员」页：实付 -13.00，划线原价 ¥18.00，
+     *     优惠行 ￥5.00——原价和优惠都必须排在 13.00 之后）
      */
     private fun lineRank(t: String, range: IntRange): Int {
-        val line = lineAt(t, range.first)
+        val (line, prev, next) = lineWithNeighbours(t, range.first)
+        // 带正负号的金额行（微信 -13.00 / +100.00）是账本要的那一笔：
+        // 原价/优惠行的数字从不带符号。与方向词同档，同档内保持模式优先序。
+        val signed = line.trimStart().let { it.startsWith("-") || it.startsWith("+") || it.startsWith("−") }
         return when {
-            AMOUNT_LINE_SIGNALS.any { line.contains(it) } -> 0
+            AMOUNT_LINE_SIGNALS.any { line.contains(it) } || signed -> 0
+            DISCOUNT_LABELS.any { line.contains(it) || prev.contains(it) || next.contains(it) } -> 3
             line.length <= 24 -> 1
             else -> 2
         }
+    }
+
+    /** 优惠/原价类标记：这些词旁边的金额是折扣额或划线原价，不是实付。 */
+    private val DISCOUNT_LABELS = listOf("原价", "优惠", "立减", "满减", "折扣", "抵扣", "划线价")
+
+    /** 金额所在行及其前后行（邻接判断用）。返回三元组 (本行, 前行, 后行)。 */
+    private fun lineWithNeighbours(t: String, charIndex: Int): Triple<String, String, String> {
+        var lineIndex = 0
+        var acc = 0
+        for ((i, l) in t.lines().withIndex()) {
+            val next = acc + l.length + 1
+            if (charIndex < next) {
+                lineIndex = i
+                break
+            }
+            acc = next
+        }
+        val lines = t.lines()
+        val line = lines.getOrNull(lineIndex).orEmpty()
+        val prev = lines.getOrNull(lineIndex - 1).orEmpty()
+        val next = lines.getOrNull(lineIndex + 1).orEmpty()
+        return Triple(line, prev, next)
     }
 
     private fun extractAmounts(t: String): List<Long> =

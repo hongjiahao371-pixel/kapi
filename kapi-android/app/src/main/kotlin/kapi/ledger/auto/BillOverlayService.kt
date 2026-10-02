@@ -80,6 +80,9 @@ class BillOverlayService : Service() {
     /** 用户在窗上改过的备注（null = 没改）。 */
     private var pickedNote: String? = null
 
+    /** 用户在窗上改过的金额（展示串，确认时经 Money.parse 回 minor；null = 没改）。 */
+    private var pickedAmount: String? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
@@ -101,6 +104,7 @@ class BillOverlayService : Service() {
         currentDraftId = draftId
         pickedCategory = null
         pickedNote = null
+        pickedAmount = null
         scope.launch {
             val draft = withContext(Dispatchers.IO) {
                 container.db.autoDraftDao().byId(draftId)
@@ -183,8 +187,9 @@ class BillOverlayService : Service() {
         card.orientation = LinearLayout.VERTICAL
         card.setPadding(dp(20), dp(18), dp(20), dp(18))
         val bg = GradientDrawable()
-        bg.setColor(Color.parseColor("#F2151515"))
-        bg.cornerRadius = dp(24).toFloat()
+        bg.setColor(Color.parseColor("#F00E1420"))
+        bg.cornerRadius = dp(28).toFloat()
+        bg.setStroke(Math.max(1, dp(1)), Color.parseColor("#2EFFFFFF"))
         card.background = bg
 
         fun title(text: String, size: Int, color: String, bold: Boolean = false): TextView =
@@ -208,15 +213,37 @@ class BillOverlayService : Service() {
         head.addView(close)
         card.addView(head)
 
-        // ---- 金额 + 方向
-        val amountText = (if (draft.direction == "INCOME") "+" else "-") +
-            Money.toYuanDisplay(draft.amountMinor)
-        val amountColor = if (draft.direction == "INCOME") "#4CD98A" else "#FF7A65"
-        card.addView(
-            title(amountText, 44, amountColor, bold = true).apply {
-                setPadding(0, dp(10), 0, 0)
-            },
-        )
+        // ---- 金额（可改）+ 方向
+        // 识别错金额的纠正路径就在窗上：优惠/原价误拾、面额vs实付，直接改数字
+        // 确认即可，不用删稿等重录（重录会被 90 天去重挡住）。
+        val directionColor = if (draft.direction == "INCOME") "#4CD98A" else "#FF7A65"
+        val amountRow = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+        amountRow.gravity = Gravity.CENTER_VERTICAL
+        val sign = title(if (draft.direction == "INCOME") "+" else "-", 40, directionColor, bold = true)
+        amountRow.addView(sign)
+        val amountEdit = EditText(ctx).apply {
+            setText(Money.toYuanDisplay(draft.amountMinor))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 40f)
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor(directionColor))
+            setBackgroundResource(android.R.color.transparent)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setPadding(dp(6), dp(10), 0, 0)
+            val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            layoutParams = lp
+        }
+        pickedAmount = Money.toYuanDisplay(draft.amountMinor)
+        amountEdit.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(e: Editable?) {
+                pickedAmount = e?.toString()
+            }
+
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+        })
+        amountRow.addView(amountEdit)
+        card.addView(amountRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
 
         // ---- 字段行
         fun row(label: String, value: String) {
@@ -384,6 +411,11 @@ class BillOverlayService : Service() {
     private fun onConfirm(draft: AutoDraftEntity) {
         val pickedCategoryFinal = pickedCategory
         val noteFinal = pickedNote ?: draft.note
+        // 窗上改过的金额优先；解析失败/非法（空、<=0）退回识别原值
+        val amountFinal = pickedAmount
+            ?.let { Money.parse(it)?.minor }
+            ?.takeIf { it > 0 }
+            ?: draft.amountMinor
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -398,7 +430,7 @@ class BillOverlayService : Service() {
                             direction = fresh.direction,
                         )
                     container.editor.createTransaction(
-                        amountMinor = fresh.amountMinor,
+                        amountMinor = amountFinal,
                         direction = fresh.direction,
                         accountId = fresh.accountId ?: "A1",
                         occurredAt = fresh.occurredAt,
