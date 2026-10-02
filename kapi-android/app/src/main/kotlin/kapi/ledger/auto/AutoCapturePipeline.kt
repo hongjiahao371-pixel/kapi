@@ -6,6 +6,8 @@ import kapi.core.auto.NoteComposer
 import kapi.core.auto.OwnAccount
 import kapi.core.auto.PaymentGate
 import kapi.core.auto.PaymentId
+import kapi.core.auto.ScreenFields
+import kapi.core.auto.SubWallet
 import kapi.core.llm.LocalTextParser
 import kapi.ledger.data.AutoDraftEntity
 import kapi.ledger.data.KapiDatabase
@@ -214,7 +216,7 @@ class AutoCapturePipeline(
             occurredAt = parsed.occurredAt,
             merchant = best.merchant,
             note = NoteComposer.compose(text),
-            accountId = guessAccountId(pkg),
+            accountId = resolvePaymentAccount(text, pkg),
             source = channel.name,
             confidence = parsed.confidence,
             fingerprint = fingerprint,
@@ -310,8 +312,8 @@ class AutoCapturePipeline(
         ledgerId: String,
         rawText: String?,
     ): Outcome {
-        val fromId = own.from?.let { accountIdOfWallet(it) }
-        val toId = own.to?.let { accountIdOfWallet(it) }
+        val fromId = resolveWalletAccount(own.from)
+        val toId = resolveWalletAccount(own.to)
         val why = "自转账：${own.why}"
         if (fromId == null || toId == null || fromId == toId) {
             Log.i(
@@ -320,7 +322,7 @@ class AutoCapturePipeline(
                     "to=${own.to}→「$toId」），只记日志不入账 $amountMinor" +
                     "｜原文前 120 字=${rawText?.take(120)?.replace('\n', '|') ?: "(无文字)"}",
             )
-            return Outcome.Transfer(null, why + "，未入账（子钱包还不是账户）")
+            return Outcome.Transfer(null, why + "，未入账（对不到账户）")
         }
         val txn = editor.createTransaction(
             amountMinor = amountMinor,
@@ -338,29 +340,38 @@ class AutoCapturePipeline(
             source = LocalEditWriter.SOURCE_LOCAL_FALLBACK,
             confidence = 1.0,
         )
-        Log.i(TAG, "自转账已入账 ${txn.id}：$fromId → $toId，$amountMinor")
+        val fromName = db.accountDao().byId(fromId)?.name ?: fromId
+        val toName = db.accountDao().byId(toId)?.name ?: toId
+        Log.i(TAG, "自转账已入账 ${txn.id}：$fromName → $toName，$amountMinor")
         return Outcome.Transfer(txn.id, why)
     }
 
-    /** 支付宝自己的子钱包 → 账本里的支付宝账户。 */
-    private val ALIPAY_WALLETS = listOf("余额宝", "账户余额", "花呗")
-
-    /** 微信自己的子钱包 → 账本里的微信账户。 */
-    private val WECHAT_WALLETS = listOf("零钱", "零钱通", "存钱罐")
+    /**
+     * 钱包名 → 账户行 id。[SubWallet] 目录是封闭的：银行卡、人名返回 null；
+     * 用户在账户管理里归档过的行（deleted=true）同样返回 null——
+     * 自动记账无权复活用户删掉的东西。子钱包行由种子提供（A5…A10）。
+     */
+    private suspend fun resolveWalletAccount(name: String?): String? {
+        val wallet = SubWallet.match(name) ?: return null
+        val row = db.accountDao().byId(wallet.accountId) ?: return null
+        return if (row.deleted) null else row.id
+    }
 
     /**
-     * 一个钱包名对应到账本里的哪个账户。
+     * 消费落哪个账户：**付款方式写的什么钱包，就落哪个子钱包**。
      *
-     * 只能对到**平台**层面：余额宝和账户余额都属于支付宝，零钱属于微信。
-     * 对不上就返回 null，让调用方走"不入账"那条路。
+     * 花呗扫码的 20 块落「支付宝」还是「花呗」，要到对账那天才看得出差别——
+     * 花呗的欠款只有把消费记进花呗才是对的。读屏原文里有 `付款方式` 字段，
+     * 值经 [SubWallet] 能对上子钱包就用它；对不上（银行卡等）退回按来源
+     * App 猜平台级账户。猜错的可能性不小（见 [guessAccountId]），这里只是
+     * 给确认页一个预选值。
      */
-    private fun accountIdOfWallet(name: String): String? {
-        val n = name.trim()
-        return when {
-            ALIPAY_WALLETS.any { n.contains(it) } -> "A3" // 支付宝
-            WECHAT_WALLETS.any { n.contains(it) } -> "A4" // 微信
-            else -> null
-        }
+    private suspend fun resolvePaymentAccount(text: String, pkg: String): String {
+        val lines = ScreenFields.collapse(text.lines())
+        val paidBy = ScreenFields.valueNear(
+            lines, "付款方式", ScreenFields.orientation(lines),
+        )
+        return resolveWalletAccount(paidBy) ?: guessAccountId(pkg)
     }
 
     // ------------------------------------------------------------ 内部

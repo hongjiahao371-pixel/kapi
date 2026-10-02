@@ -225,6 +225,17 @@ class LedgerRepository(
             Triple("A2", "银行卡", "DEBIT"),
             Triple("A3", "支付宝", "DEBIT"),
             Triple("A4", "微信", "DEBIT"),
+            // ---- 平台子钱包（2026-10-02）----
+            // 自转账要真实入账，两端必须对应到 account 表里的**不同行**——
+            // 只有 A3/A4 时「账户余额→余额宝」两端都落到支付宝，只能记日志。
+            // id 与 core 的 [kapi.core.auto.SubWallet] 目录逐字一致（那边有
+            // 对照测试钉着）；ensureSeeded 幂等，存量设备下次启动自动补行。
+            Triple("A5", "余额宝", "INVESTMENT"),
+            Triple("A6", "零钱通", "INVESTMENT"),
+            Triple("A7", "零钱", "DEBIT"),
+            Triple("A8", "存钱罐", "INVESTMENT"),
+            Triple("A9", "账户余额", "DEBIT"),
+            Triple("A10", "花呗", "CREDIT"),
         )
 
         private val DEFAULT_EXPENSE_CATEGORIES = listOf(

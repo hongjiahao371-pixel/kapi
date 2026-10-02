@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Lock
@@ -95,6 +96,7 @@ fun SyncSettingsScreen(
     onBack: () -> Unit,
     contentPadding: PaddingValues,
     onOpenLlmSettings: () -> Unit,
+    onOpenAccounts: () -> Unit = {},
     llmStore: LlmStore? = null,
     autoBookStore: kapi.ledger.auto.AutoBookStore? = null,
     onOpenDrafts: () -> Unit = {},
@@ -235,6 +237,46 @@ fun SyncSettingsScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = BrandDeep,
                 )
+            }
+
+            // ---- 账户管理 ----
+            // 放在自动记账相关区块之前：账户是账本骨架（自动划转的两端、
+            // 花呗消费的落点），比大模型这类增强功能更靠前。
+            Spacer(Modifier.height(16.dp))
+            SettingsCard {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.glassClickable { onOpenAccounts() },
+                ) {
+                    Box(
+                        Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(BrandSoft),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Filled.AccountBalanceWallet,
+                            contentDescription = null,
+                            tint = Brand,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("账户管理", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "子钱包 · 划转 · 新增银行卡",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = InkSoft,
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = InkFaint,
+                    )
+                }
             }
 
             // ---- 大模型 ----

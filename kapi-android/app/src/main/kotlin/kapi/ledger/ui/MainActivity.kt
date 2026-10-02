@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.FactCheck
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Psychology
@@ -96,6 +97,7 @@ private sealed interface Screen {
     data object Settings : Screen
     data object Add : Screen
     data object LlmSettings : Screen
+    data object Accounts : Screen
 }
 
 class MainActivity : ComponentActivity() {
@@ -201,6 +203,14 @@ fun KapiRoot() {
         return
     }
 
+    // 账户管理是二级页，同 LlmSettings 的模式。
+    if (current is Screen.Accounts) {
+        LiquidBackground(Modifier.fillMaxSize(), dark = isSystemInDarkTheme()) {
+            AccountsScreen(container = container, onDone = { pop() })
+        }
+        return
+    }
+
     val tabs = listOf(
         Screen.Ledger to "账本",
         Screen.Drafts to "待确认",
@@ -293,6 +303,7 @@ fun KapiRoot() {
                 onBack = {},
                 contentPadding = contentPadding,
                 onOpenLlmSettings = { backStack = backStack + Screen.LlmSettings },
+                onOpenAccounts = { backStack = backStack + Screen.Accounts },
                 llmStore = container.llmStore,
                 onOpenDrafts = { backStack = listOf(Screen.Drafts) },
                 autoBookStore = container.autoBookStore,
@@ -301,7 +312,7 @@ fun KapiRoot() {
                 scrollState = if (frosted) frostedSettings else settingsScroll,
             )
 
-            is Screen.Add, is Screen.LlmSettings -> Unit // 上面已经 return 了
+            is Screen.Add, is Screen.LlmSettings, is Screen.Accounts -> Unit // 上面已经 return 了
         }
     }
 
@@ -545,6 +556,7 @@ private fun iconFor(screen: Screen, selected: Boolean): ImageVector = when (scre
         if (selected) Icons.Filled.Settings else Icons.Outlined.Settings
     is Screen.Add -> Icons.Filled.Add
     is Screen.LlmSettings -> Icons.Filled.Psychology
+    is Screen.Accounts -> Icons.Filled.AccountBalanceWallet
 }
 
 @Composable
