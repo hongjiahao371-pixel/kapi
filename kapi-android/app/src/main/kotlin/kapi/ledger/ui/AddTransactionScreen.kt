@@ -53,6 +53,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -72,8 +73,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kapi.core.auto.SubWallet
 import kapi.core.llm.Direction
 import kapi.ledger.data.CategoryEntity
+import kapi.ledger.data.LedgerRepository
 import kapi.core.llm.Money
 import kapi.core.llm.TransactionExtractor
 import kapi.ledger.llm.LlmClient
@@ -348,20 +351,39 @@ fun AddTransactionScreen(
             }
 
             // ---- 账户 ----
+            // 子钱包（余额宝/零钱/花呗…）是自动记账铺的平台行，手动记一笔
+            // 默认**不显示**——十颗芯片的噪音（2026-10-03 用户反馈）。
+            // 默认只列主账户（现金/银行卡/支付宝/微信）+ 用户自建；当前选中
+            // 的恰好是子钱包时（识别回填）它单独保留；「子钱包」钮展开全部。
             if (accounts.isNotEmpty()) {
                 Spacer(Modifier.height(14.dp))
                 SectionLabel("账户")
+                val subAccounts = accounts.filter { it.id in SubWallet.ACCOUNT_IDS }
+                val primary = accounts.filter { it.id !in SubWallet.ACCOUNT_IDS }
+                val selectedIsSub = subAccounts.any { it.id == accountId }
+                var showSubWallets by remember { mutableStateOf(selectedIsSub) }
+                val visibleAccounts = if (showSubWallets) accounts else primary
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 0.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(accounts, key = { it.id }) { a ->
+                    items(visibleAccounts, key = { it.id }) { a ->
                         Chip(
                             text = a.name,
                             selected = a.id == accountId,
                             tone = AccountTone,
                             onClick = { accountId = a.id },
                         )
+                    }
+                    if (subAccounts.isNotEmpty() && !showSubWallets) {
+                        item(key = "sub-toggle") {
+                            Chip(
+                                text = "子钱包 +${subAccounts.size}",
+                                selected = false,
+                                tone = AccountTone,
+                                onClick = { showSubWallets = true },
+                            )
+                        }
                     }
                 }
             }
@@ -469,6 +491,21 @@ fun AddTransactionScreen(
             selectedId = categoryId,
             onPick = { categoryId = it?.id },
             onDismiss = { showCategoryPicker = false },
+            // 自建分类落库后拿不回完整行（Flow 还没重发），按已知字段
+            // 拼一个展示行——onPick 只用 id/名字/父级，够。
+            onCreate = { name, parentId ->
+                val kind = if (isExpense) "EXPENSE" else "INCOME"
+                vm.createCategory(name, kind, parentId)?.let { id ->
+                    CategoryEntity(
+                        id = id,
+                        ledgerId = LedgerRepository.DEFAULT_LEDGER_ID,
+                        parentId = parentId,
+                        name = name,
+                        kind = kind,
+                        sortOrder = 99,
+                    )
+                }
+            },
         )
     }
 }
@@ -487,11 +524,27 @@ private fun CategoryPickerSheet(
     selectedId: String?,
     onPick: (CategoryEntity?) -> Unit,
     onDismiss: () -> Unit,
+    onCreate: suspend (String, String?) -> CategoryEntity?,
 ) {
     val sheetState = rememberModalBottomSheetState()
+    val scope = rememberCoroutineScope()
     val majors = categories.filter { it.parentId == null }
     var currentMajor by remember { mutableStateOf<CategoryEntity?>(null) }
     val minors = currentMajor?.let { m -> categories.filter { it.parentId == m.id } } ?: emptyList()
+    var showCustom by remember { mutableStateOf(false) }
+    var customName by remember { mutableStateOf("") }
+
+    fun submitCustom() {
+        val name = customName.trim()
+        if (name.isEmpty()) return
+        scope.launch {
+            val created = onCreate(name, currentMajor?.id)
+            if (created != null) {
+                onPick(created)
+                onDismiss()
+            }
+        }
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.padding(horizontal = 16.dp)) {
@@ -512,6 +565,24 @@ private fun CategoryPickerSheet(
                     modifier = Modifier.weight(1f),
                 )
             }
+            // 自定义输入行：点了「＋ 自定义」才出现
+            if (showCustom) {
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = customName,
+                        onValueChange = { customName = it.take(20) },
+                        placeholder = { Text("分类名字，比如 猫主子", style = MaterialTheme.typography.bodySmall) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(
+                        onClick = { submitCustom() },
+                        enabled = customName.isNotBlank(),
+                    ) { Text("建并选中", color = Brand) }
+                }
+            }
             Spacer(Modifier.height(8.dp))
             LazyVerticalGrid(
                 columns = GridCells.Fixed(4),
@@ -524,12 +595,10 @@ private fun CategoryPickerSheet(
             ) {
                 if (currentMajor == null) {
                     items(majors, key = { it.id }) { m ->
-                        val kids = categories.any { it.parentId == m.id }
                         CategoryTile(
                             emoji = CategoryEmoji.emojiOf(m.name),
                             name = m.name,
                             selected = selectedId == m.id,
-                            hasKids = kids,
                             onClick = {
                                 val hasKids = categories.any { it.parentId == m.id }
                                 if (hasKids) currentMajor = m
@@ -540,6 +609,15 @@ private fun CategoryPickerSheet(
                             },
                         )
                     }
+                    // 「＋ 自定义」：新建后自动选中并回填。顶级自建分类挂根。
+                    item(key = "custom") {
+                        CategoryTile(
+                            emoji = null,
+                            name = "自定义",
+                            selected = false,
+                            onClick = { showCustom = true },
+                        )
+                    }
                 } else {
                     // 「全部 大类」瓦片：只记到大类
                     item(key = currentMajor!!.id + "-all") {
@@ -547,7 +625,6 @@ private fun CategoryPickerSheet(
                             emoji = CategoryEmoji.emojiOf(currentMajor!!.name),
                             name = "全部" + currentMajor!!.name,
                             selected = selectedId == currentMajor!!.id,
-                            hasKids = false,
                             onClick = {
                                 onPick(currentMajor)
                                 onDismiss()
@@ -560,11 +637,18 @@ private fun CategoryPickerSheet(
                                 ?: CategoryEmoji.emojiOf(currentMajor!!.name),
                             name = kid.name,
                             selected = selectedId == kid.id,
-                            hasKids = false,
                             onClick = {
                                 onPick(kid)
                                 onDismiss()
                             },
+                        )
+                    }
+                    item(key = "custom-minor") {
+                        CategoryTile(
+                            emoji = null,
+                            name = "自定义",
+                            selected = false,
+                            onClick = { showCustom = true },
                         )
                     }
                 }
@@ -579,7 +663,6 @@ private fun CategoryTile(
     emoji: String?,
     name: String,
     selected: Boolean,
-    hasKids: Boolean,
     onClick: () -> Unit,
 ) {
     Column(

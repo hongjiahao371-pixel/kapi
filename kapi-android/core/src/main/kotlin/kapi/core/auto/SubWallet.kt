@@ -54,6 +54,14 @@ object SubWallet {
     private val MATCH_ORDER = WALLETS.sortedByDescending { it.word.length }
 
     /**
+     * 子钱包占据的 account 行 id（A5…A10）。手动记账的账户选择器用它们
+     * 把平台子钱包从默认列表里摘出去——这六行是**自动记账**为了自转账
+     * 两端入账铺的，手动记一笔的人 99% 只在 现金/银行卡/支付宝/微信 里挑；
+     * 全部平铺出来是十个芯片的噪音（2026-10-03 用户反馈）。
+     */
+    val ACCOUNT_IDS: Set<String> = WALLETS.map { it.accountId }.toSet()
+
+    /**
      * 读屏账户名 → 子钱包。找不到（银行卡、人名、空）返回 null，调用方
      * 走各自的降级路（管线记日志、消费落平台级账户）。
      *
