@@ -244,7 +244,9 @@ fun KapiRoot() {
     // 末尾时底栏后面一整条都是空白，玻璃里就什么都没有可磨，出来是一块死白——
     // 那正是"看着像毛玻璃、其实不是"的样子。压到 30dp 让内容有大约三分之二从栏下
     // 穿过去，玻璃才有东西可模糊；可读性由 55% 的白色罩层和模糊本身兜住。
-    val bottomBarHeight = 30.dp + bottomInset
+    // 白卡 dock 不透明，内容不能再从卡底穿过（会被吃掉）：
+    // padding = 卡实际高度（把手 12 + 行 ~56 + 余量）+ 与内容的间距。
+    val bottomBarHeight = 84.dp + bottomInset
     val contentPadding = PaddingValues(top = topInset, bottom = bottomBarHeight)
 
     val dark = isSystemInDarkTheme()
@@ -343,7 +345,6 @@ fun KapiRoot() {
 
     LiquidBackground(Modifier.fillMaxSize(), dark = dark) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val screenHeight = maxHeight
         Box(Modifier.fillMaxSize()) {
             AnimatedContent(
                 targetState = current,
@@ -374,30 +375,34 @@ fun KapiRoot() {
         BottomBar(
             current = current,
             tabs = tabs,
-            badge = 0, // 待确认已撤下底栏；漏掉的弹窗在 设置→自动记账 里看
             onSelect = ::goToTab,
             onRecord = { backStack = backStack + Screen.Add },
             dark = dark,
-            // 磨砂玻璃要的是内容的**副本**：独立滚动状态，同步自上面那两套。
-            frostedContent = { ScreenBody(current, frosted = true) },
-            contentHeight = screenHeight,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
         }   // Box
     }   // BoxWithConstraints
 }       // LiquidBackground → KapiRoot
 /**
- * 底部导航。
+ * 底部导航 —— **咔皮式白色悬浮 dock**（2026-10-03 第二次重做）。
  *
- * ## 为什么要做成悬浮胶囊而不是通栏
+ * 上一版是毛玻璃胶囊（把整个屏幕复制一份磨砂进胶囊），用户点名批评"做的
+ * 又是什么东西"——对照商汤咔皮记账的底栏：它根本不是玻璃，是一张**干净的
+ * 纯白悬浮卡**（大圆角、冷灰淡投影、左右留边），顶边一条小把手，内容行
+ * 呼吸感足，主操作是一颗**扁平蓝圆**。本版照这个构造重做：
  *
- * 通栏的半透明条会读成"一条被调淡的色带"，而参考图里的效果之所以像玻璃，
- * 关键在两件事同时成立：**它是一块被切下来的独立物体**（左右留边、圆角收口），
- * **并且底下有内容**。通栏 + 无内容 = 一块贴上去的塑料。
+ *   1. 材质：不透明白卡（深色 #1C2333），不再磨砂——磨砂要整屏副本的
+ *      双倍组合成本，换来的"玻璃感"用户不认，删。
+ *   2. 顶边把手：36×4dp 圆角条，贴在卡内上沿——咔皮展开面板的构造，
+ *      读作"这是一块可以停靠的面板"。
+ *   3. 主操作：46dp **纯色**品牌蓝圆（白 + 号），不再渐变——渐变球是
+ *      "四个按钮里唯一的彩色大物"，扁平圆才和三个 tab 同一族。
  *
- * 底色也**不能**调得很实。上一版为了盖住从底下透上来的文字加了 tintBoost，
- * 结果玻璃感全没了——正确做法是让内容透上来（模糊之后它已经不是文字了），
- * 而不是把它挡死。
+ * ## 内容 padding 必须盖过卡高
+ *
+ * 玻璃时代内容**故意**从胶囊底下穿过去（反正会被磨掉）。白卡是不透明的，
+ * 穿过去就是被吃掉——contentPadding 的 bottom 必须大于卡的实际高度，
+ * 否则列表最后一两行永远滚不出来。
  */
 @Composable
 private fun BottomBar(
@@ -405,22 +410,10 @@ private fun BottomBar(
     tabs: List<Pair<Screen, String>>,
     onSelect: (Screen) -> Unit,
     onRecord: () -> Unit,
-    badge: Int = 0,
     dark: Boolean = false,
-    frostedContent: @Composable () -> Unit,
-    contentHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-
-    // 记一笔的按钮。参考图里它是**从胶囊里"挖"出来的一个实心圆**，
-    // 而不是并排的第五个图标——那一个圆同时是"记一笔"和"把胶囊断开"的视觉锚点。
-    // 记一笔恒定占**正中那一个槽**（5 槽里的第 3 槽，也就是屏幕正中线）。
-    // 它是整个 App 的主操作，藏在某个 tab 里反而降低可达性；放在正中而不是
-    // 靠左，是因为主操作本来就该落在拇指最容易够到、视线最容易回到的那条中轴上，
-    // 偏在一侧会让整根栏的重心失守——五个元素里唯一有填充色、有投影的那个
-    // 压在其中一侧上，人眼会立刻觉得整根栏歪了。
-    val fabIndex = 2
 
     Box(
         modifier
@@ -429,72 +422,48 @@ private fun BottomBar(
             .padding(bottom = 10.dp + bottomInset),
         contentAlignment = Alignment.BottomCenter,
     ) {
-        GlassSurface(
-            frostedContent = frostedContent,
-            contentHeight = contentHeight,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(Glass.BAR_HEIGHT)
-                // 投影是"悬浮"的另一半。玻璃本身只有边缘那 1dp 的明暗变化，
-                // 在浅色背景上仍然偏轻；加一层很淡的落影之后，胶囊才
-                // 真的离开纸面，而不是画在纸上。
-                //
-                // 18dp / #375376：视觉提示词的 `--shade: 0 18px 48px rgba(55,83,118,.14)`。
-                // 阴影是**冷蓝灰**不是暖褐——旧值 #2A2620 是配暖纸底的，在冷白纸上
-                // 会让胶囊底下洇出一圈脏色。深色下用纯黑，见 LiquidGlass 里同一条。
-                .shadow(
-                    elevation = 18.dp,
-                    shape = RoundedCornerShape(Glass.BAR_RADIUS),
-                    ambientColor = Color(0xFF375376),
-                    spotColor = Color(0xFF375376),
-                ),
-            shape = RoundedCornerShape(Glass.BAR_RADIUS),
-            radius = Glass.BAR_RADIUS,
-            dark = dark,
-            // 底栏用比卡片更实的玻璃：它底下压着列表文字，必须磨到读不出来。
-            tint = if (dark) Glass.BarTintDark else Glass.BarTint,
+        Surface(
+            shape = RoundedCornerShape(30.dp),
+            color = if (dark) Color(0xFF1C2333) else Color.White,
+            shadowElevation = 12.dp,
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 6.dp),
-                // 刻意不写 horizontalArrangement：五个子节点全部是 weight(1f)，
-                // 等分已经把剩余空间吃干净，SpaceEvenly 拿到的剩余量恒为 0，
-                // 是个看着在干活、其实什么都不做的参数。分布**只**由槽宽决定——
-                // 任何一个子节点不给等权，这个栏就会歪，而且没有任何警告。
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                for ((i, tab) in tabs.withIndex()) {
-                    if (i == fabIndex) {
-                        // 记一笔占**和 tab 一样宽**的槽（weight(1f)，不是固定 62.dp）。
-                        // 固定宽度会让这一槽比另外四个窄 14dp：四个 tab 瓜分剩下的
-                        // 空间，左半边的中心距被压到 185.5px、右半边撑到 208px，
-                        // 肉眼就是"记一笔把左边两个挤过去了"。它必须是第五个等分槽，
-                        // 不是第五个元素——58dp 的圆放进 ~76dp 的槽里既不会盖住
-                        // 相邻图标（各留 23px），点按区仍然大于 48dp 最小值。
-                        Box(
-                            Modifier.weight(1f),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            RecordButton(
-                                onClick = onRecord,
-                                // **不再往上顶**。原来 -13dp 让圆探出胶囊上沿 12px，
-                                // 看着像"从玻璃里钻出来"，实际上圆的下沿离胶囊底还有
-                                // 32px 空档——上下不对称，重心是偏的，而且整个圆有
-                                // 一截挂在胶囊外面，胶囊就不再是一个完整的形状了。
-                                // 现在靠加高胶囊（66→72dp）把它整个装进去：上下各留
-                                // 7dp，"挖出来的圆"这个视觉照样在，但胶囊是完整的。
-                            )
+            Column {
+                // 顶边把手（咔皮面板构造）：纯造型，不接事件。
+                Box(
+                    Modifier
+                        .padding(top = 8.dp)
+                        .size(width = 36.dp, height = 4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(InkFaint.copy(alpha = 0.35f))
+                        .align(Alignment.CenterHorizontally),
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 8.dp),
+                    // 五个子节点全部 weight(1f) 等分，分布只由槽宽决定。
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val fabIndex = 2
+                    for ((i, tab) in tabs.withIndex()) {
+                        if (i == fabIndex) {
+                            Box(
+                                Modifier.weight(1f),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                RecordButton(onClick = onRecord)
+                            }
                         }
+                        TabItem(
+                            label = tab.second,
+                            selected = current === tab.first,
+                            badge = 0,
+                            icon = iconFor(tab.first, selected = current == tab.first),
+                            onClick = { onSelect(tab.first) },
+                            modifier = Modifier.weight(1f),
+                        )
                     }
-                    TabItem(
-                        label = tab.second,
-                        selected = current === tab.first,
-                        badge = 0,
-                        icon = iconFor(tab.first, selected = current == tab.first),
-                        onClick = { onSelect(tab.first) },
-                        modifier = Modifier.weight(1f),
-                    )
                 }
             }
         }
@@ -502,12 +471,8 @@ private fun BottomBar(
 }
 
 /**
- * 「记一笔」——胶囊正中的实心圆。
- *
- * 2026-10-03 视觉返工：58dp 的大圆坐在 72dp 胶囊里，比两侧 tab 的图标体量大
- * 出一圈，用户看着"四个按钮"里它突兀（原话：显得好丑）。缩到 **46dp**、
- * 胶囊同步收窄到 60dp——四槽等宽之后圆和图标视觉权重接近，一排读起来是
- * 同一根线；主操作锚点的地位靠**唯一的渐变填充 + 投影**保住，不靠尺寸。
+ * 「记一笔」——dock 正中的**扁平**品牌蓝圆（咔皮的 + 构造：纯色、白 + 号、
+ * 极淡投影）。渐变球是上一版被点名的东西，扁平圆才和三个 tab 同一族。
  */
 @Composable
 private fun RecordButton(
@@ -521,11 +486,6 @@ private fun RecordButton(
         spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
         label = "recordScale",
     )
-    val glow by animateFloatAsState(
-        if (pressed) 0f else 1f,
-        tween(700, easing = LinearEasing),
-        label = "recordGlow",
-    )
     Box(
         modifier
             .size(46.dp)
@@ -533,21 +493,11 @@ private fun RecordButton(
                 scaleX = scale
                 scaleY = scale
             }
-            // 记一笔那颗圆的落影跟着品牌色走。圆本身是品牌色的实心块，
-            // 落影和它同色，圆才像是从纸上**顶起来**的，而不是贴了张色纸片。
+            // 落影跟品牌色走：圆是从白卡上顶起来的，不是贴纸。
             .shadow(6.dp, CircleShape, ambientColor = Color(0xFF2868D8), spotColor = Color(0xFF2868D8))
             .clip(CircleShape)
-            .background(
-                // 固定配色，**不跟着主题走**。这个圆是「记一笔」的主操作锚点，
-                // 深浅两档都得是同一块品牌色——它变了，用户每次切主题都要重新
-                // 认一次。而且它的图标是白色，加上一旦变浅就等于白圆画白加号。
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFF4A8AE8).copy(alpha = glow),
-                        Color(0xFF1F4699),
-                    )
-                )
-            )
+            // 固定配色不跟主题：主操作锚点，深浅两档同一块蓝。
+            .background(Color(0xFF3B79E0))
             .clickable(
                 interactionSource = interaction,
                 indication = androidx.compose.material3.ripple(bounded = true, color = Color.White),
@@ -559,7 +509,7 @@ private fun RecordButton(
             Icons.Filled.Add,
             contentDescription = "记一笔",
             tint = Color.White,
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(24.dp),
         )
     }
 }
