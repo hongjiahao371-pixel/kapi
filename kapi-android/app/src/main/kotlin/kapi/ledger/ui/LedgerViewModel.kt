@@ -151,7 +151,8 @@ class LedgerViewModel(
         name: String,
         kind: String,
         parentId: String?,
-    ): String? = repo.createCategory(name, kind, parentId)
+        icon: String? = null,
+    ): String? = repo.createCategory(name, kind, parentId, icon)
 
     suspend fun pair(baseUrl: String, code: String): SyncCoordinator.PairOutcome {
         val outcome = sync.pair(baseUrl, code)

@@ -101,7 +101,12 @@ class LedgerRepository(
      * 同名同级不重复建：用户连点两次"保存"不该得到两个一样的分类，
      * 而那会让分类选择器里出现两颗一模一样的 chip。
      */
-    suspend fun createCategory(name: String, kind: String, parentId: String?): String? {
+    suspend fun createCategory(
+        name: String,
+        kind: String,
+        parentId: String?,
+        icon: String? = null,
+    ): String? {
         val clean = name.trim().take(20)
         if (clean.isEmpty()) return null
         val ledgerId = ensureSeeded()
@@ -114,6 +119,7 @@ class LedgerRepository(
                     ledgerId = ledgerId,
                     parentId = parentId,
                     name = clean,
+                    icon = icon,
                     kind = kind,
                     // 排在用户自建的后面：内置分类是骨架，自定义的是补充。
                     sortOrder = 99,

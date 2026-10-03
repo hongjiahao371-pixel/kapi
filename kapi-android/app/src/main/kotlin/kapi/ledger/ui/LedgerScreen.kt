@@ -89,6 +89,7 @@ fun LedgerScreen(
     val categories by vm.categories.collectAsStateWithLifecycle()
     val accounts by vm.accounts.collectAsStateWithLifecycle()
     val categoryNames = remember(categories) { categories.associate { it.id to it.name } }
+    val categoryIcons = remember(categories) { categories.associate { it.id to it.icon } }
     val accountNames = remember(accounts) { accounts.associate { it.id to it.name } }
     val scope = rememberCoroutineScope()
     // 点开的是**编辑**面板，删除是面板里的一个按钮。
@@ -150,6 +151,7 @@ fun LedgerScreen(
                         TxnRow(
                             row = row,
                             category = row.categoryId?.let { categoryNames[it] },
+                            categoryIcon = row.categoryId?.let { categoryIcons[it] },
                             account = row.accountId?.let { accountNames[it] },
                             onClick = { editing = row },
                         )
@@ -544,7 +546,13 @@ private fun CategoryPill(text: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun TxnRow(row: TxnEntity, category: String?, account: String?, onClick: () -> Unit) {
+private fun TxnRow(
+    row: TxnEntity,
+    category: String?,
+    account: String?,
+    categoryIcon: String? = null,
+    onClick: () -> Unit,
+) {
     val isExpense = row.direction == "EXPENSE"
     // 取色按**分类名**而不是 categoryId：id 在不同设备、不同同步顺序下会变，
     // 而"橙色 = 购物"是用户要记住的东西。统计页用的是同一张表，两处颜色一致。
@@ -578,7 +586,7 @@ private fun TxnRow(row: TxnEntity, category: String?, account: String?, onClick:
             //
             // 有 emoji（对标咔皮的彩色分类图标）就用 emoji——彩色的形状差异
             // 比单色矢量大得多；emoji 表没收录的（账户行、自建分类）退回矢量。
-            val emoji = CategoryEmoji.emojiOf(category)
+            val emoji = CategoryEmoji.emojiOf(category, categoryIcon)
             if (emoji != null) {
                 Text(
                     text = emoji,

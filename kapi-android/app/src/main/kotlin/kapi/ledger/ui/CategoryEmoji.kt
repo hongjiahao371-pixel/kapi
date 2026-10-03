@@ -182,15 +182,16 @@ object CategoryEmoji {
     )
 
     /**
-     * 查一个分类名的 emoji。
+     * 查一个分类名的 emoji。用户自建的分类走了名字表也落空时，看它建分类
+     * 时**自己挑的图标**（存在 `CategoryEntity.icon`）——那是他说了算的。
      *
      * @return 没有贴切的图标时返回 **null**（调用方回落到 [CategoryIcons] 的
      *         矢量图标），而不是硬塞一个问号脸——账户名（现金/银行卡）就
      *         故意不在表里：那四个 Material 图标本来就是账户语义，
      *         💵💳 满天飞反而乱。
      */
-    fun emojiOf(name: String?): String? {
-        val n = name?.trim().takeUnless { it.isNullOrEmpty() } ?: return null
+    fun emojiOf(name: String?, icon: String? = null): String? {
+        val n = name?.trim().takeUnless { it.isNullOrEmpty() } ?: return icon
         byName[n]?.let { return it }
         // 「顶级/细类」全名形态（悬浮窗类目行显示的就是它）拆出细类再查
         if (n.contains('/')) {
@@ -199,6 +200,20 @@ object CategoryEmoji {
             val major = n.substringBefore('/')
             MAJOR_FALLBACK[major]?.let { return it }
         }
-        return null
+        return icon
     }
+
+    /**
+     * 自定义分类可选的图标集（2026-10-03：建分类不再只能落到问号）。
+     * 挑的是记账语境里高频、字形差异大的 40 个；不进 [byName]——
+     * 这些是"给用户挑的素材"，不是名字→图标的判定规则。
+     */
+    val CUSTOM_CHOICES: List<String> = listOf(
+        "🍚", "🍜", "🍲", "🧋", "☕", "🍺", "🍰", "🍪",
+        "🛵", "🚗", "🚕", "🚄", "✈️", "⛽", "🛍️", "👕",
+        "💄", "🖥️", "📱", "📦", "🏠", "🔑", "💡", "🛋️",
+        "🎮", "🎬", "⚽", "🏋️", "💊", "🦷", "🎓", "📚",
+        "🍼", "🧸", "🐱", "🐶", "🧳", "🏨", "🎫", "🎁",
+        "🧧", "💳", "💰", "🚨", "🧾", "🐾", "🏥", "🛒",
+    )
 }

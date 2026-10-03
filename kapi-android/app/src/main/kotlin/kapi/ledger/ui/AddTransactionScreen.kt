@@ -493,14 +493,15 @@ fun AddTransactionScreen(
             onDismiss = { showCategoryPicker = false },
             // 自建分类落库后拿不回完整行（Flow 还没重发），按已知字段
             // 拼一个展示行——onPick 只用 id/名字/父级，够。
-            onCreate = { name, parentId ->
+            onCreate = { name, parentId, icon ->
                 val kind = if (isExpense) "EXPENSE" else "INCOME"
-                vm.createCategory(name, kind, parentId)?.let { id ->
+                vm.createCategory(name, kind, parentId, icon)?.let { id ->
                     CategoryEntity(
                         id = id,
                         ledgerId = LedgerRepository.DEFAULT_LEDGER_ID,
                         parentId = parentId,
                         name = name,
+                        icon = icon,
                         kind = kind,
                         sortOrder = 99,
                     )
@@ -524,7 +525,7 @@ private fun CategoryPickerSheet(
     selectedId: String?,
     onPick: (CategoryEntity?) -> Unit,
     onDismiss: () -> Unit,
-    onCreate: suspend (String, String?) -> CategoryEntity?,
+    onCreate: suspend (String, String?, String?) -> CategoryEntity?,
 ) {
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
@@ -533,12 +534,13 @@ private fun CategoryPickerSheet(
     val minors = currentMajor?.let { m -> categories.filter { it.parentId == m.id } } ?: emptyList()
     var showCustom by remember { mutableStateOf(false) }
     var customName by remember { mutableStateOf("") }
+    var customEmoji by remember { mutableStateOf<String?>(null) }
 
     fun submitCustom() {
         val name = customName.trim()
         if (name.isEmpty()) return
         scope.launch {
-            val created = onCreate(name, currentMajor?.id)
+            val created = onCreate(name, currentMajor?.id, customEmoji)
             if (created != null) {
                 onPick(created)
                 onDismiss()
@@ -565,8 +567,40 @@ private fun CategoryPickerSheet(
                     modifier = Modifier.weight(1f),
                 )
             }
-            // 自定义输入行：点了「＋ 自定义」才出现
+            // 自定义输入区：点了「＋ 自定义」才出现。先挑一个图标
+            //（可选，不挑且名字撞不上内置表时才落到问号），再起名字。
             if (showCustom) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "挑个图标（可跳过）",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkSoft,
+                )
+                Spacer(Modifier.height(6.dp))
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(8),
+                    modifier = Modifier.heightIn(max = 132.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    items(CategoryEmoji.CUSTOM_CHOICES.size) { i ->
+                        val e = CategoryEmoji.CUSTOM_CHOICES[i]
+                        val emojiSelected = customEmoji == e
+                        Text(
+                            text = e,
+                            fontSize = 20.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (emojiSelected) BrandSoft
+                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                )
+                                .clickable { customEmoji = if (emojiSelected) null else e }
+                                .padding(vertical = 6.dp),
+                        )
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
@@ -596,7 +630,7 @@ private fun CategoryPickerSheet(
                 if (currentMajor == null) {
                     items(majors, key = { it.id }) { m ->
                         CategoryTile(
-                            emoji = CategoryEmoji.emojiOf(m.name),
+                            emoji = CategoryEmoji.emojiOf(m.name, m.icon),
                             name = m.name,
                             selected = selectedId == m.id,
                             onClick = {
@@ -622,7 +656,7 @@ private fun CategoryPickerSheet(
                     // 「全部 大类」瓦片：只记到大类
                     item(key = currentMajor!!.id + "-all") {
                         CategoryTile(
-                            emoji = CategoryEmoji.emojiOf(currentMajor!!.name),
+                            emoji = CategoryEmoji.emojiOf(currentMajor!!.name, currentMajor!!.icon),
                             name = "全部" + currentMajor!!.name,
                             selected = selectedId == currentMajor!!.id,
                             onClick = {
@@ -633,8 +667,8 @@ private fun CategoryPickerSheet(
                     }
                     items(minors, key = { it.id }) { kid ->
                         CategoryTile(
-                            emoji = CategoryEmoji.emojiOf(kid.name)
-                                ?: CategoryEmoji.emojiOf(currentMajor!!.name),
+                            emoji = CategoryEmoji.emojiOf(kid.name, kid.icon)
+                                ?: CategoryEmoji.emojiOf(currentMajor!!.name, currentMajor!!.icon),
                             name = kid.name,
                             selected = selectedId == kid.id,
                             onClick = {

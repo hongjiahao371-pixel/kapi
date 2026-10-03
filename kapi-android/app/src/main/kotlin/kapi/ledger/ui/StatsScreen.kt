@@ -73,6 +73,7 @@ fun StatsScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val categories by vm.categories.collectAsStateWithLifecycle()
     val names = remember(categories) { categories.associate { it.id to it.name } }
+    val iconsOf = remember(categories) { categories.associate { it.id to it.icon } }
 
     // ---- 维度状态：month（vm 管）/ week（本页自管，offset 相对本周）----
     var mode by remember { androidx.compose.runtime.mutableStateOf("month") }
@@ -193,6 +194,7 @@ fun StatsScreen(
             items(byCategory, key = { it.first ?: "_" }) { (id, minor) ->
                 CategoryBar(
                     name = names[id] ?: "未分类",
+                    icon = id?.let { iconsOf[it] },
                     minor = minor,
                     ratio = if (maxMinor > 0) minor.toFloat() / maxMinor.toFloat() else 0f,
                     share = if (totalExpense > 0) minor.toFloat() / totalExpense.toFloat() else 0f,
@@ -429,6 +431,7 @@ private fun MiniStat(label: String, minor: Long, color: androidx.compose.ui.grap
 @Composable
 private fun CategoryBar(
     name: String,
+    icon: String?,
     minor: Long,
     ratio: Float,
     share: Float,
@@ -444,7 +447,7 @@ private fun CategoryBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 分类图标：有 emoji 用 emoji（对标咔皮的彩色图标），没有退回色点。
-        val emoji = CategoryEmoji.emojiOf(name)
+        val emoji = CategoryEmoji.emojiOf(name, icon)
         if (emoji != null) {
             Text(
                 text = emoji,
