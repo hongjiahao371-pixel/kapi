@@ -601,6 +601,18 @@ private fun CategoryPickerSheet(
                         )
                     }
                 }
+                // 48 个候选总有不贴切的：留一个任意输入——系统键盘的
+                // emoji 面板里随便挑，存进 icon 的都是一个字符串，展示
+                // 链路不区分来源。字数截到 8：emoji 有多码点序列（ZWIJ
+                // 肤色/家庭组合），按字符数截才不会把一个表情截成残块。
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = customEmoji ?: "",
+                    onValueChange = { customEmoji = it.take(8).ifEmpty { null } },
+                    placeholder = { Text("没有合适的？输入任意表情", style = MaterialTheme.typography.bodySmall) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
