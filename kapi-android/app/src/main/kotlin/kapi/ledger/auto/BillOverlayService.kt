@@ -257,9 +257,11 @@ class BillOverlayService : Service() {
 
         val card = buildCard(draft, resolvedCategoryId, categories, accountName, density)
 
+        // 高度 WRAP_CONTENT：窗口随内容伸缩（内部 ScrollView 自己封顶），
+        // 重回「少内容少占屏、多内容不出屏」。
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
-            (screenH * 2) / 3,
+            WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT,
@@ -363,6 +365,38 @@ class BillOverlayService : Service() {
             )
         }
 
+        // ---- 可滚动内容区 ----
+        // 卡片内容（提示条+金额+字段+备注）可能超过窗口高度；此前整个
+        // 卡片硬塞进固定 2/3 屏的窗口，超出部分被屏幕底边裁掉——按钮
+        // 看不见也点不着（2026-10-03 真机反馈「悬浮窗显示不完整」）。
+        // 现在：中间内容放进 ScrollView（上限 58% 屏高，内容少时自动
+        // 收缩），按钮区留在滚动区外钉底，永远完整可见可点。
+        val bodyScroll = object : android.widget.ScrollView(ctx) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                val cap = (resources.displayMetrics.heightPixels * 0.58f).toInt()
+                super.onMeasure(
+                    widthMeasureSpec,
+                    MeasureSpec.makeMeasureSpec(cap, MeasureSpec.AT_MOST),
+                )
+            }
+        }
+        bodyScroll.isVerticalScrollBarEnabled = false
+        val body = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        bodyScroll.addView(
+            body,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        card.addView(
+            bodyScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+
         // ---- 金额（可改）：36sp 粗体居中，上下各 20dp
         val direction = draft.direction
         val directionColor = if (direction == "INCOME") "#12A594" else "#E5484D"
@@ -400,7 +434,7 @@ class BillOverlayService : Service() {
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
         })
         amountRow.addView(amountEdit)
-        card.addView(amountRow, amountRowLp)
+        body.addView(amountRow, amountRowLp)
 
         // ---- 内嵌字段卡 #F7F8FA 圆角 12dp
         val fieldCard = LinearLayout(ctx).apply {
@@ -411,7 +445,7 @@ class BillOverlayService : Service() {
         fieldBg.setColor(Color.parseColor("#F7F8FA"))
         fieldBg.cornerRadius = dp(12).toFloat()
         fieldCard.background = fieldBg
-        card.addView(
+        body.addView(
             fieldCard,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -621,7 +655,7 @@ class BillOverlayService : Service() {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
         })
-        card.addView(
+        body.addView(
             noteEdit,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
