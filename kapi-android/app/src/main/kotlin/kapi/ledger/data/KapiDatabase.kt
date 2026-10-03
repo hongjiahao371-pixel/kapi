@@ -19,6 +19,23 @@ import kotlinx.coroutines.flow.Flow
  */
 data class CategoryCount(val categoryId: String, val n: Int)
 
+/**
+ * 商户 × 分类 × 次数的聚合行：分类规则页的数据源。
+ *
+ * 一行 = "某商户名（原文）被归到某分类一次"。规则页拿全量行在内存里按
+ * [kapi.core.auto.MerchantLearning.normalize] 归一、按商户聚优——
+ * SQL 里做不了归一化（那是 Kotlin 逻辑），所以粒度放在原文级。
+ */
+data class MerchantCategoryRow(val merchant: String, val categoryId: String, val n: Int)
+
+/**
+ * 当日自动记账汇总：笔数 + 支出合计（分）。
+ *
+ * 顶部简约条（[kapi.ledger.auto.BillOverlayService] 简约模式）底部那行
+ * "今天已记录 N 次，共支出 ¥X" 的数据源。POJO 放顶层，理由同 [CategoryCount]。
+ */
+data class DayAutoSummary(val n: Int, val total: Long)
+
 @Dao
 interface TxnDao {
 
@@ -27,6 +44,21 @@ interface TxnDao {
 
     @Query("SELECT * FROM txn WHERE id = :id")
     suspend fun byId(id: String): TxnEntity?
+
+    /**
+     * 今天自动记了多少笔、支出合计多少。
+     *
+     * 只数 `LOCAL_FALLBACK`——即**自动记账管线产出**的行（含悬浮窗确认与
+     * 简约模式自动入账，两者走同一条 [kapi.ledger.sync.LocalEditWriter]
+     * 落库路径、同一个 source）；手动记的一笔不冒充自动的功劳。
+     * 转账行（`toAccountId` 非空）不是消费，与收支统计同一个口径排除。
+     */
+    @Query(
+        "SELECT COUNT(*) AS n, IFNULL(SUM(amountMinor), 0) AS total FROM txn " +
+            "WHERE deleted = 0 AND source = :source AND direction = 'EXPENSE' " +
+            "AND toAccountId IS NULL AND occurredAt >= :from AND occurredAt < :to"
+    )
+    suspend fun daySummary(source: String, from: Long, to: Long): DayAutoSummary?
 
     /**
      * 「这个商户的账都被归到哪几档，各多少次」——自学习的数据来源。
@@ -44,6 +76,17 @@ interface TxnDao {
             "GROUP BY categoryId ORDER BY n DESC"
     )
     suspend fun categoryHistogramFor(merchant: String): List<CategoryCount>
+
+    /**
+     * 全量「商户 × 分类」直方图（原文级粒度），分类规则页用。
+     * 只要有意义的行：商户和分类都非空的、没删的。
+     */
+    @Query(
+        "SELECT merchant, categoryId, COUNT(*) AS n FROM txn " +
+            "WHERE deleted = 0 AND merchant IS NOT NULL AND merchant != '' " +
+            "AND categoryId IS NOT NULL GROUP BY merchant, categoryId"
+    )
+    suspend fun merchantCategoryHistogram(): List<MerchantCategoryRow>
 
     /**
      * 同步取一段区间，用于"账本里有没有一笔很像的"这种一次性判断。
@@ -159,6 +202,19 @@ interface AccountDao {
 }
 
 @Dao
+interface BudgetDao {
+
+    @Query("SELECT * FROM budget WHERE ledgerId = :ledgerId AND month = :month")
+    fun observeForMonth(ledgerId: String, month: String): Flow<List<BudgetEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(row: BudgetEntity)
+
+    @Query("DELETE FROM budget WHERE id = :id")
+    suspend fun delete(id: String)
+}
+
+@Dao
 interface LedgerDao {
     @Query("SELECT * FROM ledger WHERE deleted = 0")
     fun observeAll(): Flow<List<LedgerEntity>>
@@ -247,10 +303,11 @@ interface AutoDraftDao {
         LedgerEntity::class,
         SyncStateEntity::class,
         AutoDraftEntity::class,
+        BudgetEntity::class,
     ],
     // **故意保留 1**。旧 schema 文件要留着：上线后想写迁移测试就来不及了，
     // 那时候每条用户手机上都已经有数据，删掉旧版本等于把迁移的参照物一起删了。
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class KapiDatabase : RoomDatabase() {
@@ -260,6 +317,7 @@ abstract class KapiDatabase : RoomDatabase() {
     abstract fun ledgerDao(): LedgerDao
     abstract fun syncStateDao(): SyncStateDao
     abstract fun autoDraftDao(): AutoDraftDao
+    abstract fun budgetDao(): BudgetDao
 
     companion object {
         const val NAME = "kapi.db"

@@ -680,7 +680,11 @@ fun groupByDay(rows: List<TxnEntity>, zone: ZoneId = ZoneId.systemDefault()): Li
             DayGroup(
                 day = day,
                 rows = list.sortedByDescending { it.occurredAt },
-                expenseMinor = list.filter { it.direction == "EXPENSE" }.sumOf { it.amountMinor },
+                // 自转账（toAccountId 非空）不算支出：与 observeSummary 同一口径。
+                // 漏掉它的日子，日头上的"支出 ¥12110"和顶部卡片的 ¥10.20 对不上。
+                expenseMinor = list.filter {
+                    it.direction == "EXPENSE" && it.toAccountId == null
+                }.sumOf { it.amountMinor },
             )
         }
 
@@ -689,7 +693,7 @@ fun expenseByCategory(
     rows: List<TxnEntity>,
 ): List<Pair<String?, Long>> =
     rows.asSequence()
-        .filter { it.direction == "EXPENSE" }
+        .filter { it.direction == "EXPENSE" && it.toAccountId == null }
         .groupBy { it.categoryId }
         .map { (id, list) -> id to list.sumOf { it.amountMinor } }
         .sortedByDescending { it.second }

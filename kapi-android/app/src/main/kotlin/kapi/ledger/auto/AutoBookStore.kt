@@ -95,6 +95,19 @@ class AutoBookStore(context: Context) {
         get() = prefs.getBoolean(KEY_OVERLAY_CONFIRM, true)
         set(v) = prefs.edit().putBoolean(KEY_OVERLAY_CONFIRM, v).apply()
 
+    /**
+     * 弹窗偏好（2026-10-03 咔皮对齐）：**简约 = 自动入账 + 顶部轻提示**；
+     * **详细 = 底部 2/3 确认窗**（原形态）。咔皮默认前者——用户被"每进一次
+     * 详情页就弹一次大窗"惹恼过（2026-10-02 真机），两种都留着让用户挑。
+     *
+     * 简约模式同样需要悬浮窗权限（顶部条也是 TYPE_APPLICATION_OVERLAY）；
+     * 没授权时自动退回详细确认的行为不成立——直接退回「只建草稿」，
+     * 待确认页兜底，什么都不丢。
+     */
+    var popupStyle: String
+        get() = prefs.getString(KEY_POPUP_STYLE, POPUP_DETAILED) ?: POPUP_DETAILED
+        set(v) = prefs.edit().putString(KEY_POPUP_STYLE, v).apply()
+
     var dedupeWindowMs: Long
         get() = AutoBook.effectiveWindowMs(prefs.getLong(KEY_WINDOW, AutoBook.DEFAULT_WINDOW_MS))
         set(v) = prefs.edit().putLong(KEY_WINDOW, AutoBook.effectiveWindowMs(v)).apply()
@@ -257,6 +270,13 @@ class AutoBookStore(context: Context) {
         private const val KEY_ID_STAMPS = "handled_txn_ids"
         private const val KEY_DEDUP_V2 = "dedup_semantics_v2"
         private const val KEY_OVERLAY_CONFIRM = "overlay_confirm_enabled"
+        private const val KEY_POPUP_STYLE = "popup_style"
+
+        /** 弹窗偏好取值：底部详细确认窗（原形态）。 */
+        const val POPUP_DETAILED = "detailed"
+
+        /** 弹窗偏好取值：顶部简约条 + 自动入账（咔皮默认形态）。 */
+        const val POPUP_MINIMAL = "minimal"
 
         /**
          * 默认监听包名。

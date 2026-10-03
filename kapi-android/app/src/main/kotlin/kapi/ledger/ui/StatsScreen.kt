@@ -31,9 +31,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.clickable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,13 +51,20 @@ import java.time.YearMonth
 /**
  * 统计。
  *
- * 只回答一个问题：**这个月的钱花在哪了**。按分类金额倒序，条形长度按占
+ * 只回答一个问题：**这段时间的钱花在哪了**。按分类金额倒序，条形长度按占
  * 最大项的比例——不用绝对值刻度，因为用户比的是"餐饮比交通多多少"，
  * 不是"餐饮是不是 40%"。
+ *
+ * 周/月两个维度（2026-10-03 咔皮对齐 P2；咔皮是 周/月/年/自定义）。
+ * 月走 [LedgerViewModel] 的既有状态；周**刻意不走 vm**——周会跨月
+ * （9/29–10/5），vm 的整根数据管道都建立在 YearMonth 上，为周去改它要动
+ * 账本页和汇总页。周模式在这页内部自己查区间（[kapi.ledger.data.TxnDao.inRange]），
+ * 数据量是 7 天的行，现场查毫无压力。
  */
 @Composable
 fun StatsScreen(
     vm: LedgerViewModel,
+    container: kapi.ledger.AppContainer,
     listState: LazyListState = rememberLazyListState(),
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
@@ -62,10 +73,49 @@ fun StatsScreen(
     val categories by vm.categories.collectAsStateWithLifecycle()
     val names = remember(categories) { categories.associate { it.id to it.name } }
 
-    val byCategory = remember(state.rows) { expenseByCategory(state.rows) }
+    // ---- 维度状态：month（vm 管）/ week（本页自管，offset 相对本周）----
+    var mode by remember { androidx.compose.runtime.mutableStateOf("month") }
+    var weekOffset by remember { androidx.compose.runtime.mutableStateOf(0) }
+    var weekRows by remember { androidx.compose.runtime.mutableStateOf<List<TxnEntity>>(emptyList()) }
+    var weekLoaded by remember { androidx.compose.runtime.mutableStateOf(false) }
+
+    val zone = java.time.ZoneId.systemDefault()
+    val weekStart = remember(weekOffset) {
+        java.time.LocalDate.now(zone).plusWeeks(weekOffset.toLong())
+            .with(java.time.DayOfWeek.MONDAY)
+    }
+    val weekEnd = weekStart.plusDays(7)
+    LaunchedEffect(weekOffset, mode) {
+        if (mode != "week") return@LaunchedEffect
+        val from = weekStart.atStartOfDay(zone).toInstant().toEpochMilli()
+        val to = weekEnd.atStartOfDay(zone).toInstant().toEpochMilli()
+        weekRows = container.db.txnDao().inRange(from, to)
+        weekLoaded = true
+    }
+
+    // 两个维度各自算各自的构成；下游（合计/环形/条形）不关心来源。
+    val monthByCategory = remember(state.rows) { expenseByCategory(state.rows) }
+    val weekByCategory = remember(weekRows) { expenseByCategory(weekRows) }
+    val byCategory = if (mode == "week") weekByCategory else monthByCategory
     val maxMinor = byCategory.maxOfOrNull { it.second } ?: 0L
     val totalExpense = byCategory.sumOf { it.second }
-    val isCurrent = state.month == YearMonth.now()
+    val isCurrent = if (mode == "week") weekOffset == 0 else state.month == YearMonth.now()
+    // 周的收入/结余：现场聚合（排除转账行，口径与月汇总一致）
+    val weekSummary = remember(weekRows) {
+        var income = 0L
+        var expense = 0L
+        for (t in weekRows) {
+            if (t.deleted || t.toAccountId != null) continue
+            when (t.direction) {
+                "INCOME" -> income += t.amountMinor
+                "EXPENSE" -> expense += t.amountMinor
+            }
+        }
+        Triple(expense, income, income - expense)
+    }
+    val totalIncome = if (mode == "week") weekSummary.second else state.summary.incomeMinor
+    val totalBalance = if (mode == "week") weekSummary.third else state.summary.balanceMinor
+    val loaded = if (mode == "week") weekLoaded else state.loaded
 
     LazyColumn(
         state = listState,
@@ -79,20 +129,34 @@ fun StatsScreen(
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         item {
-            StatsHeader(
-                month = state.month,
-                isCurrent = isCurrent,
-                onPrev = { vm.shiftMonth(-1) },
-                onNext = { vm.shiftMonth(1) },
-            )
+            // 维度切换：周 / 月。放在标题上方，选中态青底白字。
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                DimensionChip("周", mode == "week") { mode = "week" }
+                DimensionChip("月", mode == "month") { mode = "month" }
+            }
+            if (mode == "week") {
+                WeekHeader(
+                    start = weekStart,
+                    isCurrent = weekOffset == 0,
+                    onPrev = { weekOffset -= 1 },
+                    onNext = { weekOffset += 1 },
+                )
+            } else {
+                StatsHeader(
+                    month = state.month,
+                    isCurrent = isCurrent,
+                    onPrev = { vm.shiftMonth(-1) },
+                    onNext = { vm.shiftMonth(1) },
+                )
+            }
         }
 
-        if (!state.loaded) {
+        if (!loaded) {
             item { Text("正在载入…", color = InkSoft, modifier = Modifier.padding(top = 48.dp)) }
         } else if (byCategory.isEmpty()) {
             item {
                 Text(
-                    text = if (isCurrent) "这个月还没有支出" else "这个月没有支出记录",
+                    text = if (isCurrent) "这个周期还没有支出" else "该周期没有支出记录",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(top = 64.dp),
@@ -102,8 +166,8 @@ fun StatsScreen(
             item {
                 TotalBlock(
                     total = totalExpense,
-                    income = state.summary.incomeMinor,
-                    balance = state.summary.balanceMinor,
+                    income = totalIncome,
+                    balance = totalBalance,
                     modifier = Modifier.padding(top = 4.dp, bottom = 20.dp),
                 )
             }
@@ -245,6 +309,59 @@ private fun StatsHeader(
             Icon(Icons.Filled.ChevronRight, contentDescription = "下一月", tint = InkSoft)
         }
     }
+}
+
+/** 周维度的标题：日期区间 + 前后翻周。 */
+@Composable
+private fun WeekHeader(
+    start: java.time.LocalDate,
+    isCurrent: Boolean,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onPrev) {
+            Icon(Icons.Filled.ChevronLeft, contentDescription = "上一周", tint = InkSoft)
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                "本周支出构成".takeIf { isCurrent } ?: "周支出构成",
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                "%d.%d – %d.%d".format(
+                    start.monthValue, start.dayOfMonth,
+                    start.plusDays(6).monthValue, start.plusDays(6).dayOfMonth,
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = InkFaint,
+            )
+        }
+        IconButton(onClick = onNext) {
+            Icon(Icons.Filled.ChevronRight, contentDescription = "下一周", tint = InkSoft)
+        }
+    }
+}
+
+@Composable
+private fun DimensionChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Text(
+        label,
+        style = MaterialTheme.typography.labelLarge,
+        color = if (selected) androidx.compose.ui.graphics.Color.White else InkSoft,
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (selected) Brand else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 6.dp),
+    )
 }
 
 @Composable

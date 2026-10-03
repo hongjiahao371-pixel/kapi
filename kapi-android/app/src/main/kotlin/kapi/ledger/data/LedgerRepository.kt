@@ -48,6 +48,11 @@ class LedgerRepository(
         var expense = 0L
         var income = 0L
         for (r in rows) {
+            // 自转账（toAccountId 非空）不是收支：钱只是在自己口袋之间挪。
+            // postSelfTransfer 的 KDoc 从第一天就承诺"收支统计会把
+            // toAccountId 非空的行排除"——实现一直漏了这行过滤，余额宝
+            // 申购 12100 之类会把月支出顶成天文数字（2026-10-03 真机实见）。
+            if (r.toAccountId != null) continue
             when (r.direction) {
                 "INCOME" -> income += r.amountMinor
                 "EXPENSE" -> expense += r.amountMinor

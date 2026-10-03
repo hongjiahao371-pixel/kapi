@@ -26,10 +26,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Sync
 import android.provider.Settings
@@ -75,6 +78,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kapi.ledger.auto.AutoPermissions
+import kapi.ledger.auto.AutoBookStore
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalContext
 import kapi.ledger.auto.explain
@@ -100,6 +104,8 @@ fun SyncSettingsScreen(
     contentPadding: PaddingValues,
     onOpenLlmSettings: () -> Unit,
     onOpenAccounts: () -> Unit = {},
+    onOpenBudget: () -> Unit = {},
+    onOpenRules: () -> Unit = {},
     llmStore: LlmStore? = null,
     autoBookStore: kapi.ledger.auto.AutoBookStore? = null,
     onOpenDrafts: () -> Unit = {},
@@ -271,6 +277,79 @@ fun SyncSettingsScreen(
                         Text("账户管理", style = MaterialTheme.typography.titleMedium)
                         Text(
                             "子钱包 · 划转 · 新增银行卡",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = InkSoft,
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = InkFaint,
+                    )
+                }
+            }
+
+            // ---- 预算管理（2026-10-03 咔皮对齐 P1）----
+            // 记账 App 的第一未满足需求："这个月还剩多少能花"。
+            Spacer(Modifier.height(16.dp))
+            SettingsCard {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.glassClickable { onOpenBudget() },
+                ) {
+                    Box(
+                        Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(BrandSoft),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Filled.Savings,
+                            contentDescription = null,
+                            tint = Brand,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("预算管理", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "月预算 · 分类额度 · 进度",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = InkSoft,
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = InkFaint,
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.glassClickable { onOpenRules() },
+                ) {
+                    Box(
+                        Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(BrandSoft),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Filled.Rule,
+                            contentDescription = null,
+                            tint = Brand,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("分类规则", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "自动记账学到的商户归类，一眼可查",
                             style = MaterialTheme.typography.bodySmall,
                             color = InkSoft,
                         )
@@ -902,61 +981,86 @@ private fun AutoBookSection(
             )
         }
 
-        // ---- 悬浮窗确认 ----
+        // ---- 弹窗偏好 ----
         //
-        // 识别到支付后当场弹窗（占屏 2/3），类目已归好，用户点确认/不记了/忽略。
-        // 需要系统的「显示在其它应用上层」特殊权限——这个权限设置页给不了，
-        // 只能跳系统设置让用户手动开；没授权时悬浮窗静默跳过，草稿走待确认。
+        // 识别到支付后怎么呈现，二选一（形态对标商汤咔皮记账的「弹窗偏好设置」）：
+        // - 顶部简约提醒：**自动入账**，顶部滑下一条轻提示（6 秒自动收起），
+        //   底部带"今天已记录 N 次"汇总行。不打断当前页面。
+        // - 底部详细确认：占屏 2/3 的确认窗，当场改类目/金额/账户再入账。
+        // 两种都需要「显示在其它应用上层」权限；没授权时都静默跳过，
+        // 草稿走待确认兜底，什么都不丢。
         Spacer(Modifier.height(12.dp))
         val canOverlay = remember { mutableStateOf(Settings.canDrawOverlays(context)) }
-        var overlayOn by remember { mutableStateOf(store.overlayConfirmEnabled && canOverlay.value) }
+        var popupStyle by remember {
+            mutableStateOf(
+                if (store.overlayConfirmEnabled) store.popupStyle else "off",
+            )
+        }
         val lifecycleOwner2 = LocalLifecycleOwner.current
         DisposableEffect(lifecycleOwner2) {
             val obs = LifecycleEventObserver { _, e ->
                 if (e == Lifecycle.Event.ON_RESUME) {
-                    // 从授权页回来时重读授权状态；授权到手后自动把开关补开
+                    // 从授权页回来时重读授权状态；授权到手后按当前选择恢复
                     canOverlay.value = Settings.canDrawOverlays(context)
-                    if (canOverlay.value && store.overlayConfirmEnabled) overlayOn = true
+                    if (canOverlay.value && popupStyle == "off") {
+                        popupStyle = store.popupStyle
+                    }
                 }
             }
             lifecycleOwner2.lifecycle.addObserver(obs)
             onDispose { lifecycleOwner2.lifecycle.removeObserver(obs) }
         }
         SettingsCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("悬浮窗确认", style = MaterialTheme.typography.titleMedium, color = Ink)
-                    Text(
-                        if (canOverlay.value) "识别后当场弹出，确认或不记，类目可改"
-                        else "需要「显示在其它应用上层」权限，点此去授权",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (canOverlay.value) InkSoft else Brand,
+            Text("弹窗偏好", style = MaterialTheme.typography.titleMedium, color = Ink)
+            Text(
+                when {
+                    !canOverlay.value -> "需要「显示在其它应用上层」权限，点下方选项去授权"
+                    popupStyle == AutoBookStore.POPUP_MINIMAL -> "自动入账，顶部轻提示，不打断当前页面"
+                    else -> "每次弹出确认窗，当场改类目/金额再入账"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (canOverlay.value) InkSoft else Brand,
+            )
+            Spacer(Modifier.height(8.dp))
+            PopupStyleOption(
+                title = "顶部简约提醒（自动入账）",
+                subtitle = "识别后直接记账，屏幕顶部滑下一条提示",
+                selected = popupStyle == AutoBookStore.POPUP_MINIMAL,
+                needGrant = !canOverlay.value,
+            ) {
+                if (!canOverlay.value) {
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:" + context.packageName),
+                        ),
                     )
+                    return@PopupStyleOption
                 }
-                Switch(
-                    checked = overlayOn,
-                    onCheckedChange = { v ->
-                        when {
-                            v && !canOverlay.value -> {
-                                // 跳系统授权页；回来时 ON_RESUME 钩子重读并自动补开
-                                context.startActivity(
-                                    Intent(
-                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                        Uri.parse("package:" + context.packageName),
-                                    ),
-                                )
-                            }
-                            v -> {
-                                store.overlayConfirmEnabled = true
-                                overlayOn = true
-                            }
-                            else -> {
-                                store.overlayConfirmEnabled = false
-                                overlayOn = false
-                            }
-                        }
-                    },
-                )
+                store.overlayConfirmEnabled = true
+                store.popupStyle = AutoBookStore.POPUP_MINIMAL
+                popupStyle = AutoBookStore.POPUP_MINIMAL
+            }
+            Spacer(Modifier.height(6.dp))
+            PopupStyleOption(
+                title = "底部详细确认（每次弹窗）",
+                subtitle = "占屏 2/3 的确认窗，看一眼再入账",
+                selected = popupStyle == AutoBookStore.POPUP_DETAILED,
+                needGrant = false,
+            ) {
+                store.overlayConfirmEnabled = true
+                store.popupStyle = AutoBookStore.POPUP_DETAILED
+                popupStyle = AutoBookStore.POPUP_DETAILED
+            }
+            Spacer(Modifier.height(6.dp))
+            PopupStyleOption(
+                title = "不弹窗（只进待确认）",
+                subtitle = "识别后安静地放进待确认页，想起来再处理",
+                selected = popupStyle == "off",
+                needGrant = false,
+            ) {
+                store.overlayConfirmEnabled = false
+                popupStyle = "off"
             }
         }
 
@@ -976,6 +1080,39 @@ private fun AutoBookSection(
                 Icons.Filled.ChevronRight, null,
                 tint = Brand, modifier = Modifier.size(18.dp),
             )
+        }
+    }
+}
+
+@Composable
+private fun PopupStyleOption(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    needGrant: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (selected) BrandSoft else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .glassClickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (selected) BrandDeep else Ink,
+            )
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = InkSoft)
+        }
+        if (needGrant) {
+            Text("去授权", style = MaterialTheme.typography.labelLarge, color = Brand)
+        } else if (selected) {
+            Icon(Icons.Filled.CheckCircle, null, tint = Brand, modifier = Modifier.size(20.dp))
         }
     }
 }

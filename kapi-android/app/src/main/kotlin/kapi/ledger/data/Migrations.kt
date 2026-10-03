@@ -68,5 +68,28 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(M1_2)
+    val M2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // 预算表（2026-10-03 咔皮对齐 P1）。纯新增表，不碰已有数据。
+            // 建表 SQL 照 Room 导出的 schemas/3.json 抄，字段名错一个字的现象
+            // 是"能打开库但一查这张表就崩"——装机后必须真机点一遍预算页。
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `budget` (
+                    `id` TEXT NOT NULL,
+                    `ledgerId` TEXT NOT NULL,
+                    `month` TEXT NOT NULL,
+                    `categoryId` TEXT,
+                    `amountMinor` INTEGER NOT NULL,
+                    PRIMARY KEY(`id`)
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_budget_ledgerId_month` ON `budget` (`ledgerId`, `month`)",
+            )
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(M1_2, M2_3)
 }

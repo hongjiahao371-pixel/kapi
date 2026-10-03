@@ -131,6 +131,10 @@ class BillOverlayService : Service() {
                 val pkg = intent.getStringExtra(EXTRA_PKG)
                 showRecorded(text, at, pkg)
             }
+            MODE_AUTOPOST -> {
+                val draftId = intent.getStringExtra(EXTRA_DRAFT_ID) ?: return START_NOT_STICKY
+                autoPostAndShow(draftId)
+            }
             else -> {
                 val draftId = intent?.getStringExtra(EXTRA_DRAFT_ID)
                 if (draftId != null) showConfirm(draftId)
@@ -778,6 +782,208 @@ class BillOverlayService : Service() {
         else -> "A2"
     }
 
+    // ============================================================ 简约模式
+    //
+    // 弹窗偏好 = 「顶部简约提醒」时走这条通路：**不弹确认窗，直接入账**，
+    // 然后在屏幕顶部滑下一条轻提示（分类+金额+账户+时间），底部一行
+    // 「今天已记录 N 次，共支出 ¥X · 点击查看」。形态对标商汤咔皮记账
+    // 的默认弹窗（2026-10-03 真机实测）——用户被"每进一次详情页就弹
+    // 2/3 屏"惹恼过，两种形态都保留，设置里二选一。
+    //
+    // 入账路径与确认按钮（[onConfirm]）逐字段一致：同样的 AutoCategory
+    // 解析、同样的 LocalEditWriter source——只有"谁点的确认"不同。
+
+    /**
+     * 自动入账一稿并弹顶部横幅。草稿已被并/删时静默退出（无事可做）。
+     * 任何失败都只打日志：草稿还留在待确认页，数据不丢。
+     */
+    private fun autoPostAndShow(draftId: String) {
+        if (!Settings.canDrawOverlays(this)) return
+        scope.launch {
+            val postedId = withContext(Dispatchers.IO) {
+                runCatching {
+                    val fresh = container.db.autoDraftDao().byId(draftId)
+                        ?: return@runCatching null
+                    val categoryId = runCatching {
+                        AutoCategory.resolve(
+                            db = container.db,
+                            ledgerId = fresh.ledgerId,
+                            merchant = fresh.merchant,
+                            rawText = fresh.rawText,
+                            direction = fresh.direction,
+                        )
+                    }.getOrNull()
+                    val txn = container.editor.createTransaction(
+                        amountMinor = fresh.amountMinor,
+                        direction = fresh.direction,
+                        accountId = fresh.accountId ?: "A1",
+                        occurredAt = fresh.occurredAt,
+                        ledgerId = fresh.ledgerId,
+                        deviceId = container.tokenStore.deviceId,
+                        note = fresh.note,
+                        merchant = fresh.merchant,
+                        categoryId = categoryId,
+                        source = LocalEditWriter.SOURCE_LOCAL_FALLBACK,
+                        confidence = fresh.confidence,
+                    )
+                    container.db.autoDraftDao().delete(fresh.id)
+                    txn.id
+                }.onFailure {
+                    android.util.Log.w(
+                        "BillOverlay",
+                        "简约模式自动入账失败：${it.javaClass.name}: ${it.message}",
+                        it,
+                    )
+                }.getOrNull()
+            } ?: return@launch
+            showPosted(postedId)
+        }
+    }
+
+    /** 入账完成后弹顶部横幅。读不到账目行（不该发生）就什么都不显示。 */
+    private fun showPosted(txnId: String) {
+        scope.launch {
+            val data = withContext(Dispatchers.IO) {
+                runCatching {
+                    val txn = container.db.txnDao().byId(txnId) ?: return@runCatching null
+                    val categoryName = txn.categoryId?.let { container.db.categoryDao().byId(it) }?.name
+                    val accountName = container.db.accountDao().byId(txn.accountId)?.name
+                    val cal = java.util.Calendar.getInstance().apply {
+                        set(java.util.Calendar.HOUR_OF_DAY, 0)
+                        set(java.util.Calendar.MINUTE, 0)
+                        set(java.util.Calendar.SECOND, 0)
+                        set(java.util.Calendar.MILLISECOND, 0)
+                    }
+                    val summary = container.db.txnDao().daySummary(
+                        LocalEditWriter.SOURCE_LOCAL_FALLBACK,
+                        cal.timeInMillis,
+                        cal.timeInMillis + 24 * 3600_000L,
+                    )
+                    Triple(txn, (categoryName ?: "已入账") to accountName, summary)
+                }.getOrNull()
+            } ?: return@launch
+            val (txn, catAcc, summary) = data
+            showBannerWindow(buildBanner(txn, catAcc.first, catAcc.second, summary))
+        }
+    }
+
+    /** 顶部横幅：白卡一条，两行内容 + 当日汇总行，6 秒自动收起。 */
+    private fun buildBanner(
+        txn: kapi.ledger.data.TxnEntity,
+        categoryName: String,
+        accountName: String?,
+        summary: kapi.ledger.data.DayAutoSummary?,
+    ): View {
+        val density = resources.displayMetrics.density
+        fun dp(v: Int): Int = (v * density).toInt()
+        val ctx = this
+
+        val income = txn.direction == "INCOME"
+        val amountText = (if (income) "+¥" else "-¥") +
+            java.lang.String.format(Locale.CHINA, "%.2f", txn.amountMinor / 100.0)
+        val amountColor = if (income) "#14B8A6" else "#E5484D"
+        val subLine = buildString {
+            accountName?.let { append(it) }
+            append(" · ")
+            append(SimpleDateFormat("M月d日 HH:mm", Locale.CHINA).format(Date(txn.occurredAt)))
+            txn.merchant?.takeIf { it.isNotBlank() }?.let { append(" · ").append(it) }
+        }
+        val summaryText = summary?.takeIf { it.n > 0 }?.let {
+            "今天已记录 ${it.n} 次，共支出 ¥${java.lang.String.format(Locale.CHINA, "%.2f", it.total / 100.0)}"
+        } ?: "今天第 1 笔，点击查看"
+
+        val outer = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        outer.setPadding(dp(14), dp(30), dp(14), dp(4))
+
+        val card = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        card.setPadding(dp(14), dp(10), dp(14), dp(8))
+        val bg = GradientDrawable()
+        bg.setColor(Color.parseColor("#F7FFFFFF"))
+        bg.cornerRadius = dp(20).toFloat()
+        bg.setStroke(Math.max(1, dp(1)), Color.parseColor("#14000000"))
+        card.background = bg
+        card.elevation = dp(6).toFloat()
+
+        fun text(s: String, size: Int, color: String, bold: Boolean = false) = TextView(ctx).apply {
+            this.text = s
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, size.toFloat())
+            setTextColor(Color.parseColor(color))
+            typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+        }
+
+        val row1 = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+        row1.gravity = Gravity.CENTER_VERTICAL
+        row1.addView(
+            text(categoryName, 15, "#171E2E", bold = true).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            },
+        )
+        row1.addView(text(amountText, 16, amountColor, bold = true))
+        card.addView(row1)
+
+        card.addView(
+            text(subLine, 12, "#8A93A3").apply {
+                setPadding(0, dp(3), 0, 0)
+                maxLines = 1
+            },
+        )
+
+        val footer = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+        footer.gravity = Gravity.CENTER_VERTICAL
+        val dot = View(ctx)
+        val dotBg = GradientDrawable()
+        dotBg.cornerRadius = dp(3).toFloat()
+        dotBg.setColor(Color.parseColor("#14B8A6"))
+        dot.background = dotBg
+        dot.layoutParams = LinearLayout.LayoutParams(dp(6), dp(6)).also { it.marginEnd = dp(6) }
+        footer.addView(dot)
+        footer.addView(text(summaryText + " · 点击查看", 12, "#5A6475"))
+        card.addView(
+            footer,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).also {
+                it.topMargin = dp(8)
+            },
+        )
+
+        // 横幅整体可点：打开 App（账本页），横幅收起
+        outer.addView(card)
+        card.setOnClickListener {
+            runCatching {
+                packageManager.getLaunchIntentForPackage(packageName)?.let { intent ->
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                }
+            }
+            removeWindow()
+        }
+        return outer
+    }
+
+    /** 顶部滑入的横幅窗口：与确认窗共用 [root]/[removeWindow] 的单窗状态。 */
+    private fun showBannerWindow(view: View) {
+        removeWindow()
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val density = resources.displayMetrics.density
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT,
+        )
+        params.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+        params.y = 0
+        view.translationY = -density * 90
+        root = view
+        windowManager = wm
+        wm.addView(view, params)
+        view.animate().translationY(0f).setDuration(240).start()
+        handler.postDelayed({ removeWindow() }, BANNER_AUTO_HIDE_MS)
+    }
+
     private fun CategoryEntity.parentTextOrNull(categories: List<CategoryEntity>): String? =
         parentId?.let { pid -> categories.firstOrNull { it.id == pid }?.let { "${it.name}/$name" } } ?: name
 
@@ -788,11 +994,15 @@ class BillOverlayService : Service() {
         private const val EXTRA_MODE = "mode"
         private const val MODE_CONFIRM = "confirm"
         private const val MODE_RECORDED = "recorded"
+        private const val MODE_AUTOPOST = "autopost"
         private const val EXTRA_DRAFT_ID = "draft_id"
         private const val EXTRA_RAW_TEXT = "raw_text"
         private const val EXTRA_OCCURRED_AT = "occurred_at"
         private const val EXTRA_PKG = "pkg"
         private const val AUTO_HIDE_MS = 90_000L
+
+        /** 简约横幅停留时长。确认窗是 90 秒等人操作；横幅没人操作，短停即走。 */
+        private const val BANNER_AUTO_HIDE_MS = 6_000L
 
         /** 管线 Drafted 之后调用（没记录过的账单）。无悬浮窗权限时静默跳过。 */
         fun show(context: Context, draftId: String) {
@@ -809,6 +1019,17 @@ class BillOverlayService : Service() {
                 .putExtra(EXTRA_RAW_TEXT, rawText)
                 .putExtra(EXTRA_OCCURRED_AT, occurredAt)
                 .putExtra(EXTRA_PKG, pkg)
+            context.startService(intent)
+        }
+
+        /**
+         * 简约模式（弹窗偏好=顶部简约提醒）入口：草稿**自动入账**并弹顶部横幅。
+         * 入账路径与确认按钮完全相同，只是不用人点。
+         */
+        fun autoPost(context: Context, draftId: String) {
+            val intent = Intent(context, BillOverlayService::class.java)
+                .putExtra(EXTRA_MODE, MODE_AUTOPOST)
+                .putExtra(EXTRA_DRAFT_ID, draftId)
             context.startService(intent)
         }
     }

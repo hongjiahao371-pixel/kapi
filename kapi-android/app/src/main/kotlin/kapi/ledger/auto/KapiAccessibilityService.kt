@@ -380,20 +380,28 @@ class KapiAccessibilityService : AccessibilityService() {
                         occurredAt = now,
                     )
                 )
-                // 草稿建好后弹悬浮窗请用户当场确认。三个前置缺一不可：
-                // 只对 Drafted 弹（入账/合并/自转账不需要人再点）、用户开过
-                // 开关、以及悬浮窗权限已授——没授时 show() 静默跳过，草稿
-                // 走待确认兜底，什么都不丢。
+                // 草稿建好后按弹窗偏好分流。三个前置缺一不可：
+                // 只对 Drafted/Merged 分流（入账/自转账不需要人再点）、用户开过
+                // 开关、悬浮窗权限已授——没授时静默跳过，草稿走待确认兜底。
+                // - 详细模式：弹 2/3 屏确认窗（Drafted 与 Merged 都弹——
+                //   「每次进入详情页都弹」是用户定的完整形态）
+                // - 简约模式：**不弹窗，直接入账**，顶部滑一条轻提示
+                //   （2026-10-03 咔皮对齐；用户被反复弹大窗惹恼后的第二种形态）
                 if (
                     container.autoBookStore.overlayConfirmEnabled &&
                     android.provider.Settings.canDrawOverlays(this@KapiAccessibilityService)
                 ) {
-                    // Drafted（新账单）与 Merged（并进已有草稿）都要弹——
-                    // 「每次进入详情页都弹」是用户定的完整形态
-                    if (outcome is AutoCapturePipeline.Outcome.Drafted) {
-                        BillOverlayService.show(applicationContext, outcome.draftId)
-                    } else if (outcome is AutoCapturePipeline.Outcome.Merged) {
-                        BillOverlayService.show(applicationContext, outcome.draftId)
+                    val draftId = when (outcome) {
+                        is AutoCapturePipeline.Outcome.Drafted -> outcome.draftId
+                        is AutoCapturePipeline.Outcome.Merged -> outcome.draftId
+                        else -> null
+                    }
+                    if (draftId != null) {
+                        if (container.autoBookStore.popupStyle == AutoBookStore.POPUP_MINIMAL) {
+                            BillOverlayService.autoPost(applicationContext, draftId)
+                        } else {
+                            BillOverlayService.show(applicationContext, draftId)
+                        }
                     }
                 }
             }.onFailure {

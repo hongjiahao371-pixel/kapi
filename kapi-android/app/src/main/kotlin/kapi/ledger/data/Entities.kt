@@ -232,3 +232,32 @@ data class AutoDraftEntity(
      */
     val likelyDuplicateOf: String? = null,
 )
+
+/**
+ * 月度预算行（2026-10-03，咔皮对齐 P1）。
+ *
+ * `categoryId = null` 是当月**总预算**；非空是**该分类（顶级）的预算**。
+ * 对标商汤咔皮记账的「预算管理」：月预算 + 二级分类额度 + 进度条。
+ *
+ * ## 刻意不同步 NAS
+ *
+ * 预算是"这台设备上给自己定的纪律"，不是账本数据——账本的多设备一致性由
+ * FV/Lamport 那套机器保证，把预算塞进去就要给 LocalMerge 加字段、给服务端
+ * 加表，换来的只是"两台手机看到同一条预算"。等真的出现这个需求再接，
+ * 那时 id 方案也要重看（现在是确定性的 `b-<month>-total` / `b-<month>-<categoryId>`，
+ * 同月同分类重复设置时 REPLACE 覆盖，天然不重不漏——这套 id 换成
+ * 多设备 Lamport 行就得全部重来）。
+ */
+@Entity(
+    tableName = "budget",
+    indices = [Index(value = ["ledgerId", "month"])],
+)
+data class BudgetEntity(
+    @PrimaryKey val id: String,
+    val ledgerId: String,
+    /** 归属月份，`2026-10` 格式。 */
+    val month: String,
+    /** null = 月总预算；非空 = 该分类（顶级）的预算。 */
+    val categoryId: String?,
+    val amountMinor: Long,
+)

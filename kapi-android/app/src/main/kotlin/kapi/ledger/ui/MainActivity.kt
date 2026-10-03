@@ -33,6 +33,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Rule
+import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.FactCheck
 import androidx.compose.material.icons.filled.PieChart
@@ -98,6 +100,8 @@ private sealed interface Screen {
     data object Add : Screen
     data object LlmSettings : Screen
     data object Accounts : Screen
+    data object Budget : Screen
+    data object Rules : Screen
 }
 
 class MainActivity : ComponentActivity() {
@@ -211,6 +215,22 @@ fun KapiRoot() {
         return
     }
 
+    // 预算管理是二级页（2026-10-03 咔皮对齐），从设置进。
+    if (current is Screen.Budget) {
+        LiquidBackground(Modifier.fillMaxSize(), dark = isSystemInDarkTheme()) {
+            BudgetScreen(container = container, onDone = { pop() })
+        }
+        return
+    }
+
+    // 分类规则是二级页：只读展示自动记账学到的商户归类。
+    if (current is Screen.Rules) {
+        LiquidBackground(Modifier.fillMaxSize(), dark = isSystemInDarkTheme()) {
+            RulesScreen(container = container, onDone = { pop() })
+        }
+        return
+    }
+
     // 待确认已从底栏撤下（2026-10-02）：悬浮窗确认成为主路径，草稿的入口
     // 降级到 设置→自动记账→去看待确认。底栏只留日常三屏。
     val tabs = listOf(
@@ -295,6 +315,7 @@ fun KapiRoot() {
 
             is Screen.Stats -> StatsScreen(
                 vm = vm,
+                container = container,
                 contentPadding = contentPadding,
                 listState = if (frosted) frostedStats else statsList,
             )
@@ -305,6 +326,8 @@ fun KapiRoot() {
                 contentPadding = contentPadding,
                 onOpenLlmSettings = { backStack = backStack + Screen.LlmSettings },
                 onOpenAccounts = { backStack = backStack + Screen.Accounts },
+                onOpenBudget = { backStack = backStack + Screen.Budget },
+                onOpenRules = { backStack = backStack + Screen.Rules },
                 llmStore = container.llmStore,
                 onOpenDrafts = { backStack = listOf(Screen.Drafts) },
                 draftCount = draftCount,
@@ -314,7 +337,7 @@ fun KapiRoot() {
                 scrollState = if (frosted) frostedSettings else settingsScroll,
             )
 
-            is Screen.Add, is Screen.LlmSettings, is Screen.Accounts -> Unit // 上面已经 return 了
+            is Screen.Add, is Screen.LlmSettings, is Screen.Accounts, is Screen.Budget, is Screen.Rules -> Unit // 上面已经 return 了
         }
     }
 
@@ -559,6 +582,8 @@ private fun iconFor(screen: Screen, selected: Boolean): ImageVector = when (scre
     is Screen.Add -> Icons.Filled.Add
     is Screen.LlmSettings -> Icons.Filled.Psychology
     is Screen.Accounts -> Icons.Filled.AccountBalanceWallet
+    is Screen.Budget -> Icons.Filled.Savings
+    is Screen.Rules -> Icons.Filled.Rule
 }
 
 @Composable
