@@ -447,7 +447,7 @@ private fun CategoryBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 分类图标：有 emoji 用 emoji（对标咔皮的彩色图标），没有退回色点。
-        val emoji = CategoryEmoji.emojiOf(name, icon)
+        val emoji = CategoryEmoji.glyphOf(name, icon)
         if (emoji != null) {
             Text(
                 text = emoji,

@@ -204,6 +204,25 @@ object CategoryEmoji {
     }
 
     /**
+     * 分类图标的**最终兜底**：emoji 表没中、用户也没挑过图标时，
+     * 取名字的**第一个字**当图标（"猫主子"→"猫"、"api费用"→"a"）。
+     *
+     * 这是 v1 用过、后来被图标替换掉的方案；2026-10-03 作为自定义分类的
+     * 兜底请回来——自建分类没有 emoji 匹配时，一个字形的色底圆远比
+     * 问号可辨认（当初换掉它的理由是六个内置顶级都是复杂汉字、扫不出
+     * 差异，而自建分类的名字彼此差异大，这个理由不成立）。
+     *
+     * 按码点取首字，emoji 开头的名字（极少）不会截成残缺代理对。
+     * 名字为空返回 null，调用方回落矢量图标。
+     */
+    fun glyphOf(name: String?, icon: String? = null): String? {
+        emojiOf(name, icon)?.let { return it }
+        val n = name?.trim().takeUnless { it.isNullOrEmpty() } ?: return null
+        val cp = n.codePointAt(0)
+        return kotlin.text.String(intArrayOf(cp), 0, 1)
+    }
+
+    /**
      * 自定义分类可选的图标集（2026-10-03：建分类不再只能落到问号）。
      * 挑的是记账语境里高频、字形差异大的 40 个；不进 [byName]——
      * 这些是"给用户挑的素材"，不是名字→图标的判定规则。

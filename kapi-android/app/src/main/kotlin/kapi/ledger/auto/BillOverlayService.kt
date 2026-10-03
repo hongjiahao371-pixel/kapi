@@ -553,7 +553,7 @@ class BillOverlayService : Service() {
         val resolvedName = resolved?.let { it.parentTextOrNull(categories) ?: it.name }
         val categoryValue = expandableRow(
             "类目",
-            (emojiPrefix(resolvedName) ?: "") + (resolvedName ?: "未分类"),
+            (emojiPrefix(resolvedName, resolved?.icon) ?: "") + (resolvedName ?: "未分类"),
             categoryPanel,
         )
         var picked = resolved
@@ -568,7 +568,7 @@ class BillOverlayService : Service() {
             for (cat in majors) {
                 val selected = picked?.id == cat.id ||
                     (picked == null && resolved?.topParentId(categories) == cat.id)
-                val c = chip((emojiPrefix(cat.name) ?: "") + cat.name, selected) {
+                val c = chip((emojiPrefix(cat.name, cat.icon) ?: "") + cat.name, selected) {
                     picked = cat
                     pickedCategory = cat
                     categoryValue.text = (emojiPrefix(cat.name) ?: "") + cat.name
@@ -583,7 +583,7 @@ class BillOverlayService : Service() {
                     minorPanel.visibility = View.VISIBLE
                     for (kid in kids) {
                         val selected = picked?.id == kid.id
-                        val c = chip((emojiPrefix(kid.name) ?: "") + kid.name, selected) {
+                        val c = chip((emojiPrefix(kid.name, kid.icon) ?: "") + kid.name, selected) {
                             picked = kid
                             pickedCategory = kid
                             categoryValue.text = (emojiPrefix("${p.name}/${kid.name}") ?: "") + "${p.name}/${kid.name}"
@@ -992,8 +992,8 @@ class BillOverlayService : Service() {
      * 分类名的 emoji 前缀（对标咔皮的彩色分类图标）。emoji 表没有的名字
      * 返回 null，显示退回纯文字——不硬塞问号。
      */
-    private fun emojiPrefix(name: String?): String? =
-        kapi.ledger.ui.CategoryEmoji.emojiOf(name)?.plus(" ")
+    private fun emojiPrefix(name: String?, icon: String? = null): String? =
+        kapi.ledger.ui.CategoryEmoji.glyphOf(name, icon)?.plus(" ")
 
     private fun CategoryEntity.topParentId(categories: List<CategoryEntity>): String =
         parentId ?: id

@@ -586,7 +586,7 @@ private fun TxnRow(
             //
             // 有 emoji（对标咔皮的彩色分类图标）就用 emoji——彩色的形状差异
             // 比单色矢量大得多；emoji 表没收录的（账户行、自建分类）退回矢量。
-            val emoji = CategoryEmoji.emojiOf(category, categoryIcon)
+            val emoji = CategoryEmoji.glyphOf(category, categoryIcon)
             if (emoji != null) {
                 Text(
                     text = emoji,
