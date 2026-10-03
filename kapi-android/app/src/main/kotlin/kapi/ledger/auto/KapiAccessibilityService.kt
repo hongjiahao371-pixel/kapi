@@ -381,12 +381,13 @@ class KapiAccessibilityService : AccessibilityService() {
                     )
                 )
                 // 草稿建好后按弹窗偏好分流。三个前置缺一不可：
-                // 只对 Drafted/Merged 分流（入账/自转账不需要人再点）、用户开过
-                // 开关、悬浮窗权限已授——没授时静默跳过，草稿走待确认兜底。
+                // 只对 Drafted/Merged/duplicate 分流（入账/自转账不需要人再点）、
+                // 用户开过开关、悬浮窗权限已授——没授时静默跳过，草稿走待确认兜底。
                 // - 详细模式：弹 2/3 屏确认窗（Drafted 与 Merged 都弹——
-                //   「每次进入详情页都弹」是用户定的完整形态）
-                // - 简约模式：**不弹窗，直接入账**，顶部滑一条轻提示
-                //   （2026-10-03 咔皮对齐；用户被反复弹大窗惹恼后的第二种形态）
+                //   「每次进入详情页都弹」是用户定的完整形态）；**重复账单**
+                //   弹「当前账单已记录 · 再记一次」卡
+                // - 简约模式：**不弹窗，直接入账**，顶部滑一条轻提示；重复账单
+                //   同样静默（噪音最小化，2026-10-03 咔皮对齐）
                 if (
                     container.autoBookStore.overlayConfirmEnabled &&
                     android.provider.Settings.canDrawOverlays(this@KapiAccessibilityService)
@@ -402,6 +403,15 @@ class KapiAccessibilityService : AccessibilityService() {
                         } else {
                             BillOverlayService.show(applicationContext, draftId)
                         }
+                    } else if (
+                        outcome is AutoCapturePipeline.Outcome.Ignored &&
+                        outcome.duplicate &&
+                        container.autoBookStore.popupStyle != AutoBookStore.POPUP_MINIMAL
+                    ) {
+                        // 重复账单：详细模式下弹「已记录 · 再记一次」。
+                        // （2026-10-03 回归修复：弹窗偏好改造时这条分支被弄丢，
+                        //  重复账单在详细模式下也静默了——真机验收抓回。）
+                        BillOverlayService.showRecorded(applicationContext, text, now, pkg)
                     }
                 }
             }.onFailure {
