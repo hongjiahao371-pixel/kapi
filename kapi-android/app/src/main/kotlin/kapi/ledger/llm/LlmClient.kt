@@ -86,6 +86,10 @@ class LlmClient(
         val payload = buildJsonObject {
             put("model", config.model)
             put("temperature", 0)
+            // 推理模型（MiniMax M3 等）的思考会消耗输出预算：不给 max_tokens 时
+            // 默认值太小，<think> 写满就截断，正式 JSON 一个字都没出。
+            // 4000 够「思考 + JSON」；再说提取器对截断回复也只是降级不崩溃。
+            put("max_tokens", 4000)
             put(
                 "messages",
                 buildJsonArray {

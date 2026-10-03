@@ -232,6 +232,39 @@ class TransactionExtractorTest {
         assertEquals(0L, r.best!!.occurredAt)
     }
 
+    @Test
+    fun `think block with a fake draft is stripped before json scan`() {
+        // 推理模型（MiniMax M3）的真实形态：思考里盘算出一个没写完的假 JSON，
+        // 正式答案在后面的围栏里。不剥 think 的话，括号配对从思考里的
+        // 第一个 { 开始扫，抽出来的就是残次品。
+        val raw = """
+            <think>用户想记账。先估个金额：{"amount":"2400
+            等等，再看一眼，应该是 24.00。</think>
+            ```json
+            {"amount": 24.00, "merchant": "云南乳冠", "direction": "EXPENSE"}
+            ```
+        """.trimIndent()
+        val r = TransactionExtractor.extract(raw)
+        assertEquals(1, r.drafts.size)
+        assertEquals(2400L, r.best!!.amountMinor)
+        assertEquals("云南乳冠", r.best!!.merchant)
+    }
+
+    @Test
+    fun `unclosed think block does not hide the answer`() {
+        // 被截断的回复没有 </think>：不能剥（剥了丢锚点），但围栏里的
+        // JSON 若存在仍应被找到。
+        val raw = """
+            <think>用户想记账。金额大概是 {"amount":"24
+            ```json
+            {"amount": 12.00, "merchant": "测试", "direction": "INCOME"}
+            ```
+        """.trimIndent()
+        val r = TransactionExtractor.extract(raw)
+        assertEquals(1, r.drafts.size)
+        assertEquals(1200L, r.best!!.amountMinor)
+    }
+
     private fun extractWithZone(json: String, zone: ZoneId) =
         TransactionExtractor.extractIn(json, zone)
 }

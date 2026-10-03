@@ -86,7 +86,7 @@ object TransactionExtractor {
         if (raw.isNullOrBlank()) return ExtractionResult()
         val anomalies = mutableListOf<String>()
 
-        val candidate = findJson(raw)
+        val candidate = findJson(stripThink(raw))
         if (candidate == null) {
             anomalies += "模型回复里找不到 JSON"
             return ExtractionResult(anomalies = anomalies)
@@ -288,6 +288,18 @@ object TransactionExtractor {
     }
 
     private val FENCE = Regex("""```(?:json|JSON)?\s*([\s\S]*?)```""")
+
+    /**
+     * 剥掉推理模型的思考块（MiniMax M3 等）：`<think>…</think>`。
+     *
+     * 思考过程里经常会出现**没写完的假 JSON**（模型盘算着该怎么输出），
+     * findJson 的括号配对从第一个 `{` 开始扫——不先剥掉的话，抽出来的
+     * 往往是思考里的残次品而不是正式答案。已闭合的才剥，没闭合的留着
+     * （那通常是被 max_tokens 截断的回复，剥了反而丢掉整个锚点）。
+     */
+    private val THINK_BLOCK = Regex("""<think>[\s\S]*?</think>""")
+
+    private fun stripThink(text: String): String = text.replace(THINK_BLOCK, "").trim()
 
     private fun scanBalanced(t: String): String? {
         for (start in t.indices) {
