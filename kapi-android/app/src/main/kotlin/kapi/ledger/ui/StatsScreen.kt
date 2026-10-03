@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kapi.core.llm.Money
 import kapi.ledger.data.TxnEntity
@@ -421,13 +422,23 @@ private fun CategoryBar(
         modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(tone.base)
-        )
-        Spacer(Modifier.width(10.dp))
+        // 分类图标：有 emoji 用 emoji（对标咔皮的彩色图标），没有退回色点。
+        val emoji = CategoryEmoji.emojiOf(name)
+        if (emoji != null) {
+            Text(
+                text = emoji,
+                fontSize = 16.sp,
+                modifier = Modifier.width(28.dp),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(tone.base)
+            )
+            Spacer(Modifier.width(10.dp))
+        }
         Text(
             text = name,
             style = MaterialTheme.typography.bodyLarge,

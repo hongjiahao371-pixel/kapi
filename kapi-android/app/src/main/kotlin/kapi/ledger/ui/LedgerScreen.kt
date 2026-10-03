@@ -51,6 +51,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -584,12 +585,24 @@ private fun TxnRow(row: TxnEntity, category: String?, account: String?, onClick:
             // 图标取**分类名**，不是标题（title）。标题是商户优先的——一笔"午餐"
             // 商户和分类都是餐饮，碰巧一样；但商户叫"星巴克"时，标题是"星巴克"，
             // 用标题查表会查不到，整行退化成三个点。分类才是圆圈该表达的东西。
-            Icon(
-                imageVector = CategoryIcons.of(category),
-                contentDescription = null,
-                tint = tone.onContainer,
-                modifier = Modifier.size(20.dp),
-            )
+            //
+            // 有 emoji（对标咔皮的彩色分类图标）就用 emoji——彩色的形状差异
+            // 比单色矢量大得多；emoji 表没收录的（账户行、自建分类）退回矢量。
+            val emoji = CategoryEmoji.emojiOf(category)
+            if (emoji != null) {
+                Text(
+                    text = emoji,
+                    fontSize = 20.sp,
+                    textAlign = TextAlign.Center,
+                )
+            } else {
+                Icon(
+                    imageVector = CategoryIcons.of(category),
+                    contentDescription = null,
+                    tint = tone.onContainer,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {

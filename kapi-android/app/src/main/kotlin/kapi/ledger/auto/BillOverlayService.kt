@@ -550,9 +550,10 @@ class BillOverlayService : Service() {
         divider()
 
         val resolved = categories.firstOrNull { it.id == resolvedCategoryId }
+        val resolvedName = resolved?.let { it.parentTextOrNull(categories) ?: it.name }
         val categoryValue = expandableRow(
             "类目",
-            resolved?.let { it.parentTextOrNull(categories) ?: it.name } ?: "未分类",
+            (emojiPrefix(resolvedName) ?: "") + (resolvedName ?: "未分类"),
             categoryPanel,
         )
         var picked = resolved
@@ -567,10 +568,10 @@ class BillOverlayService : Service() {
             for (cat in majors) {
                 val selected = picked?.id == cat.id ||
                     (picked == null && resolved?.topParentId(categories) == cat.id)
-                val c = chip(cat.name, selected) {
+                val c = chip((emojiPrefix(cat.name) ?: "") + cat.name, selected) {
                     picked = cat
                     pickedCategory = cat
-                    categoryValue.text = cat.name
+                    categoryValue.text = (emojiPrefix(cat.name) ?: "") + cat.name
                     refreshChips()
                 }
                 addChip(categoryWrap, c, 8)
@@ -582,10 +583,10 @@ class BillOverlayService : Service() {
                     minorPanel.visibility = View.VISIBLE
                     for (kid in kids) {
                         val selected = picked?.id == kid.id
-                        val c = chip(kid.name, selected) {
+                        val c = chip((emojiPrefix(kid.name) ?: "") + kid.name, selected) {
                             picked = kid
                             pickedCategory = kid
-                            categoryValue.text = "${p.name}/${kid.name}"
+                            categoryValue.text = (emojiPrefix("${p.name}/${kid.name}") ?: "") + "${p.name}/${kid.name}"
                             refreshChips()
                         }
                         addChip(minorWrap, c, 6)
@@ -914,7 +915,7 @@ class BillOverlayService : Service() {
         val row1 = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
         row1.gravity = Gravity.CENTER_VERTICAL
         row1.addView(
-            text(categoryName, 15, "#171E2E", bold = true).apply {
+            text((emojiPrefix(categoryName) ?: "") + categoryName, 15, "#171E2E", bold = true).apply {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             },
         )
@@ -986,6 +987,13 @@ class BillOverlayService : Service() {
 
     private fun CategoryEntity.parentTextOrNull(categories: List<CategoryEntity>): String? =
         parentId?.let { pid -> categories.firstOrNull { it.id == pid }?.let { "${it.name}/$name" } } ?: name
+
+    /**
+     * 分类名的 emoji 前缀（对标咔皮的彩色分类图标）。emoji 表没有的名字
+     * 返回 null，显示退回纯文字——不硬塞问号。
+     */
+    private fun emojiPrefix(name: String?): String? =
+        kapi.ledger.ui.CategoryEmoji.emojiOf(name)?.plus(" ")
 
     private fun CategoryEntity.topParentId(categories: List<CategoryEntity>): String =
         parentId ?: id

@@ -601,12 +601,25 @@ private fun Chip(
         // 图标和文字同色。分类一多（内置 11 个支出 + 6 个收入）就横着滚，
         // 全靠文字的话第一屏和第二屏长得一样；图标让每一颗 chip 一眼可辨。
         // chip 高度只有 34dp，图标给 15dp 再高一点字就被挤到贴边了。
-        Icon(
-            imageVector = CategoryIcons.of(text),
-            contentDescription = null,
-            tint = content,
-            modifier = Modifier.size(15.dp),
-        )
+        //
+        // 有 emoji（对标咔皮的彩色分类图标）优先 emoji——🍳🧋⛽ 的辨识度比
+        // 一排同款单色线性图标高得多。emoji 表没收录的名字（账户四件套、
+        // 自建分类）退回矢量图标，别硬塞问号。
+        val emoji = CategoryEmoji.emojiOf(text)
+        if (emoji != null) {
+            Text(
+                text = emoji,
+                fontSize = 15.sp,
+                maxLines = 1,
+            )
+        } else {
+            Icon(
+                imageVector = CategoryIcons.of(text),
+                contentDescription = null,
+                tint = content,
+                modifier = Modifier.size(15.dp),
+            )
+        }
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium,

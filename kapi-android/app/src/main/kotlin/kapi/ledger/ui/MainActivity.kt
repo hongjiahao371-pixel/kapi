@@ -504,11 +504,10 @@ private fun BottomBar(
 /**
  * 「记一笔」——胶囊正中的实心圆。
  *
- * 58dp 的圆坐在 72dp 胶囊的**里面**，上下各留 7dp。它是整个界面上唯一一个
- * 有填充色、有投影的元素，"凸起"感靠投影和明度差做出来，不靠让它挂到胶囊外面
- * ——挂出去的话胶囊就缺了一块，而圆自己的重心也是偏的（上沿探出 12px、
- * 下沿离底 32px）。
- * 做法是给一个圆形 Surface 加上和胶囊同源的模糊底，否则这个圆会像贴纸。
+ * 2026-10-03 视觉返工：58dp 的大圆坐在 72dp 胶囊里，比两侧 tab 的图标体量大
+ * 出一圈，用户看着"四个按钮"里它突兀（原话：显得好丑）。缩到 **46dp**、
+ * 胶囊同步收窄到 60dp——四槽等宽之后圆和图标视觉权重接近，一排读起来是
+ * 同一根线；主操作锚点的地位靠**唯一的渐变填充 + 投影**保住，不靠尺寸。
  */
 @Composable
 private fun RecordButton(
@@ -529,23 +528,19 @@ private fun RecordButton(
     )
     Box(
         modifier
-            .size(58.dp)
+            .size(46.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
             // 记一笔那颗圆的落影跟着品牌色走。圆本身是品牌色的实心块，
             // 落影和它同色，圆才像是从纸上**顶起来**的，而不是贴了张色纸片。
-            .shadow(10.dp, CircleShape, ambientColor = Color(0xFF2868D8), spotColor = Color(0xFF2868D8))
+            .shadow(6.dp, CircleShape, ambientColor = Color(0xFF2868D8), spotColor = Color(0xFF2868D8))
             .clip(CircleShape)
             .background(
                 // 固定配色，**不跟着主题走**。这个圆是「记一笔」的主操作锚点，
                 // 深浅两档都得是同一块品牌色——它变了，用户每次切主题都要重新
                 // 认一次。而且它的图标是白色，加上一旦变浅就等于白圆画白加号。
-                //
-                // 换到冷蓝这一套后这里是 #3A8B74→#1F5B4C 的**墨绿**，和满屏的
-                // 品牌蓝对不上——那颗圆是全 App 视觉权重最高的元素，它一绿，
-                // 整屏立刻读成"还有一半没换完"。改成同族的两档蓝。
                 Brush.verticalGradient(
                     listOf(
                         Color(0xFF4A8AE8).copy(alpha = glow),
@@ -564,7 +559,7 @@ private fun RecordButton(
             Icons.Filled.Add,
             contentDescription = "记一笔",
             tint = Color.White,
-            modifier = Modifier.size(28.dp),
+            modifier = Modifier.size(22.dp),
         )
     }
 }
@@ -606,16 +601,16 @@ private fun TabItem(
             .padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // 选中态除了换色，还加一个实心圆点。单靠颜色区分在色觉障碍用户那里
+        // 选中态除了换色，还加一个实心胶囊底。单靠颜色区分在色觉障碍用户那里
         // 是不可靠的，而这是整个 App 里最常点的一个控件。
         Box(
             modifier = Modifier
-                .size(width = 46.dp, height = 28.dp)
-                .clip(CircleShape)
+                .size(width = 42.dp, height = 26.dp)
+                .clip(RoundedCornerShape(13.dp))
                 .background(if (selected) BrandSoft else Color.Transparent),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(21.dp))
+            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
             // 角标画在图标右上角，不占额外的行高。数字超过 99 就显示「99+」：
             // 挤在 46dp 里的三位数会糊成一团，而那个数字本身用户也不会去数。
             if (badge > 0) {

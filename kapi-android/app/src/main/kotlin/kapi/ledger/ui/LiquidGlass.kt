@@ -197,14 +197,14 @@ object Glass {
     val RimShadeLight = Color(0x2E2B3444)
     val RimShadeDark = Color(0x66000000)
 
-    val BAR_RADIUS: Dp = 36.dp
+    val BAR_RADIUS: Dp = 30.dp
     val BAR_H_MARGIN: Dp = 10.dp
     /**
      * 72dp 不是随手加的：记一笔的圆是 58dp，要在胶囊**内部**上下各留 7dp，
      * 66dp 装不下（只能各留 4dp，圆几乎贴着边）。而把圆顶到胶囊外面去又会
      * 让胶囊缺一块、圆重心偏上——两个都不是想要的。
      */
-    val BAR_HEIGHT: Dp = 72.dp
+    val BAR_HEIGHT: Dp = 60.dp
 
     /*
      * 这里曾经有一层"虹彩"，已删——它建立在一个取错的样本上

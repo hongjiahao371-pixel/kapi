@@ -185,7 +185,7 @@ fun SyncSettingsScreen(
                     }
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(20.dp))
 
                 if (state.isPaired) {
                     Button(
@@ -252,7 +252,7 @@ fun SyncSettingsScreen(
             // ---- 账户管理 ----
             // 放在自动记账相关区块之前：账户是账本骨架（自动划转的两端、
             // 花呗消费的落点），比大模型这类增强功能更靠前。
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(20.dp))
             SettingsCard {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -262,13 +262,13 @@ fun SyncSettingsScreen(
                         Modifier
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(BrandSoft),
+                            .background(Color(0xFFF59E0B).copy(alpha = 0.14f)),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             Icons.Filled.AccountBalanceWallet,
                             contentDescription = null,
-                            tint = Brand,
+                            tint = Color(0xFFD97706),
                             modifier = Modifier.size(20.dp),
                         )
                     }
@@ -291,7 +291,7 @@ fun SyncSettingsScreen(
 
             // ---- 预算管理（2026-10-03 咔皮对齐 P1）----
             // 记账 App 的第一未满足需求："这个月还剩多少能花"。
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(20.dp))
             SettingsCard {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -301,13 +301,13 @@ fun SyncSettingsScreen(
                         Modifier
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(BrandSoft),
+                            .background(Color(0xFF10B981).copy(alpha = 0.14f)),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             Icons.Filled.Savings,
                             contentDescription = null,
-                            tint = Brand,
+                            tint = Color(0xFF059669),
                             modifier = Modifier.size(20.dp),
                         )
                     }
@@ -327,6 +327,15 @@ fun SyncSettingsScreen(
                     )
                 }
 
+                Spacer(Modifier.height(12.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(InkFaint.copy(alpha = 0.12f)),
+                )
+                Spacer(Modifier.height(12.dp))
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.glassClickable { onOpenRules() },
@@ -335,13 +344,13 @@ fun SyncSettingsScreen(
                         Modifier
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(BrandSoft),
+                            .background(Color(0xFF8B5CF6).copy(alpha = 0.14f)),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             Icons.Filled.Rule,
                             contentDescription = null,
-                            tint = Brand,
+                            tint = Color(0xFF7C3AED),
                             modifier = Modifier.size(20.dp),
                         )
                     }
@@ -363,7 +372,7 @@ fun SyncSettingsScreen(
             }
 
             // ---- 大模型 ----
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(20.dp))
             //
             // 判据必须是 `isConfigured` 而不是「对象是不是 null」：
             // `LlmStore.load()` 永远返回一个对象（没配置时是全空的默认值），
@@ -453,13 +462,13 @@ fun SyncSettingsScreen(
             // 放最后一张就正好踩中这个问题（导入按钮只露出 4px）。
             // 往前挪一位，滚到底时它已经在屏幕中段，怎么滚都点得到。
             if (transfer != null) {
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(20.dp))
                 TransferSection(transfer = transfer, deviceId = deviceId)
             }
 
             // ---- 自动记账 ----
             if (autoBookStore != null) {
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(20.dp))
                 AutoBookSection(
                     store = autoBookStore,
                     onOpenDrafts = onOpenDrafts,
@@ -514,7 +523,7 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
     ) {
-        Column(Modifier.padding(16.dp), content = content)
+        Column(Modifier.padding(18.dp), content = content)
     }
 }
 
@@ -944,7 +953,7 @@ private fun AutoBookSection(
             )
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(20.dp))
 
         PermRow(
             icon = Icons.Outlined.Visibility,
