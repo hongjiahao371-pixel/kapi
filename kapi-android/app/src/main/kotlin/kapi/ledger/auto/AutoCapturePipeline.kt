@@ -136,24 +136,29 @@ class AutoCapturePipeline(
         // 用户隔几天再点开同一笔账单就会多一条重复记录。
         val payId = PaymentId.authoritative(text)
         val fingerprint = payId?.key ?: AutoBook.exactFingerprint(channel, text)
-        fun markSeen() {
-            if (payId != null) autoStore.markTxnIdSeen(fingerprint, now)
+        // markSeen 带上这笔产出对应的账目 id（草稿路径是草稿 id）——
+        // 交易号戳记下"谁产生的"，判重命中时才能检查那笔账是否已被用户删除。
+        fun markSeen(txnId: String?) {
+            if (payId != null) autoStore.markTxnIdSeen(fingerprint, now, txnId)
             else autoStore.markFingerprintSeen(fingerprint, now)
         }
-        val duplicate = if (payId != null) {
-            autoStore.hasSeenTxnId(fingerprint, now)
-        } else {
-            autoStore.hasSeenFingerprint(fingerprint, now)
-        }
-        if (duplicate) {
-            return Outcome.Ignored(
-                if (payId != null) {
-                    "交易号 ${payId.value}（${payId.kind.label}）已经记过，丢弃"
-                } else {
-                    "指纹 $fingerprint 在去重窗口里，丢弃"
-                },
-                duplicate = true,
-            )
+        if (payId != null) {
+            // 交易号命中 90 天窗口时，还要看戳关联的那笔账**是否还在**：
+            // 用户删了账再进同一详情页，应当当作没见过、重新走采集——
+            // 否则"删了账也永远不再触发"（2026-10-03 用户实测反馈）。
+            val seen = autoStore.seenTxnId(fingerprint)
+            val stillThere = seen?.txnId?.let { id ->
+                db.txnDao().byId(id)?.let { !it.deleted }
+            } == true
+            if (stillThere) {
+                return Outcome.Ignored(
+                    "交易号 ${payId.value}（${payId.kind.label}）已经记过，丢弃",
+                    duplicate = true,
+                )
+            }
+            // 戳在但账没了（被删）：清掉旧戳重新采集；正常未见过也直接往下走。
+        } else if (autoStore.hasSeenFingerprint(fingerprint, now)) {
+            return Outcome.Ignored("指纹 $fingerprint 在去重窗口里，丢弃", duplicate = true)
         }
 
         // 3. 支付门
@@ -180,7 +185,7 @@ class AutoCapturePipeline(
         // 2026-10-01 realme 上它被记成了 `12100 EXPENSE / 商户=None`。
         val own = OwnAccount.judge(text.lines())
         if (own is OwnAccount.Verdict.SelfTransfer) {
-            return postSelfTransfer(own, best.amountMinor, parsed.occurredAt, ledgerId, text) { markSeen() }
+            return postSelfTransfer(own, best.amountMinor, parsed.occurredAt, ledgerId, text) { markSeen(it) }
         }
 
         // 5. 跨来源合并
@@ -218,7 +223,7 @@ class AutoCapturePipeline(
                 "跨来源"
             }
             Log.i(TAG, "$kind 合并：并入 ${merged.id}，来源 ${merged.sources}，证据 ${merged.evidenceCount} 条")
-            markSeen()
+            markSeen(merged.id)
             return Outcome.Merged(merged.id, merged.sources)
         }
 
@@ -265,7 +270,7 @@ class AutoCapturePipeline(
                 confidence = parsed.confidence,
             )
             Log.i(TAG, "已入账 ${txn.id}：${routed.reason}")
-            markSeen()
+            markSeen(txn.id)
             return Outcome.Posted(txn.id, routed.reason)
         }
 
@@ -275,7 +280,7 @@ class AutoCapturePipeline(
         )
         db.autoDraftDao().upsert(withDupCheck)
         Log.i(TAG, "新草稿 ${withDupCheck.id}：${withDupCheck.amountMinor} $direction，$why")
-        markSeen()
+        markSeen(withDupCheck.id)
         return Outcome.Drafted(withDupCheck.id, why)
     }
 
@@ -327,7 +332,7 @@ class AutoCapturePipeline(
         at: Long,
         ledgerId: String,
         rawText: String?,
-        markSeen: () -> Unit,
+        markSeen: (String?) -> Unit,
     ): Outcome {
         val fromId = resolveWalletAccount(own.from)
         val toId = resolveWalletAccount(own.to)
@@ -360,7 +365,7 @@ class AutoCapturePipeline(
         val fromName = db.accountDao().byId(fromId)?.name ?: fromId
         val toName = db.accountDao().byId(toId)?.name ?: toId
         Log.i(TAG, "自转账已入账 ${txn.id}：$fromName → $toName，$amountMinor")
-        markSeen()
+        markSeen(txn.id)
         return Outcome.Transfer(txn.id, why)
     }
 

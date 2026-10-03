@@ -37,7 +37,7 @@ class AutoBookStore(context: Context) {
      * 合在一张表里会让清理逻辑没法写：文本指纹 3 分钟就该扔，交易号要留 90 天，
      * 而两者用同一个键空间，谁也不能按各自规则裁剪。
      */
-    private val idStamps: MutableMap<String, Long> by lazy { loadStamps(KEY_ID_STAMPS) }
+    private val idStamps: MutableMap<String, String> by lazy { loadIdStamps(KEY_ID_STAMPS) }
 
     init {
         // 2026-10-02 去重语义迁移（v2）：旧版在门检**之前**落戳，被门拒掉的页面
@@ -166,19 +166,29 @@ class AutoBookStore(context: Context) {
      * 单独一张表的另一个理由是持久化：用户在微信里翻账单是常事，昨天看过的那笔今天
      * 又点开第二次是常事，3 分钟窗口早就过了，重复会直接进账本。文本指纹挡不住这个。
      */
-    fun hasSeenTxnId(txnKey: String, now: Long = System.currentTimeMillis()): Boolean {
-        if (txnKey.isEmpty()) return false
+    /**
+     * 交易号戳的查询结果。命中后调用方必须检查 [txnId] 指向的账**是否还存在**：
+     * 用户删了账再进同一详情页，应该当作没见过、重新走采集——
+     * 否则"删了账也永远不再触发"（2026-10-03 用户实测反馈）。
+     */
+    data class SeenTxn(val at: Long, val txnId: String?)
+
+    /** 交易号戳查询。**只查询，不落戳**——落戳见 [markTxnIdSeen]。 */
+    fun seenTxnId(txnKey: String): SeenTxn? {
+        if (txnKey.isEmpty()) return null
         synchronized(lock) {
-            val previous = idStamps[txnKey] ?: 0L
-            return AutoBook.isDuplicateId(previous, now)
+            val raw = idStamps[txnKey] ?: return null
+            // 值格式 "时刻:txnId"（txnId 可空）；旧格式纯数字，兼容读取。
+            val at = raw.substringBefore(':').toLongOrNull() ?: return null
+            return SeenTxn(at, raw.substringAfter(':', "").takeIf { it.isNotEmpty() })
         }
     }
 
-    /** 真正产出记录之后落交易号戳（90 天硬去重窗口）。 */
-    fun markTxnIdSeen(txnKey: String, now: Long = System.currentTimeMillis()) {
+    /** 真正产出记录之后落交易号戳（90 天硬去重窗口），并记下它产生的账目 id。 */
+    fun markTxnIdSeen(txnKey: String, now: Long, txnId: String?) {
         if (txnKey.isEmpty()) return
         synchronized(lock) {
-            idStamps[txnKey] = now
+            idStamps[txnKey] = "$now:" + (txnId ?: "")
             purgeIdsLocked(now)
             persistLocked()
         }
@@ -222,7 +232,8 @@ class AutoBookStore(context: Context) {
         val it = idStamps.entries.iterator()
         var removed = false
         while (it.hasNext()) {
-            if (it.next().value < cutoff) {
+            val at = it.next().value.substringBefore(':').toLongOrNull() ?: 0L
+            if (at < cutoff) {
                 it.remove()
                 removed = true
             }
@@ -239,7 +250,7 @@ class AutoBookStore(context: Context) {
     private fun persistLocked() {
         prefs.edit()
             .putStringSet(KEY_STAMPS, encode(stamps))
-            .putStringSet(KEY_ID_STAMPS, encode(idStamps))
+            .putStringSet(KEY_ID_STAMPS, idStamps.map { "${it.key}|${it.value}" }.toSet())
             .apply()
     }
 
@@ -255,6 +266,20 @@ class AutoBookStore(context: Context) {
             val fp = entry.substringBeforeLast('|')
             if (fp.isEmpty()) continue
             out[fp] = ts
+        }
+        return out
+    }
+
+    /** 交易号戳加载：新格式 "key|ts:txnId"，旧格式 "key|ts"（txnId 视为空）。 */
+    private fun loadIdStamps(key: String): MutableMap<String, String> {
+        val raw = prefs.getStringSet(key, null) ?: return mutableMapOf()
+        val out = HashMap<String, String>(raw.size * 2)
+        for (entry in raw) {
+            val ts = entry.substringAfterLast('|', "").substringBefore(':').toLongOrNull() ?: continue
+            if (ts <= 0L) continue
+            val fp = entry.substringBeforeLast('|')
+            if (fp.isEmpty()) continue
+            out[fp] = "$ts:" + entry.substringAfterLast('|', "").substringAfter(':', "")
         }
         return out
     }
