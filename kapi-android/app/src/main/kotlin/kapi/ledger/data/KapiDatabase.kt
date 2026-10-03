@@ -108,6 +108,27 @@ interface TxnDao {
     @Query("SELECT * FROM txn WHERE deleted = 0 ORDER BY occurredAt ASC")
     suspend fun allNotDeleted(): List<TxnEntity>
 
+    /**
+     * 内容判重（2026-10-03）：同商户 + 同金额 + 同方向 + 同一发生日。
+     *
+     * 交易单号判重（90 天硬窗口）只覆盖详情页带单号的场景；美团收银、
+     * 半载页面等提不到单号的，靠这条兜底——同一笔消费被读两次，两次的
+     * 「金额+商户+发生日」必然一致。误伤同日真买两笔同价的可能存在，
+     * 但判重的后果是**弹卡询问**而不是静默丢弃，误伤代价只是多点一下。
+     */
+    @Query(
+        "SELECT * FROM txn WHERE deleted = 0 AND amountMinor = :amount AND direction = :dir " +
+            "AND merchant = :merchant AND occurredAt >= :from AND occurredAt < :to " +
+            "ORDER BY occurredAt DESC LIMIT 1"
+    )
+    suspend fun sameMerchantAmountDay(
+        merchant: String,
+        amount: Long,
+        dir: String,
+        from: Long,
+        to: Long,
+    ): TxnEntity?
+
     /** 同额同向且时间落在区间内。自动记账用来标"这笔可能已经记过了"。 */
     @Query(
         "SELECT * FROM txn WHERE deleted = 0 AND amountMinor = :amount AND direction = :dir " +

@@ -407,20 +407,11 @@ class KapiAccessibilityService : AccessibilityService() {
                         outcome is AutoCapturePipeline.Outcome.Ignored &&
                         outcome.duplicate
                     ) {
-                        if (container.autoBookStore.popupStyle == AutoBookStore.POPUP_MINIMAL) {
-                            // 简约模式：弹窗太重，但完全无声会让用户以为"没识别到"——
-                            // 给一个系统 Toast 轻提示（无需悬浮窗权限，自动消失）。
-                            android.widget.Toast.makeText(
-                                applicationContext,
-                                "这笔账已记录过，未重复记账",
-                                android.widget.Toast.LENGTH_SHORT,
-                            ).show()
-                        } else {
-                            // 重复账单：详细模式下弹「已记录 · 再记一次」卡。
-                            // （2026-10-03 回归修复：弹窗偏好改造时这条分支被弄丢，
-                            //  重复账单在详细模式下也静默了——真机验收抓回。）
-                            BillOverlayService.showRecorded(applicationContext, text, now, pkg)
-                        }
+                        // 重复账单：**一律弹「已记录 · 再记一次」卡**（用户定）。
+                        // 简约模式曾对重复完全静默，用户以为"没识别到"；
+                        // 静默丢账比打断一次严重——询问的代价只是多点一下。
+                        // （2026-10-03 回归修复：弹窗偏好改造时这条分支被弄丢过。）
+                        BillOverlayService.showRecorded(applicationContext, text, now, pkg)
                     }
                 }
             }.onFailure {

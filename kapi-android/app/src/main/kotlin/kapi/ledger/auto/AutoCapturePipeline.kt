@@ -143,12 +143,15 @@ class AutoCapturePipeline(
             else autoStore.markFingerprintSeen(fingerprint, now)
         }
         if (payId != null) {
-            // 交易号命中 90 天窗口时，还要看戳关联的那笔账**是否还在**：
+            // 交易号命中 90 天窗口时，还要看戳关联的那笔**是否还在**：
             // 用户删了账再进同一详情页，应当当作没见过、重新走采集——
             // 否则"删了账也永远不再触发"（2026-10-03 用户实测反馈）。
+            // 戳记的可能是账目 id（入账路径）或草稿 id（草稿路径，确认后才
+            // 变成账目），两边都要查——只查一边会让另一条路径永远复活。
             val seen = autoStore.seenTxnId(fingerprint)
             val stillThere = seen?.txnId?.let { id ->
-                db.txnDao().byId(id)?.let { !it.deleted }
+                db.txnDao().byId(id)?.let { !it.deleted } == true ||
+                    db.autoDraftDao().byId(id) != null
             } == true
             if (stillThere) {
                 return Outcome.Ignored(
@@ -173,6 +176,27 @@ class AutoCapturePipeline(
 
         val ledgerId = repository.defaultLedgerId()
         val direction = parsed.direction.name
+
+        // 4.2 内容判重（2026-10-03）：同商户+同金额+同方向+同一发生日的账
+        // 已存在 → 视为重复。**无条件下跑**（不只 payId==null）：草稿路径的
+        // 单号戳记的是草稿 id，草稿确认/删除后单号判重会失效放行——真机
+        // 实证：建水草芽过桥米线 15 元被记了两遍。误伤真买两笔同价的可能
+        // 存在，但后果是弹「已记录」卡让用户点「再记一次」，不是静默丢账。
+        if (!best.merchant.isNullOrBlank()) {
+            val zone = java.time.ZoneId.systemDefault()
+            val day = java.time.Instant.ofEpochMilli(parsed.occurredAt).atZone(zone).toLocalDate()
+            val from = day.atStartOfDay(zone).toInstant().toEpochMilli()
+            val to = day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+            val twin = db.txnDao().sameMerchantAmountDay(
+                best.merchant!!, best.amountMinor, direction, from, to,
+            )
+            if (twin != null && !twin.deleted) {
+                return Outcome.Ignored(
+                    "同商户同金额当日已记录（${twin.id}），丢弃",
+                    duplicate = true,
+                )
+            }
+        }
 
         // 4.5 自转账——在合并**之前**分出去
         //
