@@ -327,13 +327,23 @@ class CategoryRulesTest {
         assertEquals("购物/服饰", exp("优衣库", "摇粒绒外套\n商品说明")?.text)
     }
 
-    /** 宠物顶级细类：口粮/医疗分档；猫狗单字不收（猫眼/热狗是子串地雷）。 */
+    /** 宠物顶级细类：口粮/用品/医疗/服务分档；猫狗单字不收（猫眼/热狗是子串地雷）。 */
     @Test
     fun `宠物顶级分口粮与医疗，猫狗单字不收`() {
         assertEquals("宠物/口粮", exp(null, "皇家猫粮1.5kg\n商品说明")?.text)
+        assertEquals("宠物/宠物用品", exp(null, "猫窝四季通用\n商品说明")?.text)
+        assertEquals("宠物/宠物服务", exp(null, "宠物寄养7天\n商品说明")?.text)
         assertEquals("宠物/宠物医疗", exp("瑞鹏宠物医院")?.text)
         // 猫眼电影不能被「猫」字抢成宠物——交通银行式子串事故
         assertEquals("娱乐/电影", exp("猫眼电影", "某影片影票\n商品说明")?.text)
+    }
+
+    /** 烟酒归购物细类（咔皮对齐）；喝酒的店仍是餐饮/酒水。 */
+    @Test
+    fun `买烟酒归购物，酒吧仍是酒水`() {
+        assertEquals("购物/烟酒", exp(null, "中华香烟硬盒\n商品说明")?.text)
+        assertEquals("购物/烟酒", exp("某烟酒专卖店", "白酒500ml\n商品说明")?.text)
+        assertEquals("餐饮/酒水", exp("某某精酿啤酒屋")?.text)
     }
 
     /** 演出门票仍是娱乐：旅行规则在娱乐之后，演唱会门票不被景点门票抢走。 */
