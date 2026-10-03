@@ -407,11 +407,28 @@ class KapiAccessibilityService : AccessibilityService() {
                         outcome is AutoCapturePipeline.Outcome.Ignored &&
                         outcome.duplicate
                     ) {
-                        // 重复账单：**一律弹「已记录 · 再记一次」卡**（用户定）。
-                        // 简约模式曾对重复完全静默，用户以为"没识别到"；
-                        // 静默丢账比打断一次严重——询问的代价只是多点一下。
-                        // （2026-10-03 回归修复：弹窗偏好改造时这条分支被弄丢过。）
-                        BillOverlayService.showRecorded(applicationContext, text, now, pkg)
+                        // 同页抑制：微信详情页会持续产生无障碍事件（重绘/懒加载，
+                        // 连弹卡自己都会触发），不加抑制的话「已记录」卡关掉又立刻
+                        // 重弹（2026-10-03 用户实测）。同一页 5 分钟内只弹一次；
+                        // 页面识别用原文前 200 字的指纹。
+                        val pageKey = (text ?: "").take(200)
+                        val nowMs = System.currentTimeMillis()
+                        if (pageKey == lastDupKey && nowMs - lastDupAt < DUP_SUPPRESS_MS) {
+                            return@runCatching
+                        }
+                        lastDupKey = pageKey
+                        lastDupAt = nowMs
+                        if (container.autoBookStore.popupStyle == AutoBookStore.POPUP_MINIMAL) {
+                            // 简约模式：弹卡太重，用系统 Toast 轻提示（无需悬浮窗权限）。
+                            android.widget.Toast.makeText(
+                                applicationContext,
+                                "这笔账已记录过，未重复记账",
+                                android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        } else {
+                            // 详细模式：弹「已记录 · 再记一次」卡。
+                            BillOverlayService.showRecorded(applicationContext, text, now, pkg)
+                        }
                     }
                 }
             }.onFailure {
@@ -492,8 +509,14 @@ class KapiAccessibilityService : AccessibilityService() {
         return out
     }
 
+    /** 重复账单弹卡的同页抑制状态（见 duplicate 分支）。 */
+    private var lastDupKey: String? = null
+    private var lastDupAt: Long = 0L
+
     companion object {
         private const val TAG = "KapiA11y"
+        /** 同一详情页关闭弹卡后，多久内不再重复弹（页面事件会持续触发）。 */
+        private const val DUP_SUPPRESS_MS = 5 * 60_000L
         private const val MAX_NODES = 400
 
         /**
