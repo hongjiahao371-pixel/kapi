@@ -347,6 +347,8 @@ class KapiAccessibilityService : AccessibilityService() {
                 // 和"这一屏压根没读过"在日志里长得一模一样——
                 // 23:33 那次漏记就是这么查了半天才发现不是没事件，是事件被吞了。
                 Log.w(TAG, "$pkg 不是一笔支付：${w.why}")
+                // 列表等非单笔屏 = 人已离开详情页 → 重复弹卡的页面会话作废
+                dupCardPageKey = null
                 // 原始行序一并打出来。误判排查缺的就是这个：
                 // `uiautomator dump` 的节点顺序和无障碍原始树**不一样**
                 // （它按布局排序，原始树按 DOM），照着 dump 的顺序推邻接关系
@@ -368,6 +370,14 @@ class KapiAccessibilityService : AccessibilityService() {
         // 只有真的派发了才占掉去抖名额。判成"不是一笔"的那一屏，
         // 不该拦住紧接着打开的下一屏——那正是列表页 → 详情页的必经之路。
         lastHandled[pkg] = now
+
+        // —— 重复弹卡的「页面会话」延续判定 ——
+        // 本次读到的页面指纹与抑制会话的一致 → 人还停在弹过卡的那张详情页，
+        // 会话延续；不一致 → 人已经去了别的屏（别的账单/其他页），会话作废，
+        // 之后回到原页自然再弹。**不能无条件清**：详情页每隔几秒就有新事件，
+        // 清完下一拍立刻重弹，「关闭」等于没关（上一版就错在这）。
+        val pageKey = text.take(200)
+        if (pageKey != dupCardPageKey) dupCardPageKey = null
 
         val pipeline = runCatching { container.autoCapture }.getOrNull() ?: return false
         scope.launch {
@@ -407,26 +417,14 @@ class KapiAccessibilityService : AccessibilityService() {
                         outcome is AutoCapturePipeline.Outcome.Ignored &&
                         outcome.duplicate
                     ) {
-                        // 同页抑制：微信详情页会持续产生无障碍事件（重绘/懒加载，
-                        // 连弹卡自己都会触发），不加抑制的话「已记录」卡关掉又立刻
-                        // 重弹（2026-10-03 用户实测）。同一页 5 分钟内只弹一次；
-                        // 页面识别用原文前 200 字的指纹。
-                        val pageKey = (text ?: "").take(200)
-                        val nowMs = System.currentTimeMillis()
-                        if (pageKey == lastDupKey && nowMs - lastDupAt < DUP_SUPPRESS_MS) {
-                            return@runCatching
-                        }
-                        lastDupKey = pageKey
-                        lastDupAt = nowMs
-                        if (container.autoBookStore.popupStyle == AutoBookStore.POPUP_MINIMAL) {
-                            // 简约模式：弹卡太重，用系统 Toast 轻提示（无需悬浮窗权限）。
-                            android.widget.Toast.makeText(
-                                applicationContext,
-                                "这笔账已记录过，未重复记账",
-                                android.widget.Toast.LENGTH_SHORT,
-                            ).show()
+                        // 重复账单：**一律弹「已记录 · 再记一次」卡**（用户定稿）。
+                        // 同页会话：停留不重弹；离开（页面指纹变化 / 列表屏 /
+                        // 超过 DUP_PAGE_SESSION_MS 没有任何本页事件）即作废，回来再弹。
+                        if (pageKey == dupCardPageKey && now - dupCardPageKeyAt < DUP_PAGE_SESSION_MS) {
+                            dupCardPageKeyAt = now
                         } else {
-                            // 详细模式：弹「已记录 · 再记一次」卡。
+                            dupCardPageKey = pageKey
+                            dupCardPageKeyAt = now
                             BillOverlayService.showRecorded(applicationContext, text, now, pkg)
                         }
                     }
@@ -509,15 +507,17 @@ class KapiAccessibilityService : AccessibilityService() {
         return out
     }
 
-    /** 重复账单弹卡的同页抑制状态（见 duplicate 分支）。 */
-    private var lastDupKey: String? = null
-    private var lastDupAt: Long = 0L
+    /**
+     * 重复弹卡的**页面会话**抑制（2026-10-03 用户定稿）：
+     * 「每次进入详情页都要弹；点了关闭本次停留不再弹；离开再回要再弹」。
+     * 实现不是时间窗，而是：弹卡时记下当时的页面指纹，此后每个事件
+     * 若页面指纹变了（用户离开了那张详情页），立即解除抑制——
+     * 回来自然再弹。停留在原页的重绘事件指纹不变，不重弹。
+     */
+    private var dupCardPageKey: String? = null
 
-    companion object {
-        private const val TAG = "KapiA11y"
-        /** 同一详情页关闭弹卡后，多久内不再重复弹（页面事件会持续触发）。 */
-        private const val DUP_SUPPRESS_MS = 5 * 60_000L
-        private const val MAX_NODES = 400
+    /** 会话最近一次被本页事件确认（延续）的时刻；0 = 无会话。 */
+    private var dupCardPageKeyAt: Long = 0L
 
         /**
          * 同一个 App 的去抖间隔。
@@ -526,7 +526,17 @@ class KapiAccessibilityService : AccessibilityService() {
          * 而重复的**丢弃**交给指纹窗口。这里 1.5 秒足以让一次支付页的连续重绘
          * 归成一次，又不会漏掉用户回到账单页再翻一屏的动作。
          */
+    companion object {
+        private const val TAG = "KapiA11y"
         private const val COOLDOWN_MS = 1_500L
+
+        /**
+         * 重复弹卡页面会话的保鲜期。只兜一种边角：人把 App 切后台/回桌面后
+         * 微信不再产生事件，会话指纹无从「变化」——超过这么久没有本页事件，
+         * 视为人已离开，下次回到该详情页再弹。期间本页事件会不断续期，
+         * 正常停留在页面上永远不会触发。
+         */
+        private const val DUP_PAGE_SESSION_MS = 2 * 60_000L
 
         /**
          * 窗口切换后的沉降延迟。
@@ -554,6 +564,7 @@ class KapiAccessibilityService : AccessibilityService() {
          */
         private const val TRACE_COOLDOWN_MS = 5_000L
 
+        private const val MAX_NODES = 400
         private const val MAX_NODES_TOTAL = 120
 
         @Volatile
