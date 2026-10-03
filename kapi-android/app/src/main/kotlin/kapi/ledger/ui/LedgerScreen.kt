@@ -48,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -271,69 +272,63 @@ private fun MonthBar(
 @Composable
 private fun SummaryCard(state: LedgerUiState, modifier: Modifier = Modifier) {
     val negative = state.summary.balanceMinor < 0
-    // 标签色**不靠透明度分主次**。白字压在饱和渐变上时，alpha 0.75 只有
-    // 4.06:1、0.7 更低，都够不到 AA 的 4.5:1——而"本月结余/支出/收入"是
-    // 要被读的字，不是装饰。层级改由**字号和字重**承担（12sp / 34sp / 11sp），
-    // 这是比调透明度更稳的做法：透明度做的层级在任何一个色相的卡面上都会塌。
-    val onCard = Color.White
-    val onCardSoft = Color.White.copy(alpha = 0.94f)
+    // 2026-10-03 咔皮化重设计（用户点名学商汤咔皮记账的整体设计）：
+    // 原来是**深红/绿渐变卡白字**——和咔皮"纯白卡 + 黑色特大粗金额 + 彩色
+    // 竖条小标签"的公式正好相反，用户看着就是"没学"。改法：
+    //   白卡（与设置页同一套玻璃配方）、金额黑粗（负数红，财务语义保留）、
+    //   支出/收入两列改成**彩色竖条 + 灰标签 + 黑中字**、左对齐——
+    //   咔皮的层级全靠字号字重和竖条颜色，不靠给整张卡染色。
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            // 结余为负时**整张卡换色**。原来不管正负都是一块品牌绿，等于在说
-            // "亏了 12345" 是一件好事——绿色在财务语境里是"进账/安全"，
-            // 亏钱挂在绿底上会让用户第一眼读成收入。数字再大也救不回来，
-            // 因为颜色是比数字更快的一层判断。
-            .background(if (negative) SummaryGradientDown else SummaryGradient)
+            .shadow(
+                elevation = 18.dp,
+                shape = RoundedCornerShape(24.dp),
+                ambientColor = Color(0xFF375376),
+                spotColor = Color(0xFF375376),
+            )
+            .clip(RoundedCornerShape(24.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f))
             .padding(horizontal = 20.dp, vertical = 18.dp)
     ) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "本月结余",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = onCardSoft,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Ink,
                 )
                 if (state.pendingCount > 0) {
                     Spacer(Modifier.width(8.dp))
                     Box(
                         Modifier
                             .clip(RoundedCornerShape(20.dp))
-                            .background(Color.White.copy(alpha = 0.22f))
+                            .background(InkFaint.copy(alpha = 0.10f))
                             .padding(horizontal = 8.dp, vertical = 2.dp)
                     ) {
                         Text(
                             "${state.pendingCount} 笔待同步",
                             style = MaterialTheme.typography.labelSmall,
-                            color = onCard,
+                            color = InkSoft,
                         )
                     }
                 }
             }
 
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 text = "¥ ${Money.toYuanDisplay(state.summary.balanceMinor)}",
                 style = MoneyLarge,
-                color = onCard,
+                color = if (negative) ExpenseRed else Ink,
                 maxLines = 1,
             )
 
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth()) {
-                // 两列都**居中**。原来两列各占一半、里面的字却左对齐，于是
-                // "支出 ¥12345.00" 挤在左边、"收入 ¥0.00" 挤在偏右，
-                // 中间空出一大块、右侧还剩三分之一没人站——整张卡看着是歪的。
-                // 居中之后两列各自站在自己那一半的中间，视觉上是一块完整的底。
-                SummaryColumn("支出", state.summary.expenseMinor, Modifier.weight(1f), onCard, onCardSoft)
-                Box(
-                    Modifier
-                        .width(1.dp)
-                        .height(28.dp)
-                        .background(Color.White.copy(alpha = 0.22f))
-                )
-                SummaryColumn("收入", state.summary.incomeMinor, Modifier.weight(1f), onCard, onCardSoft)
+                // 两列**左对齐**、竖条挂标签——咔皮的排版。竖条颜色是语义：
+                // 支出红、收入绿，比字的颜色更快一层。
+                SummaryColumn("月支出", state.summary.expenseMinor, ExpenseRed, Modifier.weight(1f))
+                SummaryColumn("月收入", state.summary.incomeMinor, IncomeGreen, Modifier.weight(1f))
             }
         }
     }
@@ -343,25 +338,31 @@ private fun SummaryCard(state: LedgerUiState, modifier: Modifier = Modifier) {
 private fun SummaryColumn(
     label: String,
     minor: Long,
+    accent: androidx.compose.ui.graphics.Color,
     modifier: Modifier,
-    onValue: androidx.compose.ui.graphics.Color,
-    onLabel: androidx.compose.ui.graphics.Color,
 ) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = onLabel,
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .width(3.dp)
+                .height(26.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(accent),
         )
-        Text(
-            "¥ ${Money.toYuanDisplay(minor)}",
-            style = MoneyMedium,
-            color = onValue,
-            maxLines = 1,
-        )
+        Spacer(Modifier.width(8.dp))
+        Column {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = InkSoft,
+            )
+            Text(
+                "¥ ${Money.toYuanDisplay(minor)}",
+                style = MoneyMedium,
+                color = Ink,
+                maxLines = 1,
+            )
+        }
     }
 }
 

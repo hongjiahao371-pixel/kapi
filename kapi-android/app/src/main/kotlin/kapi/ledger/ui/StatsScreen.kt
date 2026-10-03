@@ -130,10 +130,14 @@ fun StatsScreen(
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         item {
-            // 维度切换：周 / 月。放在标题上方，选中态青底白字。
+            // 维度切换：周 / 月。咔皮的分段控件——一颗浅底胶囊里两格，
+            // 选中的那格白底浮起；比两颗散 chip 更像"一个维度的两种取值"。
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-                DimensionChip("周", mode == "week") { mode = "week" }
-                DimensionChip("月", mode == "month") { mode = "month" }
+                SegmentedControl(
+                    options = listOf("周" to "week", "月" to "month"),
+                    selected = mode,
+                    onSelect = { mode = it },
+                )
             }
             if (mode == "week") {
                 WeekHeader(
@@ -352,17 +356,34 @@ private fun WeekHeader(
 }
 
 @Composable
-private fun DimensionChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    Text(
-        label,
-        style = MaterialTheme.typography.labelLarge,
-        color = if (selected) androidx.compose.ui.graphics.Color.White else InkSoft,
+private fun SegmentedControl(
+    options: List<Pair<String, String>>,
+    selected: String,
+    onSelect: (String) -> Unit,
+) {
+    Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) Brand else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 6.dp),
-    )
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+            .padding(3.dp),
+    ) {
+        for ((label, value) in options) {
+            val isSel = value == selected
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (isSel) Ink else InkSoft,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(
+                        if (isSel) MaterialTheme.colorScheme.surface
+                        else androidx.compose.ui.graphics.Color.Transparent
+                    )
+                    .clickable { onSelect(value) }
+                    .padding(horizontal = 20.dp, vertical = 6.dp),
+            )
+        }
+    }
 }
 
 @Composable
