@@ -17,17 +17,24 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Psychology
@@ -36,7 +43,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -52,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kapi.core.llm.Direction
+import kapi.ledger.data.CategoryEntity
 import kapi.core.llm.Money
 import kapi.core.llm.TransactionExtractor
 import kapi.ledger.llm.LlmClient
@@ -119,6 +132,10 @@ fun AddTransactionScreen(
     var merchant by remember { mutableStateOf("") }
     var occurredAt by remember { mutableStateOf(LocalDateTime.now()) }
     var recognize by remember { mutableStateOf<RecognizeState>(RecognizeState.Idle) }
+    // 分类选择器（咔皮式下钻宫格）与系统键盘可见性
+    var showCategoryPicker by remember { mutableStateOf(false) }
+    var pickerMajor by remember { mutableStateOf<CategoryEntity?>(null) }
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
 
     // ---- 截图识别 ----
     val llmConfig = remember(llmStore) { llmStore?.load() }
@@ -200,7 +217,13 @@ fun AddTransactionScreen(
     Column(
         // 同样不铺不透明底色，否则液态背景被盖死、玻璃退化成灰块。
         // 「记一笔」是全屏模态页，但它仍然走 KapiRoot 的同一套背景。
-        modifier = modifier.fillMaxSize(),
+        //
+        // imePadding：edge-to-edge 下 adjustResize 不会自动给键盘让位，
+        // 商户/备注拉起系统键盘时它会整个盖在内容上——"键盘显示不全/内容
+        // 被吃掉"的根源。加 imePadding 后窗口内容随键盘上收。
+        modifier = modifier
+            .fillMaxSize()
+            .imePadding(),
     ) {
         // ---- 顶栏 ----
         Row(
@@ -271,24 +294,45 @@ fun AddTransactionScreen(
                 SegmentedTab("收入", !isExpense, Modifier.weight(1f)) { isExpense = false }
             }
 
-            // ---- 分类 ----
-            // 两排一模一样的圆角按钮没有标签的话，用户根本分不清哪排是分类、
-            // 哪排是账户——首次使用的人会随便点一排然后困惑。
+            // ---- 分类（咔皮式一行 + 下钻宫格）----
+            // 原来是横滑小 chips 墙：50 多个分类一屏只露 4 颗，滑动找类目
+            // 要划好几屏。咔皮的构造是一行式——「分类  支出：餐饮-快餐 ›」，
+            // 点击下钻进宫格选择器。这里照搬：行显示已选路径，宫格两级
+            // （大类 emoji 瓦片 → 细类），选中即回填。
             if (visibleCategories.isNotEmpty()) {
+                val selectedCat = visibleCategories.firstOrNull { it.id == categoryId }
+                val selectedPath = selectedCat?.let { c ->
+                    val parent = visibleCategories.firstOrNull { it.id == c.parentId }
+                    if (parent != null) parent.name + "/" + c.name else c.name
+                }
                 Spacer(Modifier.height(18.dp))
-                SectionLabel("分类")
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 0.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .clickable {
+                            pickerMajor = null
+                            showCategoryPicker = true
+                        }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    items(visibleCategories, key = { it.id }) { c ->
-                        Chip(
-                            text = c.name,
-                            selected = c.id == categoryId,
-                            tone = categoryTone(c.name),
-                            onClick = { categoryId = if (c.id == categoryId) null else c.id },
-                        )
-                    }
+                    Text("分类", style = MaterialTheme.typography.bodyMedium, color = InkSoft)
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        selectedPath ?: "未选择",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (selectedCat != null) MaterialTheme.colorScheme.onSurface else InkFaint,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = InkFaint,
+                    )
                 }
             }
 
@@ -389,17 +433,177 @@ fun AddTransactionScreen(
             Text("保存", style = MaterialTheme.typography.titleMedium)
         }
 
-        Spacer(Modifier.height(12.dp))
-        Keypad(
-            onDigit = { d ->
-                amount = when {
-                    d == "." && amount.contains(".") -> amount
-                    d == "." && amount.isEmpty() -> "0."
-                    amount == "0" -> d
-                    else -> amount + d
+        // 自定义数字键盘与系统键盘互斥：商户/备注拉起系统键盘时把数字盘
+        // 收起来——两块键盘叠在一屏，既挤又会让系统键盘显示不全。
+        if (!imeVisible) {
+            Spacer(Modifier.height(12.dp))
+            Keypad(
+                onDigit = { d ->
+                    amount = when {
+                        d == "." && amount.contains(".") -> amount
+                        d == "." && amount.isEmpty() -> "0."
+                        amount == "0" -> d
+                        else -> amount + d
+                    }
+                },
+                onDelete = { amount = amount.dropLast(1) },
+            )
+        } else {
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+
+    if (showCategoryPicker) {
+        CategoryPickerSheet(
+            categories = visibleCategories,
+            isExpense = isExpense,
+            selectedId = categoryId,
+            onPick = { categoryId = it?.id },
+            onDismiss = { showCategoryPicker = false },
+        )
+    }
+}
+
+/**
+ * 分类选择器（咔皮式两级宫格，ModalBottomSheet 承载）：
+ * 第一级 = 支出/收入的全部大类（emoji 瓦片，4 列）；
+ * 点开有细类的大类 → 第二级细类宫格（顶部带返回条），也可点「全部 ××」
+ * 只记到大类。选中即回填并收起。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CategoryPickerSheet(
+    categories: List<CategoryEntity>,
+    isExpense: Boolean,
+    selectedId: String?,
+    onPick: (CategoryEntity?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState()
+    val majors = categories.filter { it.parentId == null }
+    var currentMajor by remember { mutableStateOf<CategoryEntity?>(null) }
+    val minors = currentMajor?.let { m -> categories.filter { it.parentId == m.id } } ?: emptyList()
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            // 标题 / 返回条
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                if (currentMajor != null) {
+                    IconButton(onClick = { currentMajor = null }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回大类", tint = InkSoft)
+                    }
                 }
-            },
-            onDelete = { amount = amount.dropLast(1) },
+                Text(
+                    text = when {
+                        currentMajor != null -> currentMajor!!.name + " · 细分类"
+                        else -> if (isExpense) "支出分类" else "收入分类"
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Ink,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(4),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 28.dp),
+            ) {
+                if (currentMajor == null) {
+                    items(majors, key = { it.id }) { m ->
+                        val kids = categories.any { it.parentId == m.id }
+                        CategoryTile(
+                            emoji = CategoryEmoji.emojiOf(m.name),
+                            name = m.name,
+                            selected = selectedId == m.id,
+                            hasKids = kids,
+                            onClick = {
+                                val hasKids = categories.any { it.parentId == m.id }
+                                if (hasKids) currentMajor = m
+                                else {
+                                    onPick(m)
+                                    onDismiss()
+                                }
+                            },
+                        )
+                    }
+                } else {
+                    // 「全部 大类」瓦片：只记到大类
+                    item(key = currentMajor!!.id + "-all") {
+                        CategoryTile(
+                            emoji = CategoryEmoji.emojiOf(currentMajor!!.name),
+                            name = "全部" + currentMajor!!.name,
+                            selected = selectedId == currentMajor!!.id,
+                            hasKids = false,
+                            onClick = {
+                                onPick(currentMajor)
+                                onDismiss()
+                            },
+                        )
+                    }
+                    items(minors, key = { it.id }) { kid ->
+                        CategoryTile(
+                            emoji = CategoryEmoji.emojiOf(kid.name)
+                                ?: CategoryEmoji.emojiOf(currentMajor!!.name),
+                            name = kid.name,
+                            selected = selectedId == kid.id,
+                            hasKids = false,
+                            onClick = {
+                                onPick(kid)
+                                onDismiss()
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 宫格瓦片：emoji 圆底 + 名称。选中 = 品牌描边 + 浅蓝底。 */
+@Composable
+private fun CategoryTile(
+    emoji: String?,
+    name: String,
+    selected: Boolean,
+    hasKids: Boolean,
+    onClick: () -> Unit,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(
+                if (selected) BrandSoft
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp, horizontal = 4.dp),
+    ) {
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Color.White),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = emoji ?: "❓",
+                fontSize = 20.sp,
+            )
+        }
+        Spacer(Modifier.height(5.dp))
+        Text(
+            text = name,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) BrandDeep else Ink,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

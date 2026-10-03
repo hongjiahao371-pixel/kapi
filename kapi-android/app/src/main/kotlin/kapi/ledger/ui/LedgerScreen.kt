@@ -298,21 +298,6 @@ private fun SummaryCard(state: LedgerUiState, modifier: Modifier = Modifier) {
                     style = MaterialTheme.typography.titleMedium,
                     color = Ink,
                 )
-                if (state.pendingCount > 0) {
-                    Spacer(Modifier.width(8.dp))
-                    Box(
-                        Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(InkFaint.copy(alpha = 0.10f))
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            "${state.pendingCount} 笔待同步",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = InkSoft,
-                        )
-                    }
-                }
             }
 
             Spacer(Modifier.height(4.dp))
@@ -385,11 +370,15 @@ private fun DayHeader(group: DayGroup) {
             color = InkFaint,
         )
         Spacer(Modifier.weight(1f))
-        Text(
-            "支出 ¥${Money.toYuanDisplay(group.expenseMinor)}",
-            style = MaterialTheme.typography.bodySmall,
-            color = InkSoft,
-        )
+        // 当日无支出就什么都不显示——"支出 ¥0.00" 是一行纯噪音，
+        // 咔皮的列表里没有这种零账提示。
+        if (group.expenseMinor > 0) {
+            Text(
+                "支出 ¥${Money.toYuanDisplay(group.expenseMinor)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = InkSoft,
+            )
+        }
     }
 }
 
