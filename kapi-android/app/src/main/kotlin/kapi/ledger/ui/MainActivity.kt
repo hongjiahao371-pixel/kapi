@@ -196,6 +196,7 @@ fun KapiRoot() {
                 llmStore = container.llmStore,
                 llmClient = container.llmClient,
                 onOpenLlmSettings = { backStack = backStack + Screen.LlmSettings },
+                findDuplicateTxn = { m, a, d, t -> container.repository.findDuplicateTxn(m, a, d, t) },
             )
         }
         return

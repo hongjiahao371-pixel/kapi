@@ -41,6 +41,28 @@ class LedgerRepository(
         return db.txnDao().observeRange(from, to)
     }
 
+    /**
+     * 内容判重的读侧透传：同商户 + 同金额 + 同方向 + 同一发生日。
+     *
+     * 读屏管线用同一张 DAO 查询拦自动重复；这里给**手动路径**用——截图
+     * 识别回填表单后，保存前查一下"账本里是不是已经有这笔"，命中就弹
+     * 确认而不是静默记两笔（2026-10-03 用户实测报的第二条）。商户空或
+     * 时间缺失（识别不出）时不判——没有锚点的判重全是误伤。
+     */
+    suspend fun findDuplicateTxn(
+        merchant: String,
+        amountMinor: Long,
+        direction: String,
+        occurredAt: Long,
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): TxnEntity? {
+        if (merchant.isBlank() || occurredAt <= 0) return null
+        val day = java.time.Instant.ofEpochMilli(occurredAt).atZone(zone).toLocalDate()
+        val from = day.atStartOfDay(zone).toInstant().toEpochMilli()
+        val to = day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        return db.txnDao().sameMerchantAmountDay(merchant.trim(), amountMinor, direction, from, to)
+    }
+
     fun observeSummary(
         month: YearMonth,
         zone: ZoneId = ZoneId.systemDefault(),

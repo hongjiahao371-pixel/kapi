@@ -348,7 +348,7 @@ class KapiAccessibilityService : AccessibilityService() {
                 // 23:33 那次漏记就是这么查了半天才发现不是没事件，是事件被吞了。
                 Log.w(TAG, "$pkg 不是一笔支付：${w.why}")
                 // 列表等非单笔屏 = 人已离开详情页 → 重复弹卡的页面会话作废
-                dupCardPageKey = null
+                store?.clearDupSession()
                 // 原始行序一并打出来。误判排查缺的就是这个：
                 // `uiautomator dump` 的节点顺序和无障碍原始树**不一样**
                 // （它按布局排序，原始树按 DOM），照着 dump 的顺序推邻接关系
@@ -371,15 +371,10 @@ class KapiAccessibilityService : AccessibilityService() {
         // 不该拦住紧接着打开的下一屏——那正是列表页 → 详情页的必经之路。
         lastHandled[pkg] = now
 
-        // —— 重复弹卡的「页面会话」延续判定 ——
-        // 本次读到的页面指纹与抑制会话的一致 → 人还停在弹过卡的那张详情页，
-        // 会话延续；不一致 → 人已经去了别的屏（别的账单/其他页），会话作废，
-        // 之后回到原页自然再弹。**不能无条件清**：详情页每隔几秒就有新事件，
-        // 清完下一拍立刻重弹，「关闭」等于没关（上一版就错在这）。
         val pageKey = text.take(200)
-        if (pageKey != dupCardPageKey) dupCardPageKey = null
 
         val pipeline = runCatching { container.autoCapture }.getOrNull() ?: return false
+        Log.d(TAG, "派发捕获 pageKey=${pageKey.take(60)}")
         scope.launch {
             runCatching {
                 val outcome = pipeline.capture(
@@ -390,6 +385,21 @@ class KapiAccessibilityService : AccessibilityService() {
                         occurredAt = now,
                     )
                 )
+                // **这次停留刚产出过账**：按账单身份开新会话（覆盖旧的）。
+                // 详情页每隔几秒就重发事件，下一拍必然命中"重复"——没有这个
+                // 锚，横幅刚说完"记好了"就跟着弹「已记录」卡。锚的是 id 不
+                // 是页面文本：加载中途文本会从半页变全页，文本锚会失效。
+                when (outcome) {
+                    is AutoCapturePipeline.Outcome.Posted ->
+                        store?.anchorDupSession(listOf(outcome.txnId), now)
+                    is AutoCapturePipeline.Outcome.Drafted ->
+                        store?.anchorDupSession(listOf(outcome.draftId), now)
+                    is AutoCapturePipeline.Outcome.Merged ->
+                        store?.anchorDupSession(listOf(outcome.draftId), now)
+                    is AutoCapturePipeline.Outcome.Transfer ->
+                        store?.anchorDupSession(listOf(outcome.txnId), now)
+                    else -> Unit
+                }
                 // 草稿建好后按弹窗偏好分流。三个前置缺一不可：
                 // 只对 Drafted/Merged/duplicate 分流（入账/自转账不需要人再点）、
                 // 用户开过开关、悬浮窗权限已授——没授时静默跳过，草稿走待确认兜底。
@@ -418,11 +428,22 @@ class KapiAccessibilityService : AccessibilityService() {
                         outcome.duplicate
                     ) {
                         // 重复账单：**一律弹「已记录 · 再记一次」卡**（用户定稿）。
-                        // 同页会话：停留不重弹；离开（页面指纹变化 / 列表屏 /
-                        // 超过 DUP_PAGE_SESSION_MS 没有任何本页事件）即作废，回来再弹。
-                        if (pageKey == dupCardPageKey && now - dupCardPageKeyAt < DUP_PAGE_SESSION_MS) {
+                        // 同页会话按**账单身份**判定：duplicateOf 指向账本里已
+                        // 有那笔的 id，和会话里记的（刚记完的/已弹过卡的）一致
+                        // → 还停在同一笔上，静默；不一致（别的账单/刚离开又
+                        // 回来）→ 弹卡。页面文本在此只作重复账单没带身份时的
+                        // 兜底比对。
+                        val dup = outcome.duplicateOf
+                        val sameBill = dup != null &&
+                            store?.dupSessionContains(dup, now, DUP_PAGE_SESSION_MS) == true
+                        val samePage = dup == null && pageKey == dupCardPageKey &&
+                            now - dupCardPageKeyAt < DUP_PAGE_SESSION_MS
+                        if (sameBill || samePage) {
                             dupCardPageKeyAt = now
                         } else {
+                            if (dup != null) {
+                                store?.anchorDupSession(listOf(dup), now)
+                            }
                             dupCardPageKey = pageKey
                             dupCardPageKeyAt = now
                             BillOverlayService.showRecorded(applicationContext, text, now, pkg)
@@ -535,8 +556,12 @@ class KapiAccessibilityService : AccessibilityService() {
          * 微信不再产生事件，会话指纹无从「变化」——超过这么久没有本页事件，
          * 视为人已离开，下次回到该详情页再弹。期间本页事件会不断续期，
          * 正常停留在页面上永远不会触发。
+         *
+         * 10 分钟而不是 2 分钟：**静态账单页**（转账/退款这类）平时不发事件，
+         * 会话得不到续期——2 分钟时人在页上多看一会儿就会再弹（2026-10-04
+         * realme 实测）。动画页有持续事件，保鲜期多长都不影响。
          */
-        private const val DUP_PAGE_SESSION_MS = 2 * 60_000L
+        private const val DUP_PAGE_SESSION_MS = 10 * 60_000L
 
         /**
          * 窗口切换后的沉降延迟。

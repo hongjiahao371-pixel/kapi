@@ -739,7 +739,7 @@ class BillOverlayService : Service() {
                             rawText = fresh.rawText,
                             direction = fresh.direction,
                         )
-                    container.editor.createTransaction(
+                    val txn = container.editor.createTransaction(
                         amountMinor = amountFinal,
                         direction = fresh.direction,
                         accountId = fresh.accountId ?: "A1",
@@ -752,6 +752,9 @@ class BillOverlayService : Service() {
                         source = LocalEditWriter.SOURCE_LOCAL_FALLBACK,
                         confidence = fresh.confidence,
                     )
+                    // 草稿 id → 账目 id：单号戳和重复弹卡会话都挂在草稿上，
+                    // 不转挂的话同一页的后续判定认不出"就是刚记的这笔"。
+                    container.autoBookStore.retagDraftToTxn(fresh.id, txn.id)
                     container.db.autoDraftDao().delete(fresh.id)
                 }
                 removeWindow()
@@ -784,7 +787,7 @@ class BillOverlayService : Service() {
                             rawText = draft.rawText,
                             direction = draft.direction,
                         )
-                    container.editor.createTransaction(
+                    val txn = container.editor.createTransaction(
                         amountMinor = amountFinal,
                         direction = draft.direction,
                         accountId = guessAccountId(recordedPkg),
@@ -797,6 +800,9 @@ class BillOverlayService : Service() {
                         source = LocalEditWriter.SOURCE_LOCAL_FALLBACK,
                         confidence = draft.confidence,
                     )
+                    // 「再记一次」产生的是新账：把它也纳入会话，后续内容判重
+                    // 可能命中这笔新的，不纳入会反复弹卡。
+                    container.autoBookStore.dupSessionIds.add(txn.id)
                     if (draft.rawText != null) {
                         val key = PaymentId.authoritative(draft.rawText)?.key
                             ?: AutoBook.exactFingerprint(AutoBook.CaptureChannel.A11Y, draft.rawText!!)
@@ -862,6 +868,9 @@ class BillOverlayService : Service() {
                         confidence = fresh.confidence,
                     )
                     container.db.autoDraftDao().delete(fresh.id)
+                    // 草稿 id → 账目 id：单号戳和重复弹卡会话都挂在草稿上，
+                    // 不转挂的话同一页的后续判定认不出"就是刚记的这笔"。
+                    container.autoBookStore.retagDraftToTxn(fresh.id, txn.id)
                     txn.id
                 }.onFailure {
                     android.util.Log.w(

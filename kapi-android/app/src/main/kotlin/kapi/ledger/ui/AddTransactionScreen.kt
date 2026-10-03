@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.outlined.Backspace
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -122,6 +123,9 @@ fun AddTransactionScreen(
     llmStore: LlmStore? = null,
     llmClient: LlmClient? = null,
     onOpenLlmSettings: () -> Unit = {},
+    /** 保存前的内容判重（同商户+同金额+同方向+同日）。命中不拦死，
+     * 弹确认——识别同一笔两次是用户自由，但必须是他知情的选择。 */
+    findDuplicateTxn: suspend (String, Long, String, Long) -> kapi.ledger.data.TxnEntity? = { _, _, _, _ -> null },
     modifier: Modifier = Modifier,
 ) {
     val categories by vm.categories.collectAsStateWithLifecycle()
@@ -438,21 +442,42 @@ fun AddTransactionScreen(
         }
 
         // ---- 保存（钉底，永远可见）----
+        fun doSave(minor: Long) {
+            scope.launch {
+                vm.saveTransaction(
+                    amountMinor = minor,
+                    isExpense = isExpense,
+                    accountId = accountId,
+                    categoryId = categoryId,
+                    note = note,
+                    merchant = merchant,
+                    occurredAt = localDateTimeToMillis(occurredAt),
+                    tags = tags.split("，", ",").map { it.trim() }.filter { it.isNotEmpty() },
+                )
+                onDone()
+            }
+        }
+
+        var showDupConfirm by remember { mutableStateOf(false) }
+        var dupTxn by remember { mutableStateOf<kapi.ledger.data.TxnEntity?>(null) }
         Button(
             onClick = {
                 val minor = amountMinor ?: return@Button
                 scope.launch {
-                    vm.saveTransaction(
-                        amountMinor = minor,
-                        isExpense = isExpense,
-                        accountId = accountId,
-                        categoryId = categoryId,
-                        note = note,
-                        merchant = merchant,
-                        occurredAt = localDateTimeToMillis(occurredAt),
-                        tags = tags.split("，", ",").map { it.trim() }.filter { it.isNotEmpty() },
+                    // 保存前查重。读屏路径早就拦自动重复了，这里补上手动/
+                    // 截图识别路径：识别出的账单和已有记录同商户+同金额+
+                    // 同发生日时，弹确认而不是默默记两笔（2026-10-03 用户报）。
+                    val dup = findDuplicateTxn(
+                        merchant.trim(), minor,
+                        if (isExpense) "EXPENSE" else "INCOME",
+                        localDateTimeToMillis(occurredAt),
                     )
-                    onDone()
+                    if (dup != null) {
+                        dupTxn = dup
+                        showDupConfirm = true
+                    } else {
+                        doSave(minor)
+                    }
                 }
             },
             enabled = canSave,
@@ -469,6 +494,35 @@ fun AddTransactionScreen(
                 .heightIn(min = 50.dp),
         ) {
             Text("保存", style = MaterialTheme.typography.titleMedium)
+        }
+
+        if (showDupConfirm && dupTxn != null) {
+            val dupTime = dupTxn!!.let {
+                java.time.Instant.ofEpochMilli(it.occurredAt)
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .format(java.time.format.DateTimeFormatter.ofPattern("M月d日 HH:mm"))
+            }
+            AlertDialog(
+                onDismissRequest = { showDupConfirm = false },
+                title = { Text("账本里已有这笔", color = Ink) },
+                text = {
+                    Text(
+                        "已有一笔「${dupTxn!!.merchant ?: "未命名"}」在 $dupTime 记过 " +
+                            Money.toYuanDisplay(dupTxn!!.amountMinor) + " 元，和这笔同商户、同金额、同一天。\n\n" +
+                            "是同一笔就不用再记；确实又消费了一次，再保存。",
+                        color = InkSoft,
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showDupConfirm = false
+                        amountMinor?.let(::doSave)
+                    }) { Text("确实又一笔，保存", color = Brand) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDupConfirm = false }) { Text("不记了", color = InkSoft) }
+                },
+            )
         }
 
         // 自定义数字键盘与系统键盘互斥：商户/备注拉起系统键盘时把数字盘

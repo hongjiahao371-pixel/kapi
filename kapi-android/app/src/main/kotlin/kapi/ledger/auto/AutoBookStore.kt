@@ -194,6 +194,62 @@ class AutoBookStore(context: Context) {
         }
     }
 
+    // -------------------------------------------------------------------
+    // 重复弹卡的「页面会话」（2026-10-03 第二版）
+    //
+    // 锚的是**账单身份**（记录/草稿的 id），不是页面文本——详情页加载
+    // 中途读到的文本会从半页变全页，文本锚一变就被误判成"离开"，
+    // 横幅刚记完卡又弹出来（第一版真机复现）。放 store 里是因为草稿→
+    // 账目的 id 转换发生在悬浮窗服务，两边必须共享同一份会话。
+    // -------------------------------------------------------------------
+
+    /** 本次停留已处理过的账单 id（刚记完的 / 已弹过卡的）。 */
+    val dupSessionIds = mutableSetOf<String>()
+
+    /** 会话最近一次被同账单事件确认的时刻；0 = 无会话。 */
+    var dupSessionAt = 0L
+
+    /** 草稿转成账目（确认/自动入账/再记一次）后，把单号戳和会话锚一起改挂到新 id。 */
+    fun retagDraftToTxn(draftId: String, txnId: String) {
+        synchronized(lock) {
+            for ((k, v) in idStamps) {
+                if (v.substringAfter(':', "") == draftId) {
+                    idStamps[k] = "${v.substringBefore(':')}:$txnId"
+                }
+            }
+            persistLocked()
+        }
+        synchronized(dupSessionIds) {
+            if (dupSessionIds.remove(draftId)) dupSessionIds.add(txnId)
+        }
+    }
+
+    /** 用本次停留产出的账单 id 开一个新会话（覆盖旧的）。 */
+    fun anchorDupSession(ids: List<String?>, now: Long) {
+        synchronized(dupSessionIds) {
+            dupSessionIds.clear()
+            dupSessionIds.addAll(ids.filterNotNull())
+        }
+        dupSessionAt = now
+    }
+
+    /** 这笔重复是否属于当前会话（同一笔且会话未过期）。命中顺带续期。 */
+    fun dupSessionContains(id: String?, now: Long, staleMs: Long): Boolean {
+        if (id == null) return false
+        synchronized(dupSessionIds) {
+            if (id !in dupSessionIds) return false
+        }
+        if (now - dupSessionAt >= staleMs) return false
+        dupSessionAt = now
+        return true
+    }
+
+    /** 人已离开那张详情页（列表屏等）：会话作废，回来再弹。 */
+    fun clearDupSession() {
+        synchronized(dupSessionIds) { dupSessionIds.clear() }
+        dupSessionAt = 0
+    }
+
     /** 读最近一次处理时刻，0 表示从没处理过。 */
     fun lastSeenAt(fingerprint: String): Long =
         synchronized(lock) { stamps[fingerprint] ?: 0L }

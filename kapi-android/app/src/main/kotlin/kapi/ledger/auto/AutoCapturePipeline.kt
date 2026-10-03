@@ -72,7 +72,13 @@ class AutoCapturePipeline(
          * 拦下的（这笔之前已经记过）——悬浮窗用它区分两种弹法：
          * duplicate=true → 「当前账单已记录」弹窗；false → 确认新账单弹窗。
          */
-        data class Ignored(val reason: String, val duplicate: Boolean = false) : Outcome
+        data class Ignored(
+            val reason: String,
+            val duplicate: Boolean = false,
+            /** duplicate=true 时指向账本里**已存在的那笔**的 id（交易号戳/内容
+             * 判重都能拿到）。重复弹卡的页面会话靠它识别"同一笔"。 */
+            val duplicateOf: String? = null,
+        ) : Outcome
 
         /**
          * 记成了一笔**自己口袋之间的转账**，不是消费。
@@ -109,6 +115,11 @@ class AutoCapturePipeline(
                     "｜原文前 120 字=${input.rawText?.take(120)?.replace('\n', '|') ?: "(无文字)"}",
             )
         }
+        Log.d(
+            TAG,
+            "结果=${outcome.javaClass.simpleName}" +
+                (outcome as? Outcome.Ignored)?.let { " dup=${it.duplicate} of=${it.duplicateOf}" } ?: "",
+        )
         return outcome
     }
 
@@ -157,6 +168,7 @@ class AutoCapturePipeline(
                 return Outcome.Ignored(
                     "交易号 ${payId.value}（${payId.kind.label}）已经记过，丢弃",
                     duplicate = true,
+                    duplicateOf = seen?.txnId,
                 )
             }
             // 戳在但账没了（被删）：清掉旧戳重新采集；正常未见过也直接往下走。
@@ -194,6 +206,7 @@ class AutoCapturePipeline(
                 return Outcome.Ignored(
                     "同商户同金额当日已记录（${twin.id}），丢弃",
                     duplicate = true,
+                    duplicateOf = twin.id,
                 )
             }
         }
