@@ -554,6 +554,15 @@ private fun TxnEditDialog(
                     style = MaterialTheme.typography.labelMedium,
                     color = Brand,
                 )
+                // 发生时刻=入库时存的「支付时间」（自动记账从账单页解析，
+                // 手记的是保存那一刻），对账就靠它。
+                Text(
+                    TXN_FULL_TIME_FMT.format(
+                        Instant.ofEpochMilli(txn.occurredAt).atZone(ZoneId.systemDefault()),
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = InkFaint,
+                )
             }
         },
         text = {
@@ -709,6 +718,10 @@ private fun CategoryPill(text: String, selected: Boolean, onClick: () -> Unit) {
  * 是账单页解析出的「支付时间」，不是识别那一刻，用户对账时两边的
  * 时间能对上。 */
 private val ROW_TIME_FMT = DateTimeFormatter.ofPattern("HH:mm")
+
+/** 编辑弹窗标题里的完整时刻。弹窗脱离了列表的日分组上下文，
+ * 光 HH:mm 对不上账（用户拿它跟微信账单页核对的），日期必须带上。 */
+private val TXN_FULL_TIME_FMT = DateTimeFormatter.ofPattern("yyyy年M月d日 HH:mm")
 
 @Composable
 private fun TxnRow(
