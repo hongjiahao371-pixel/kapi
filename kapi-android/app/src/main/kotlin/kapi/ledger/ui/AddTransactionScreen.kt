@@ -137,6 +137,8 @@ fun AddTransactionScreen(
     var merchant by remember { mutableStateOf("") }
     var occurredAt by remember { mutableStateOf(LocalDateTime.now()) }
     var recognize by remember { mutableStateOf<RecognizeState>(RecognizeState.Idle) }
+    var tags by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) { /* 建议标签在输入时由 repo 提供（见下） */ }
     // 分类选择器（咔皮式下钻宫格）与系统键盘可见性
     var showCategoryPicker by remember { mutableStateOf(false) }
     var pickerMajor by remember { mutableStateOf<CategoryEntity?>(null) }
@@ -395,6 +397,10 @@ fun AddTransactionScreen(
             Spacer(Modifier.height(8.dp))
             CompactField(note, "备注（可留空）") { note = it }
 
+            // ---- 标签（可选，逗号分隔；跨分类聚合用）----
+            Spacer(Modifier.height(8.dp))
+            CompactField(tags, "标签（可选，逗号分隔）") { tags = it }
+
             // ---- 时间 ----
             Spacer(Modifier.height(10.dp))
             val isToday = occurredAt.toLocalDate() == LocalDate.now()
@@ -444,6 +450,7 @@ fun AddTransactionScreen(
                         note = note,
                         merchant = merchant,
                         occurredAt = localDateTimeToMillis(occurredAt),
+                        tags = tags.split("，", ",").map { it.trim() }.filter { it.isNotEmpty() },
                     )
                     onDone()
                 }

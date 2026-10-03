@@ -304,6 +304,7 @@ fun KapiRoot() {
         when (screen) {
             is Screen.Ledger -> LedgerScreen(
                 vm = vm,
+                container = container,
                 onDelete = { id -> scope.launch { vm.deleteTransaction(id) } },
                 onOpenSettings = { backStack = listOf(Screen.Settings) },
                 contentPadding = contentPadding,

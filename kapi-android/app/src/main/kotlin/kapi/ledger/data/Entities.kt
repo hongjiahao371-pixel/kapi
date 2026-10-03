@@ -261,3 +261,47 @@ data class BudgetEntity(
     val categoryId: String?,
     val amountMinor: Long,
 )
+
+/**
+ * 用户自定义分类规则（2026-10-03，咔皮「识别规则」对齐）。
+ *
+ * 用户显式建的规则**压过一切猜测**：自学习是隐式的、内置词表是猜的，
+ * 只有这一条是"他说了算"。AutoCategory 在学习和内置表之前先查这里。
+ *
+ * ## 刻意不同步 NAS
+ *
+ * 与预算同理（见 [BudgetEntity]）：规则是这台设备上的行为配置，不是
+ * 账本数据。同步要动 LocalMerge 的实体注册，等真出现多设备诉求再接。
+ */
+@Entity(
+    tableName = "category_rule",
+    indices = [Index(value = ["ledgerId"])],
+)
+data class CategoryRuleEntity(
+    @PrimaryKey val id: String,
+    val ledgerId: String,
+    /** MERCHANT = 交易方（商户名含 pattern）；KEYWORD = 消费内容（原文含 pattern）。 */
+    val kind: String,
+    /** 匹配串。contains 语义、忽略大小写；不做正则——用户填的就是字面。 */
+    val pattern: String,
+    val categoryId: String,
+    val createdAt: Long,
+)
+
+/**
+ * 账单标签（多对多，设备本地）。
+ *
+ * **不动 TxnEntity**：txn 行是 FV 同步行，加列要过 LocalMerge 的字段
+ * 注册（服务端 schema 也要跟），风险和体量都不值——标签先做设备本地，
+ * 与预算/规则同一档（见 [BudgetEntity] 的 KDoc）。逗号不允许出现在
+ * 标签里（写入前剥掉），展示直接 join。
+ */
+@Entity(
+    tableName = "txn_tag",
+    primaryKeys = ["txnId", "tag"],
+    indices = [Index(value = ["tag"]), Index(value = ["txnId"])],
+)
+data class TxnTagEntity(
+    val txnId: String,
+    val tag: String,
+)

@@ -103,9 +103,10 @@ class LedgerViewModel(
         note: String?,
         merchant: String?,
         occurredAt: Long,
-    ): Boolean {
+        tags: List<String> = emptyList(),
+    ): String? {
         val ledgerId = repo.ensureSeeded()
-        repo.editor.createTransaction(
+        val txn = repo.editor.createTransaction(
             amountMinor = amountMinor,
             direction = if (isExpense) "EXPENSE" else "INCOME",
             accountId = accountId.ifBlank { DEFAULT_ACCOUNT_ID },
@@ -116,7 +117,8 @@ class LedgerViewModel(
             merchant = merchant,
             categoryId = categoryId,
         )
-        return true
+        if (tags.isNotEmpty()) repo.setTxnTags(txn.id, tags)
+        return txn.id
     }
 
     suspend fun deleteTransaction(id: String) {
@@ -153,6 +155,23 @@ class LedgerViewModel(
         parentId: String?,
         icon: String? = null,
     ): String? = repo.createCategory(name, kind, parentId, icon)
+
+    /** 用户分类规则（设置 → 分类规则 编辑用）。 */
+    fun observeCategoryRules() = repo.observeCategoryRules(LedgerRepository.DEFAULT_LEDGER_ID)
+
+    suspend fun addCategoryRule(kind: String, pattern: String, categoryId: String): String? =
+        repo.upsertCategoryRule(kind, pattern, categoryId)
+
+    suspend fun deleteCategoryRule(id: String) = repo.deleteCategoryRule(id)
+
+    suspend fun updateCategoryIcon(categoryId: String, icon: String?) =
+        repo.updateCategoryIcon(categoryId, icon)
+
+    suspend fun allTags(): List<String> = repo.allTags()
+
+    suspend fun setTxnTags(txnId: String, tags: List<String>) = repo.setTxnTags(txnId, tags)
+
+    fun observeTagMap() = repo.observeTxnTags()
 
     suspend fun pair(baseUrl: String, code: String): SyncCoordinator.PairOutcome {
         val outcome = sync.pair(baseUrl, code)

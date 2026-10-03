@@ -129,6 +129,73 @@ class LedgerRepository(
         return id
     }
 
+    // ------------------------------------------------------------ 用户分类规则
+
+    /** 全部用户规则（按创建序）。 */
+    fun observeCategoryRules(ledgerId: String): Flow<List<CategoryRuleEntity>> =
+        db.categoryRuleDao().observeForLedger(ledgerId)
+
+    suspend fun categoryRules(ledgerId: String): List<CategoryRuleEntity> =
+        db.categoryRuleDao().allForLedger(ledgerId)
+
+    /** 新建/更新一条规则。pattern 剥空白，空串拒绝。 */
+    suspend fun upsertCategoryRule(kind: String, pattern: String, categoryId: String): String? {
+        val p = pattern.trim()
+        if (p.isEmpty()) return null
+        val id = "rule-" + java.util.UUID.randomUUID().toString().take(8)
+        db.categoryRuleDao().upsert(
+            CategoryRuleEntity(
+                id = id,
+                ledgerId = DEFAULT_LEDGER_ID,
+                kind = kind,
+                pattern = p,
+                categoryId = categoryId,
+                createdAt = System.currentTimeMillis(),
+            ),
+        )
+        return id
+    }
+
+    suspend fun deleteCategoryRule(id: String) = db.categoryRuleDao().delete(id)
+
+    /**
+     * 改分类图标（含给老自建分类补图标）。
+     *
+     * icon 在 category 的同步白名单里（[businessValues] 有它），所以这里
+     * **必须走 LocalMerge** 打 pending 戳——直接 update(row.copy(icon=…))
+     * 会让这台设备和 NAS 的 icon 永远各改各的。
+     */
+    suspend fun updateCategoryIcon(categoryId: String, icon: String?) {
+        val row = db.categoryDao().byId(categoryId) ?: return
+        val clock = LamportClock(db.syncStateDao().get()?.lamportCounter ?: 0L)
+        var r = row.toSyncedRow()
+        r = LocalMerge.applyLocalEdit(
+            r, "icon", icon ?: "",
+            clock, SEED_ORIGIN, "local-edit:category/$categoryId/icon",
+        )
+        db.categoryDao().update(r.toCategory(row))
+        val st = db.syncStateDao().get() ?: SyncStateEntity()
+        db.syncStateDao().put(st.copy(lamportCounter = maxOf(st.lamportCounter, clock.current)))
+    }
+
+    // ------------------------------------------------------------ 标签（设备本地）
+
+    /** 重写一笔的标签。tag 里的逗号剥掉（展示用 join(", ")）。 */
+    suspend fun setTxnTags(txnId: String, tags: List<String>) {
+        db.txnTagDao().setTags(
+            txnId,
+            tags.map { it.trim().replace(",", "").replace("，", "") }
+                .filter { it.isNotEmpty() }
+                .distinct(),
+        )
+    }
+
+    /** 全部标签（去重排序），录入时的建议源。 */
+    suspend fun allTags(): List<String> = db.txnTagDao().allTags()
+
+    /** 全部标签行（账本页拼 txnId→tags 用）。 */
+    fun observeTxnTags() = db.txnTagDao().observeAll()
+
     suspend fun ensureSeeded(): String {
         val ledgerId = DEFAULT_LEDGER_ID
 

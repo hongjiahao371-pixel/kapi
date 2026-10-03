@@ -45,6 +45,28 @@ object AutoCategory {
         rawText: String?,
         direction: String,
     ): String? {
+        // 0. 用户显式规则（设置 → 分类规则）。他说了算的压过一切猜测：
+        // 自学习是隐式的、内置词表是猜的，只有这里是用户亲手立的。
+        // 交易方规则认商户名、消费内容规则认整段原文，都是 contains 语义；
+        // 长模式优先（更具体的赢）。指向的分类被删了就当没这条。
+        run {
+            val rules = db.categoryRuleDao().allForLedger(ledgerId)
+                .sortedByDescending { it.pattern.length }
+            val hit = rules.firstOrNull { r ->
+                when (r.kind) {
+                    "MERCHANT" -> merchant?.contains(r.pattern, ignoreCase = true) == true
+                    else -> rawText?.contains(r.pattern, ignoreCase = true) == true
+                }
+            }
+            if (hit != null) {
+                val row = db.categoryDao().byId(hit.categoryId)
+                if (row != null && !row.deleted) {
+                    Log.i(TAG, "用户规则：${hit.pattern} → ${hit.categoryId}")
+                    return row.id
+                }
+            }
+        }
+
         // 1. 自学习。只看**同方向**的历史——支出教不出收入那一档。
         val key = MerchantLearning.normalize(merchant)
         if (key != null) {

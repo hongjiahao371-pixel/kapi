@@ -91,5 +91,38 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(M1_2, M2_3)
+    val M3_4 = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // 用户分类规则 + 账单标签（2026-10-03 咔皮对齐）。纯新增表。
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `category_rule` (
+                    `id` TEXT NOT NULL,
+                    `ledgerId` TEXT NOT NULL,
+                    `kind` TEXT NOT NULL,
+                    `pattern` TEXT NOT NULL,
+                    `categoryId` TEXT NOT NULL,
+                    `createdAt` INTEGER NOT NULL,
+                    PRIMARY KEY(`id`)
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_category_rule_ledgerId` ON `category_rule` (`ledgerId`)",
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `txn_tag` (
+                    `txnId` TEXT NOT NULL,
+                    `tag` TEXT NOT NULL,
+                    PRIMARY KEY(`txnId`, `tag`)
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_txn_tag_tag` ON `txn_tag` (`tag`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_txn_tag_txnId` ON `txn_tag` (`txnId`)")
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(M1_2, M2_3, M3_4)
 }

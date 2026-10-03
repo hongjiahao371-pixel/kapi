@@ -80,6 +80,9 @@ fun StatsScreen(
     var weekOffset by remember { androidx.compose.runtime.mutableStateOf(0) }
     var weekRows by remember { androidx.compose.runtime.mutableStateOf<List<TxnEntity>>(emptyList()) }
     var weekLoaded by remember { androidx.compose.runtime.mutableStateOf(false) }
+    var yearOffset by remember { androidx.compose.runtime.mutableStateOf(0) }
+    var yearRows by remember { androidx.compose.runtime.mutableStateOf<List<TxnEntity>>(emptyList()) }
+    var yearLoaded by remember { androidx.compose.runtime.mutableStateOf(false) }
 
     val zone = java.time.ZoneId.systemDefault()
     val weekStart = remember(weekOffset) {
@@ -87,21 +90,51 @@ fun StatsScreen(
             .with(java.time.DayOfWeek.MONDAY)
     }
     val weekEnd = weekStart.plusDays(7)
-    LaunchedEffect(weekOffset, mode) {
-        if (mode != "week") return@LaunchedEffect
-        val from = weekStart.atStartOfDay(zone).toInstant().toEpochMilli()
-        val to = weekEnd.atStartOfDay(zone).toInstant().toEpochMilli()
-        weekRows = container.db.txnDao().inRange(from, to)
-        weekLoaded = true
+    val yearStart = remember(yearOffset) {
+        java.time.LocalDate.now(zone).plusYears(yearOffset.toLong()).withDayOfYear(1)
+    }
+    val yearEnd = yearStart.plusYears(1)
+    LaunchedEffect(weekOffset, yearOffset, mode) {
+        when (mode) {
+            "week" -> {
+                val from = weekStart.atStartOfDay(zone).toInstant().toEpochMilli()
+                val to = weekEnd.atStartOfDay(zone).toInstant().toEpochMilli()
+                weekRows = container.db.txnDao().inRange(from, to)
+                weekLoaded = true
+            }
+            "year" -> {
+                val from = yearStart.atStartOfDay(zone).toInstant().toEpochMilli()
+                val to = yearEnd.atStartOfDay(zone).toInstant().toEpochMilli()
+                yearRows = container.db.txnDao().inRange(from, to)
+                yearLoaded = true
+            }
+        }
+    }
+    val monthlyTotals = remember(yearRows) {
+        val arr = LongArray(12)
+        for (t in yearRows) {
+            if (t.deleted || t.direction != "EXPENSE" || t.toAccountId != null) continue
+            arr[java.time.Instant.ofEpochMilli(t.occurredAt).atZone(zone).monthValue - 1] += t.amountMinor
+        }
+        arr.toList()
     }
 
     // 两个维度各自算各自的构成；下游（合计/环形/条形）不关心来源。
     val monthByCategory = remember(state.rows) { expenseByCategory(state.rows) }
     val weekByCategory = remember(weekRows) { expenseByCategory(weekRows) }
-    val byCategory = if (mode == "week") weekByCategory else monthByCategory
+    val yearByCategory = remember(yearRows) { expenseByCategory(yearRows) }
+    val byCategory = when (mode) {
+        "week" -> weekByCategory
+        "year" -> yearByCategory
+        else -> monthByCategory
+    }
     val maxMinor = byCategory.maxOfOrNull { it.second } ?: 0L
     val totalExpense = byCategory.sumOf { it.second }
-    val isCurrent = if (mode == "week") weekOffset == 0 else state.month == YearMonth.now()
+    val isCurrent = when (mode) {
+        "week" -> weekOffset == 0
+        "year" -> yearOffset == 0
+        else -> state.month == YearMonth.now()
+    }
     // 周的收入/结余：现场聚合（排除转账行，口径与月汇总一致）
     val weekSummary = remember(weekRows) {
         var income = 0L
@@ -115,9 +148,33 @@ fun StatsScreen(
         }
         Triple(expense, income, income - expense)
     }
-    val totalIncome = if (mode == "week") weekSummary.second else state.summary.incomeMinor
-    val totalBalance = if (mode == "week") weekSummary.third else state.summary.balanceMinor
-    val loaded = if (mode == "week") weekLoaded else state.loaded
+    val yearSummary = remember(yearRows) {
+        var income = 0L
+        var expense = 0L
+        for (t in yearRows) {
+            if (t.deleted || t.toAccountId != null) continue
+            when (t.direction) {
+                "INCOME" -> income += t.amountMinor
+                "EXPENSE" -> expense += t.amountMinor
+            }
+        }
+        Triple(expense, income, income - expense)
+    }
+    val totalIncome = when (mode) {
+        "week" -> weekSummary.second
+        "year" -> yearSummary.second
+        else -> state.summary.incomeMinor
+    }
+    val totalBalance = when (mode) {
+        "week" -> weekSummary.third
+        "year" -> yearSummary.third
+        else -> state.summary.balanceMinor
+    }
+    val loaded = when (mode) {
+        "week" -> weekLoaded
+        "year" -> yearLoaded
+        else -> state.loaded
+    }
 
     LazyColumn(
         state = listState,
@@ -135,7 +192,7 @@ fun StatsScreen(
             // 选中的那格白底浮起；比两颗散 chip 更像"一个维度的两种取值"。
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
                 SegmentedControl(
-                    options = listOf("周" to "week", "月" to "month"),
+                    options = listOf("周" to "week", "月" to "month", "年" to "year"),
                     selected = mode,
                     onSelect = { mode = it },
                 )
@@ -146,6 +203,19 @@ fun StatsScreen(
                     isCurrent = weekOffset == 0,
                     onPrev = { weekOffset -= 1 },
                     onNext = { weekOffset += 1 },
+                )
+            } else if (mode == "year") {
+                YearHeader(
+                    year = yearStart.year,
+                    isCurrent = yearOffset == 0,
+                    onPrev = { yearOffset -= 1 },
+                    onNext = { yearOffset += 1 },
+                )
+                MonthTrendBars(
+                    totals = monthlyTotals,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp),
                 )
             } else {
                 StatsHeader(
@@ -353,6 +423,81 @@ private fun WeekHeader(
         }
         IconButton(onClick = onNext) {
             Icon(Icons.Filled.ChevronRight, contentDescription = "下一周", tint = InkSoft)
+        }
+    }
+}
+
+@Composable
+private fun YearHeader(
+    year: Int,
+    isCurrent: Boolean,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onPrev) {
+            Icon(Icons.Filled.ChevronLeft, contentDescription = "上一年", tint = InkSoft)
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                if (isCurrent) "今年支出构成" else "年支出构成",
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                "$year 年",
+                style = MaterialTheme.typography.labelSmall,
+                color = InkFaint,
+            )
+        }
+        IconButton(onClick = onNext) {
+            Icon(Icons.Filled.ChevronRight, contentDescription = "下一年", tint = InkSoft)
+        }
+    }
+}
+
+/** 年模式的月度趋势：12 根细条，高度按最大月归一。 */
+@Composable
+private fun MonthTrendBars(totals: List<Long>, modifier: Modifier = Modifier) {
+    val max = totals.maxOrNull() ?: 0L
+    Column(
+        modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Text("每月支出趋势", style = MaterialTheme.typography.labelSmall, color = InkSoft)
+        Spacer(Modifier.height(8.dp))
+        Row(
+            Modifier.fillMaxWidth().height(72.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            totals.forEachIndexed { i, v ->
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(
+                                52.dp * ((if (max > 0) v.toFloat() / max else 0f).coerceIn(0.04f, 1f)),
+                            )
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(if (v > 0) Brand else InkFaint.copy(alpha = 0.25f)),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "${i + 1}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = InkFaint,
+                    )
+                }
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 package kapi.ledger.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -79,6 +80,7 @@ private val WEEKDAY = arrayOf("周一", "周二", "周三", "周四", "周五", 
 @Composable
 fun LedgerScreen(
     vm: LedgerViewModel,
+    container: kapi.ledger.AppContainer,
     listState: LazyListState = rememberLazyListState(),
     onDelete: suspend (String) -> Unit,
     onOpenSettings: () -> Unit,
@@ -86,6 +88,20 @@ fun LedgerScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    // 标签：txnId → [tag]。设备本地（txn_tag 表），用于行展示 + 按标签筛选。
+    val tagRows by container.db.txnTagDao().observeAll().collectAsState(initial = emptyList())
+    val tagsByTxn = remember(tagRows) { tagRows.groupBy({ it.txnId }, { it.tag }) }
+    val allTags = remember(tagRows) { tagRows.map { it.tag }.distinct().sorted() }
+    var tagFilter by remember { mutableStateOf<String?>(null) }
+
+    // 本月总预算（仅当月；预算页可设）。null = 没设，摘要卡不显示预算行。
+    val budgetRows by container.db.budgetDao()
+        .observeForMonth(
+            kapi.ledger.data.LedgerRepository.DEFAULT_LEDGER_ID,
+            java.time.YearMonth.now().toString(),
+        )
+        .collectAsState(initial = emptyList())
+    val monthBudget = budgetRows.firstOrNull { it.categoryId == null }?.amountMinor
     val categories by vm.categories.collectAsStateWithLifecycle()
     val accounts by vm.accounts.collectAsStateWithLifecycle()
     val categoryNames = remember(categories) { categories.associate { it.id to it.name } }
@@ -98,7 +114,25 @@ fun LedgerScreen(
     // 没有这里就没有改的入口，也就没有自学习的数据。
     var editing by remember { mutableStateOf<TxnEntity?>(null) }
     var askDelete by remember { mutableStateOf<TxnEntity?>(null) }
-    val grouped = remember(state.rows) { groupByDay(state.rows) }
+    // 按标签筛选：选中标签时只显示打了它的账。
+    val visibleRows = remember(state.rows, tagFilter, tagsByTxn) {
+        if (tagFilter == null) state.rows
+        else state.rows.filter { tagsByTxn[it.id]?.contains(tagFilter) == true }
+    }
+    val grouped = remember(visibleRows) { groupByDay(visibleRows) }
+
+    // 月度合计跟着筛选走：筛选后的行重算汇总，用户看到的数字自洽。
+    val monthSummary = remember(visibleRows) {
+        var e = 0L; var i = 0L
+        for (r in visibleRows) {
+            if (r.toAccountId != null) continue
+            when (r.direction) {
+                "INCOME" -> i += r.amountMinor
+                "EXPENSE" -> e += r.amountMinor
+            }
+        }
+        kapi.ledger.data.MonthSummary(e, i)
+    }
 
     Scaffold(
         modifier = modifier,
@@ -133,7 +167,29 @@ fun LedgerScreen(
                 )
             }
 
-            item { SummaryCard(state, Modifier.padding(top = 4.dp)) }
+            item {
+                SummaryCard(
+                    state.copy(summary = monthSummary),
+                    monthBudget,
+                    Modifier.padding(top = 4.dp),
+                )
+            }
+            if (allTags.isNotEmpty()) {
+                item(key = "tag-filter") {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 4.dp),
+                    ) {
+                        item {
+                            TagFilterChip("全部", tagFilter == null) { tagFilter = null }
+                        }
+                        items(allTags) { t ->
+                            TagFilterChip("#" + t, tagFilter == t) { tagFilter = if (tagFilter == t) null else t }
+                        }
+                    }
+                }
+            }
 
             if (!state.loaded) {
                 item { EmptyState("正在载入…", showHint = false) }
@@ -153,6 +209,7 @@ fun LedgerScreen(
                             category = row.categoryId?.let { categoryNames[it] },
                             categoryIcon = row.categoryId?.let { categoryIcons[it] },
                             account = row.accountId?.let { accountNames[it] },
+                            tags = tagsByTxn[row.id].orEmpty(),
                             onClick = { editing = row },
                         )
                     }
@@ -167,6 +224,7 @@ fun LedgerScreen(
             txn = target,
             categories = categories,
             currentCategoryName = target.categoryId?.let { categoryNames[it] },
+            onSetIcon = { catId, emoji -> vm.updateCategoryIcon(catId, emoji) },
             onDismiss = { editing = null },
             onPick = { catId ->
                 scope.launch {
@@ -272,7 +330,11 @@ private fun MonthBar(
 }
 
 @Composable
-private fun SummaryCard(state: LedgerUiState, modifier: Modifier = Modifier) {
+private fun SummaryCard(
+    state: LedgerUiState,
+    monthBudget: Long?,
+    modifier: Modifier = Modifier,
+) {
     val negative = state.summary.balanceMinor < 0
     // 2026-10-03 咔皮化重设计（用户点名学商汤咔皮记账的整体设计）：
     // 原来是**深红/绿渐变卡白字**——和咔皮"纯白卡 + 黑色特大粗金额 + 彩色
@@ -316,6 +378,53 @@ private fun SummaryCard(state: LedgerUiState, modifier: Modifier = Modifier) {
                 // 支出红、收入绿，比字的颜色更快一层。
                 SummaryColumn("月支出", state.summary.expenseMinor, ExpenseRed, Modifier.weight(1f))
                 SummaryColumn("月收入", state.summary.incomeMinor, IncomeGreen, Modifier.weight(1f))
+            }
+
+            // ---- 本月预算行（设了预算才出现）：细进度条 + 剩余额 ----
+            // 预算页负责设置；这里只负责"看一眼还剩多少"。超支整行转红。
+            if (monthBudget != null && monthBudget > 0) {
+                val spent = state.summary.expenseMinor
+                val over = spent > monthBudget
+                val remain = monthBudget - spent
+                Spacer(Modifier.height(14.dp))
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (over) ExpenseRed.copy(alpha = 0.08f) else InkFaint.copy(alpha = 0.05f))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (over) "已超支" else "本月预算剩余",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (over) ExpenseRed else InkSoft,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            "¥ " + Money.toYuanDisplay(remain),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (over) ExpenseRed else Ink,
+                        )
+                    }
+                    Spacer(Modifier.height(5.dp))
+                    val frac = if (monthBudget > 0) (spent.toFloat() / monthBudget).coerceIn(0f, 1f) else 0f
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(InkFaint.copy(alpha = 0.18f)),
+                    ) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth(frac)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(if (over) ExpenseRed else Brand),
+                        )
+                    }
+                }
             }
         }
     }
@@ -408,11 +517,13 @@ private fun TxnEditDialog(
     txn: TxnEntity,
     categories: List<CategoryEntity>,
     currentCategoryName: String?,
+    onSetIcon: suspend (String, String?) -> Unit,
     onDismiss: () -> Unit,
     onPick: (String) -> Unit,
     onCreate: (name: String, parentId: String?) -> Unit,
     onAskDelete: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     var picked by remember(txn.id) { mutableStateOf<String?>(txn.categoryId) }
     var expanded by remember(txn.id) { mutableStateOf<String?>(null) }
     var newName by remember(txn.id) { mutableStateOf("") }
@@ -476,6 +587,55 @@ private fun TxnEditDialog(
                                     text = c.name,
                                     selected = c.id == picked,
                                     onClick = { picked = c.id },
+                                )
+                            }
+                        }
+                    }
+                }
+                // ---- 图标：自建分类（cat-u-）可挑/换 emoji；内置分类不显示 ----
+                // 内置分类的图标来自内置 emoji 表（按名字判定），改了也会被
+                // 表盖回去；自建的存 icon 字段，改完立刻生效。
+                val pickedCat = categories.firstOrNull { it.id == picked }
+                if (pickedCat != null && pickedCat.id.startsWith("cat-u-")) {
+                    Spacer(Modifier.height(14.dp))
+                    var iconEditOpen by remember(picked) { mutableStateOf(false) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "图标",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = InkSoft,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            CategoryEmoji.glyphOf(pickedCat.name, pickedCat.icon) ?: "?",
+                            fontSize = 20.sp,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                                .clickable { iconEditOpen = !iconEditOpen }
+                                .padding(horizontal = 14.dp, vertical = 4.dp),
+                        )
+                    }
+                    if (iconEditOpen) {
+                        Spacer(Modifier.height(6.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(CategoryEmoji.CUSTOM_CHOICES.size) { i ->
+                                val e = CategoryEmoji.CUSTOM_CHOICES[i]
+                                val sel = pickedCat.icon == e
+                                Text(
+                                    e,
+                                    fontSize = 18.sp,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (sel) Brand.copy(alpha = 0.2f)
+                                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                        )
+                                        .clickable {
+                                            scope.launch { onSetIcon(pickedCat.id, if (sel) null else e) }
+                                            iconEditOpen = false
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
                                 )
                             }
                         }
@@ -551,6 +711,7 @@ private fun TxnRow(
     category: String?,
     account: String?,
     categoryIcon: String? = null,
+    tags: List<String> = emptyList(),
     onClick: () -> Unit,
 ) {
     val isExpense = row.direction == "EXPENSE"
@@ -616,6 +777,7 @@ private fun TxnRow(
             val subtitle = buildList {
                 if (title != category) category?.let { add(it) }
                 add(row.note ?: account ?: "")
+                tags.forEach { add("#" + it) }
             }.filter { it.isNotBlank() }.joinToString(" · ")
             if (subtitle.isNotEmpty()) {
                 Text(
@@ -673,6 +835,21 @@ private fun EmptyState(text: String, showHint: Boolean) {
             )
         }
     }
+}
+
+
+@Composable
+private fun TagFilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Text(
+        label,
+        style = MaterialTheme.typography.labelMedium,
+        color = if (selected) androidx.compose.ui.graphics.Color.White else InkSoft,
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (selected) Brand else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+    )
 }
 
 private fun isCurrentMonth(state: LedgerUiState) = state.month == YearMonth.now()

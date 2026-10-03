@@ -202,6 +202,55 @@ interface AccountDao {
 }
 
 @Dao
+interface CategoryRuleDao {
+
+    @Query("SELECT * FROM category_rule WHERE ledgerId = :ledgerId ORDER BY createdAt ASC")
+    fun observeForLedger(ledgerId: String): Flow<List<CategoryRuleEntity>>
+
+    @Query("SELECT * FROM category_rule WHERE ledgerId = :ledgerId")
+    suspend fun allForLedger(ledgerId: String): List<CategoryRuleEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(row: CategoryRuleEntity)
+
+    @Query("DELETE FROM category_rule WHERE id = :id")
+    suspend fun delete(id: String)
+}
+
+/** 账单标签（设备本地，见 [TxnTagEntity]）。 */
+@Dao
+interface TxnTagDao {
+
+    @Query("SELECT * FROM txn_tag")
+    fun observeAll(): Flow<List<TxnTagEntity>>
+
+    @Query("SELECT DISTINCT tag FROM txn_tag ORDER BY tag")
+    suspend fun allTags(): List<String>
+
+    @Query("SELECT tag FROM txn_tag WHERE txnId = :txnId")
+    suspend fun tagsFor(txnId: String): List<String>
+
+    /** 重写一笔的全部标签：删旧插新，调用方给最终名单。 */
+    @Transaction
+    suspend fun setTags(txnId: String, tags: List<String>) {
+        deleteFor(txnId)
+        if (tags.isNotEmpty()) {
+            insertAll(tags.map { TxnTagEntity(txnId, it) })
+        }
+    }
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(rows: List<TxnTagEntity>)
+
+    @Query("DELETE FROM txn_tag WHERE txnId = :txnId")
+    suspend fun deleteFor(txnId: String)
+
+    /** 删账时同步清标签，不然标签列表里会留下幽灵 tag。 */
+    @Query("DELETE FROM txn_tag WHERE txnId = :txnId")
+    suspend fun purgeFor(txnId: String)
+}
+
+@Dao
 interface BudgetDao {
 
     @Query("SELECT * FROM budget WHERE ledgerId = :ledgerId AND month = :month")
@@ -304,10 +353,12 @@ interface AutoDraftDao {
         SyncStateEntity::class,
         AutoDraftEntity::class,
         BudgetEntity::class,
+        CategoryRuleEntity::class,
+        TxnTagEntity::class,
     ],
     // **故意保留 1**。旧 schema 文件要留着：上线后想写迁移测试就来不及了，
     // 那时候每条用户手机上都已经有数据，删掉旧版本等于把迁移的参照物一起删了。
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class KapiDatabase : RoomDatabase() {
@@ -318,6 +369,8 @@ abstract class KapiDatabase : RoomDatabase() {
     abstract fun syncStateDao(): SyncStateDao
     abstract fun autoDraftDao(): AutoDraftDao
     abstract fun budgetDao(): BudgetDao
+    abstract fun categoryRuleDao(): CategoryRuleDao
+    abstract fun txnTagDao(): TxnTagDao
 
     companion object {
         const val NAME = "kapi.db"
