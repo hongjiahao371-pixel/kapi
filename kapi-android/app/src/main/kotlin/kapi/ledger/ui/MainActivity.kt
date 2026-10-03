@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -33,6 +34,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.AccountBalanceWallet
@@ -384,25 +386,32 @@ fun KapiRoot() {
     }   // BoxWithConstraints
 }       // LiquidBackground → KapiRoot
 /**
- * 底部导航 —— **咔皮式白色悬浮 dock**（2026-10-03 第二次重做）。
+ * 底部导航 —— **咔皮式输入 dock**（2026-10-03 第三次重做，动的是结构不是皮）。
  *
- * 上一版是毛玻璃胶囊（把整个屏幕复制一份磨砂进胶囊），用户点名批评"做的
- * 又是什么东西"——对照商汤咔皮记账的底栏：它根本不是玻璃，是一张**干净的
- * 纯白悬浮卡**（大圆角、冷灰淡投影、左右留边），顶边一条小把手，内容行
- * 呼吸感足，主操作是一颗**扁平蓝圆**。本版照这个构造重做：
+ * 前两版被用户连续打回：先嫌丑，reskin 成白卡后依然"添加按钮格格不入"。
+ * 重新拆咔皮的底栏才看懂它的构造：**+ 不是独立的大按钮，是坐在输入条
+ * 右端内侧的一颗小圆钮**（和麦克风并排）——整根栏读作"一条输入 dock"，
+ * + 是输入条的部件，视觉上自然融合。tab bar + 中央 FAB 那个结构本身
+ * 就注定 + 永远突兀，reskin 救不了。
  *
- *   1. 材质：不透明白卡（深色 #1C2333），不再磨砂——磨砂要整屏副本的
- *      双倍组合成本，换来的"玻璃感"用户不认，删。
- *   2. 顶边把手：36×4dp 圆角条，贴在卡内上沿——咔皮展开面板的构造，
- *      读作"这是一块可以停靠的面板"。
- *   3. 主操作：46dp **纯色**品牌蓝圆（白 + 号），不再渐变——渐变球是
- *      "四个按钮里唯一的彩色大物"，扁平圆才和三个 tab 同一族。
+ * 本版照咔皮的构成重排：
+ *
+ *   ┌────────────────────────────────────────────┐
+ *   │                  ──────                    │ ← 顶边把手
+ *   │ ┌──────────────────────┐  ▤    ◔    ⚙   │
+ *   │ │ ✏ 记一笔…        (＋)│ 账本 统计 设置  │
+ *   │ └──────────────────────┘                │
+ *   └────────────────────────────────────────────┘
+ *
+ *   - 左：浅灰胶囊"假输入条"（点整条 → 记一笔），右端内侧 34dp 扁平
+ *     蓝圆 +（咔皮的 + 位置）。它是栏里最大的元素，蓝圆是它的部件。
+ *   - 右：三个 tab 收成轻量图标组（图标+10sp 小字），选中 = 品牌蓝，
+ *     去掉胶囊底——不再和小蓝圆抢视觉。
  *
  * ## 内容 padding 必须盖过卡高
  *
- * 玻璃时代内容**故意**从胶囊底下穿过去（反正会被磨掉）。白卡是不透明的，
- * 穿过去就是被吃掉——contentPadding 的 bottom 必须大于卡的实际高度，
- * 否则列表最后一两行永远滚不出来。
+ * 白卡不透明，内容从卡底穿过就是被吃掉——contentPadding 的 bottom 必须
+ * 大于卡的实际高度，否则列表最后一两行永远滚不出来。
  */
 @Composable
 private fun BottomBar(
@@ -441,27 +450,24 @@ private fun BottomBar(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 8.dp),
-                    // 五个子节点全部 weight(1f) 等分，分布只由槽宽决定。
+                        .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    val fabIndex = 2
-                    for ((i, tab) in tabs.withIndex()) {
-                        if (i == fabIndex) {
-                            Box(
-                                Modifier.weight(1f),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                RecordButton(onClick = onRecord)
-                            }
-                        }
-                        TabItem(
+                    // ---- 假输入条（占大头）----
+                    RecordDockField(
+                        onClick = onRecord,
+                        dark = dark,
+                        modifier = Modifier.weight(1.55f),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    // ---- 三个 tab：轻量图标组 ----
+                    for (tab in tabs) {
+                        NavIcon(
                             label = tab.second,
                             selected = current === tab.first,
-                            badge = 0,
                             icon = iconFor(tab.first, selected = current == tab.first),
                             onClick = { onSelect(tab.first) },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(0.58f),
                         )
                     }
                 }
@@ -471,45 +477,83 @@ private fun BottomBar(
 }
 
 /**
- * 「记一笔」——dock 正中的**扁平**品牌蓝圆（咔皮的 + 构造：纯色、白 + 号、
- * 极淡投影）。渐变球是上一版被点名的东西，扁平圆才和三个 tab 同一族。
+ * 咔皮式"假输入条"：浅灰胶囊 + 占位文字 + 右端内侧的小蓝圆 +。
+ * 整条可点 → 记一笔。蓝圆在这里是**输入条的部件**（咔皮把它和麦克风
+ * 并排放输入条内），不再是飘在 tab 中间的独立大按钮。
  */
 @Composable
-private fun RecordButton(
+private fun RecordDockField(
+    onClick: () -> Unit,
+    dark: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .height(48.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(if (dark) Color(0xFF242D42) else Color(0xFFF1F3F8))
+            .clickable(onClick = onClick)
+            .padding(start = 14.dp, end = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Filled.Edit,
+            contentDescription = null,
+            tint = InkFaint,
+            modifier = Modifier.size(17.dp),
+        )
+        Spacer(Modifier.width(7.dp))
+        Text(
+            "记一笔",
+            style = MaterialTheme.typography.bodyMedium,
+            color = InkFaint,
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
+        Box(
+            Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF3B79E0)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Filled.Add,
+                contentDescription = "记一笔",
+                tint = Color.White,
+                modifier = Modifier.size(19.dp),
+            )
+        }
+    }
+}
+
+/**
+ * 轻量导航图标：图标 + 10sp 小字，选中 = 品牌蓝。
+ * 刻意**没有胶囊底**——dock 里已经有输入条这个视觉主体了，
+ * tab 再带底色就会重新出现"两套东西打架"。
+ */
+@Composable
+private fun NavIcon(
+    label: String,
+    selected: Boolean,
+    icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        if (pressed) 0.90f else 1f,
-        spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
-        label = "recordScale",
-    )
-    Box(
-        modifier
-            .size(46.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            // 落影跟品牌色走：圆是从白卡上顶起来的，不是贴纸。
-            .shadow(6.dp, CircleShape, ambientColor = Color(0xFF2868D8), spotColor = Color(0xFF2868D8))
-            .clip(CircleShape)
-            // 固定配色不跟主题：主操作锚点，深浅两档同一块蓝。
-            .background(Color(0xFF3B79E0))
-            .clickable(
-                interactionSource = interaction,
-                indication = androidx.compose.material3.ripple(bounded = true, color = Color.White),
-                onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
+    val tint = if (selected) Brand else InkFaint
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .glassClickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(
-            Icons.Filled.Add,
-            contentDescription = "记一笔",
-            tint = Color.White,
-            modifier = Modifier.size(24.dp),
+        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(21.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = tint,
+            textAlign = TextAlign.Center,
         )
     }
 }
@@ -529,61 +573,5 @@ private fun iconFor(screen: Screen, selected: Boolean): ImageVector = when (scre
     is Screen.Accounts -> Icons.Filled.AccountBalanceWallet
     is Screen.Budget -> Icons.Filled.Savings
     is Screen.Rules -> Icons.Filled.Rule
-}
-
-@Composable
-private fun TabItem(
-    label: String,
-    selected: Boolean,
-    icon: ImageVector,
-    onClick: () -> Unit,
-    badge: Int = 0,
-    modifier: Modifier = Modifier,
-) {
-    val tint = if (selected) Brand else InkFaint
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            // **不要**再用 `indication = null`：上一版为了让自定义样式"干净"把涟漪
-            // 关掉了，结果整个 App 点下去毫无反馈。这里用 glassClickable 补回
-            // 涟漪 + 按压缩放两层。
-            .glassClickable(onClick = onClick)
-            .padding(vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        // 选中态除了换色，还加一个实心胶囊底。单靠颜色区分在色觉障碍用户那里
-        // 是不可靠的，而这是整个 App 里最常点的一个控件。
-        Box(
-            modifier = Modifier
-                .size(width = 42.dp, height = 26.dp)
-                .clip(RoundedCornerShape(13.dp))
-                .background(if (selected) BrandSoft else Color.Transparent),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
-            // 角标画在图标右上角，不占额外的行高。数字超过 99 就显示「99+」：
-            // 挤在 46dp 里的三位数会糊成一团，而那个数字本身用户也不会去数。
-            if (badge > 0) {
-                Text(
-                    text = if (badge > 99) "99+" else "$badge",
-                    style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
-                    color = Color.White,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .clip(CircleShape)
-                        .background(ExpenseRed)
-                        .padding(horizontal = 4.dp, vertical = 1.dp)
-                        .defaultMinSize(minWidth = 15.dp, minHeight = 15.dp),
-                )
-            }
-        }
-        Spacer(Modifier.height(3.dp))
-        Text(
-            text = label,
-            style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
-            color = tint,
-            textAlign = TextAlign.Center,
-        )
-    }
 }
 
