@@ -5,6 +5,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -248,7 +250,16 @@ fun AddTransactionScreen(
             Spacer(Modifier.width(48.dp))
         }
 
-        Column(Modifier.padding(horizontal = 20.dp)) {
+        // ---- 表单中段：可滚动 ----
+        // 数字键盘必须**完整**可见（它是最常按的东西），所以它和保存键钉在
+        // 底部，中段字段放进修不过的滚动区——内容总高超过一屏时滚上去看，
+        // 键盘永远在。上一版没有这个分区，内容一多键盘就被顶出屏幕外。
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp),
+        ) {
 
             // ---- 截图识别 ----
             //
@@ -398,9 +409,7 @@ fun AddTransactionScreen(
             }
         }
 
-        Spacer(Modifier.weight(1f))
-
-        // ---- 保存 ----
+        // ---- 保存（钉底，永远可见）----
         Button(
             onClick = {
                 val minor = amountMinor ?: return@Button
