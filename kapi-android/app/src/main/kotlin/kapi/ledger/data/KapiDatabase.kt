@@ -379,7 +379,7 @@ interface AutoDraftDao {
     ],
     // **故意保留 1**。旧 schema 文件要留着：上线后想写迁移测试就来不及了，
     // 那时候每条用户手机上都已经有数据，删掉旧版本等于把迁移的参照物一起删了。
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class KapiDatabase : RoomDatabase() {

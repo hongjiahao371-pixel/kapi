@@ -124,5 +124,22 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(M1_2, M2_3, M3_4)
+    /**
+     * 4 → 5：txn 加内容判重索引（2026-10-04）。
+     *
+     * sameMerchantAmountDay（同商户+同金额+同方向+同发生日）是读屏热路径：
+     * 详情页每 1.5 秒一次的重复判定都要跑它。此前只有 occurredAt 单列索引，
+     * Room 选不上，等于每次全表扫描——账目到几千条时每次判定都是一次
+     * 毫秒级扫描，攒在主线程协程里就是无谓的卡顿。纯加索引，不碰数据。
+     */
+    val M4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_txn_merchant_occurredAt` " +
+                    "ON `txn` (`merchant`, `occurredAt`)",
+            )
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(M1_2, M2_3, M3_4, M4_5)
 }

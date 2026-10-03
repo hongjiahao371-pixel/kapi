@@ -31,6 +31,9 @@ import androidx.room.PrimaryKey
         // 待推送扫描：只查有未推送变更的行。
         Index(value = ["hasPending"]),
         Index(value = ["ledgerId", "occurredAt"]),
+        // 内容判重（2026-10-04）：sameMerchantAmountDay 是读屏热路径——
+        // 详情页每 1.5s 一次的重复判定都跑它，没有索引就是每次全表扫描。
+        Index(value = ["merchant", "occurredAt"]),
     ],
 )
 data class TxnEntity(
