@@ -705,6 +705,11 @@ private fun CategoryPill(text: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
+/** 行内时刻。日期已经由日分组头表达，行内只补 HH:mm——自动记账存的
+ * 是账单页解析出的「支付时间」，不是识别那一刻，用户对账时两边的
+ * 时间能对上。 */
+private val ROW_TIME_FMT = DateTimeFormatter.ofPattern("HH:mm")
+
 @Composable
 private fun TxnRow(
     row: TxnEntity,
@@ -790,12 +795,24 @@ private fun TxnRow(
             }
         }
         Spacer(Modifier.width(8.dp))
-        Text(
-            text = sign + Money.toYuanDisplay(row.amountMinor),
-            style = MoneyMedium,
-            color = color,
-            maxLines = 1,
-        )
+        // 金额下面垫一行 HH:mm：放在右列而不塞进副标题，是因为副标题
+        // 已经是「类目 · 备注 · 标签」拼的，再挤进去会被省略号吃掉。
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = sign + Money.toYuanDisplay(row.amountMinor),
+                style = MoneyMedium,
+                color = color,
+                maxLines = 1,
+            )
+            Text(
+                text = ROW_TIME_FMT.format(
+                    Instant.ofEpochMilli(row.occurredAt).atZone(ZoneId.systemDefault()),
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = InkFaint,
+                maxLines = 1,
+            )
+        }
     }
 }
 
