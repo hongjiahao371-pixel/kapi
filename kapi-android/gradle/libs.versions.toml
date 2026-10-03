@@ -12,6 +12,8 @@ composeBom = "2025.11.00"
 navigation = "2.9.6"
 datastore = "1.1.7"
 security = "1.1.0-alpha07"
+# ML Kit 端侧文字识别（bundled 变体：模型打进 APK，运行时不需要 Play 服务）
+mlkitTextRecognition = "16.0.0"
 work = "2.10.5"
 junit = "4.13.2"
 coreKtx = "1.17.0"
@@ -30,6 +32,9 @@ androidx-test-rules = { module = "androidx.test:rules", version.ref = "testRules
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+# gms Task 的协程包装（ML Kit 的 process() 返回 Task）
+kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "coroutines" }
+mlkit-text-recognition-chinese = { module = "com.google.mlkit:text-recognition-chinese", version.ref = "mlkitTextRecognition" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }

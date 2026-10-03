@@ -1,5 +1,6 @@
 package kapi.ledger.ui
 
+import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -79,10 +80,12 @@ import kapi.core.llm.Direction
 import kapi.ledger.data.CategoryEntity
 import kapi.ledger.data.LedgerRepository
 import kapi.core.llm.Money
+import kapi.core.llm.LocalTextParser
 import kapi.core.llm.TransactionExtractor
 import kapi.ledger.llm.LlmClient
 import kapi.ledger.llm.LlmFailure
 import kapi.ledger.llm.LlmStore
+import kapi.ledger.llm.OcrRecognizer
 import kapi.ledger.llm.ScreenshotLoader
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
@@ -101,11 +104,15 @@ private val KEYPAD = listOf(
 
 private val TIME_FMT = DateTimeFormatter.ofPattern("M月d日 HH:mm")
 
-/** 截图识别的界面状态。三态:没开始 / 进行中 / 出结果或出错误。 */
+/** 截图识别的界面状态。没开始 / 进行中 / 出结果或出错误。 */
 private sealed interface RecognizeState {
     data object Idle : RecognizeState
-    data object Busy : RecognizeState
-    data class Done(val draft: kapi.core.llm.TransactionDraft) : RecognizeState
+    data class Busy(val message: String) : RecognizeState
+    data class Done(
+        val draft: kapi.core.llm.TransactionDraft,
+        /** 端侧（离线 OCR）还是云端大模型，横幅要说清楚。 */
+        val onDevice: Boolean,
+    ) : RecognizeState
     data class Fail(val detail: String) : RecognizeState
 }
 
@@ -151,61 +158,99 @@ fun AddTransactionScreen(
     // ---- 截图识别 ----
     val llmConfig = remember(llmStore) { llmStore?.load() }
     val llmReady = llmConfig?.isConfigured == true && llmClient != null
+    /** 把识别出的草稿回填表单。两条识别路径共用：金额用「元」字符串回填，
+     * 精度到分——不能拿 Long 除 100 再拼，那样 23.50 会变成 23.5 看着像小数点错了。 */
+    fun applyDraftToForm(best: kapi.core.llm.TransactionDraft) {
+        amount = Money.toYuanDisplay(best.amountMinor)
+        isExpense = best.direction != Direction.INCOME
+        merchant = best.merchant ?: merchant
+        note = best.note ?: note
+        best.category?.let { name ->
+            // 按名字匹配本地分类。匹配不上就留空让用户自己选——
+            // 硬塞一个错的分类比空着更糟，它会悄悄进统计页。
+            categories.firstOrNull { it.name == name && it.kind == if (isExpense) "EXPENSE" else "INCOME" }
+                ?.let { categoryId = it.id }
+        }
+        if (best.occurredAt > 0) {
+            occurredAt = Instant.ofEpochMilli(best.occurredAt)
+                .atZone(ZoneId.systemDefault()).toLocalDateTime()
+        }
+    }
+
+    /**
+     * 识别链（2026-10-04 端侧优先）：
+     *  1. **端侧 OCR**（ML Kit 中文模型，离线、零流量）→ 全文交给
+     *     [LocalTextParser]——它本来就是在账单全文上长大的，字段同源；
+     *  2. 端侧读不出可用金额，**且**配了云端大模型 → 自动转云端兜底；
+     *  3. 都不行 → 明说，让用户手输。
+     * 用户"识别不一定要云端"的直觉是对的：账单截图大字号高对比，
+     * 端侧 OCR+本地解析的命中率足够高，云端只留给难啃的截图。
+     */
+    suspend fun recognizeImage(uri: Uri): RecognizeState {
+        // ---- 端侧 ----
+        try {
+            val ocr = OcrRecognizer.recognize(context, uri)
+            val parsed = LocalTextParser.parse(ocr.text)
+            val best = parsed?.best
+            if (best != null && best.isUsable) {
+                applyDraftToForm(best)
+                return RecognizeState.Done(best, onDevice = true)
+            }
+            Log.i("AddTxn", "端侧 OCR 读到 ${ocr.text.length} 字但没解析出可用金额，转云端")
+        } catch (e: Exception) {
+            Log.w("AddTxn", "端侧识别失败：${e.javaClass.name}: ${e.message}")
+        }
+
+        // ---- 云端兜底 ----
+        val config = llmConfig
+        val client = llmClient
+        if (config?.isConfigured != true || client == null) {
+            return RecognizeState.Fail(
+                "端侧没能读出金额。配置云端大模型（设置 → 大模型识别）可以处理更复杂的截图"
+            )
+        }
+        recognize = RecognizeState.Busy("端侧没读出来，云端大模型看图中…")
+        return try {
+            val prepared = ScreenshotLoader.load(context, uri)
+            val raw = client.recognizeScreenshot(
+                config = config,
+                imageBase64 = prepared.base64,
+                mimeType = prepared.mimeType,
+                categoryHints = categories.map { it.name },
+            )
+            val result = TransactionExtractor.extract(raw)
+            val best = result.best
+            if (best == null || !best.isUsable) {
+                RecognizeState.Fail(
+                    "云端也没能从这张图里读出金额。" +
+                        (result.anomalies.firstOrNull()?.let { "（$it）" } ?: "") +
+                        "可以直接手输。"
+                )
+            } else {
+                applyDraftToForm(best)
+                RecognizeState.Done(best, onDevice = false)
+            }
+        } catch (e: ScreenshotLoader.LoadFailed) {
+            // 必须单列。LoadFailed 带着写好的中文提示，掉进下面的通用分支
+            // 就只剩一个类名——用户看到"识别失败:LoadFailed"，等于什么都没说。
+            // 这和 SyncFailure 当初"界面上永远只有连接失败"是同一个坑。
+            Log.e("AddTxn", "图片读取失败: ${e.message}", e)
+            RecognizeState.Fail(e.message ?: "这张图读不出来，换一张试试")
+        } catch (e: LlmFailure) {
+            Log.e("AddTxn", "截图识别失败: ${e.javaClass.name}", e)
+            RecognizeState.Fail(e.detail)
+        }
+    }
+
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        val config = llmConfig ?: return@rememberLauncherForActivityResult
-        val client = llmClient ?: return@rememberLauncherForActivityResult
-        recognize = RecognizeState.Busy
+        recognize = RecognizeState.Busy("端侧识别中…")
         scope.launch {
-            recognize = try {
-                val prepared = ScreenshotLoader.load(context, uri)
-                val raw = client.recognizeScreenshot(
-                    config = config,
-                    imageBase64 = prepared.base64,
-                    mimeType = prepared.mimeType,
-                    categoryHints = categories.map { it.name },
-                )
-                val result = TransactionExtractor.extract(raw)
-                val best = result.best
-                if (best == null || !best.isUsable) {
-                    RecognizeState.Fail(
-                        "没能从这张图里读出金额。" +
-                            (result.anomalies.firstOrNull()?.let { "（$it）" } ?: "") +
-                            "可以直接手输。"
-                    )
-                } else {
-                    // 先把结果填进表单。金额用「元」字符串回填，精度到分，
-                    // 不能拿 Long 除 100 再拼——那样 23.50 会变成 23.5 看着像小数点错了。
-                    amount = Money.toYuanDisplay(best.amountMinor)
-                    isExpense = best.direction != Direction.INCOME
-                    merchant = best.merchant ?: merchant
-                    note = best.note ?: note
-                    best.category?.let { name ->
-                        // 按名字匹配本地分类。匹配不上就留空让用户自己选——
-                        // 硬塞一个错的分类比空着更糟，它会悄悄进统计页。
-                        categories.firstOrNull { it.name == name && it.kind == if (isExpense) "EXPENSE" else "INCOME" }
-                            ?.let { categoryId = it.id }
-                    }
-                    if (best.occurredAt > 0) {
-                        occurredAt = Instant.ofEpochMilli(best.occurredAt)
-                            .atZone(ZoneId.systemDefault()).toLocalDateTime()
-                    }
-                    RecognizeState.Done(best)
-                }
-            } catch (e: ScreenshotLoader.LoadFailed) {
-                // 必须单列。LoadFailed 带着写好的中文提示，掉进下面的通用分支
-                // 就只剩一个类名——用户看到"识别失败:LoadFailed"，等于什么都没说。
-                // 这和 SyncFailure 当初"界面上永远只有连接失败"是同一个坑。
-                Log.e("AddTxn", "图片读取失败: ${e.message}", e)
-                RecognizeState.Fail(e.message ?: "这张图读不出来，换一张试试")
-            } catch (e: LlmFailure) {
+            recognize = runCatching { recognizeImage(uri) }.getOrElse { e ->
                 Log.e("AddTxn", "截图识别失败: ${e.javaClass.name}", e)
-                RecognizeState.Fail(e.detail)
-            } catch (e: Exception) {
-                Log.e("AddTxn", "截图识别失败: ${e.javaClass.name}", e)
-                RecognizeState.Fail("识别失败：${e.javaClass.simpleName}")
+                RecognizeState.Fail(e.message ?: "识别失败，可以直接手输")
             }
         }
     }
@@ -844,7 +889,7 @@ private fun RecognizeBar(
     onConfigure: () -> Unit,
 ) {
     when (state) {
-        is RecognizeState.Busy -> Banner(Brand, "正在看这张图…")
+        is RecognizeState.Busy -> Banner(Brand, state.message)
 
         is RecognizeState.Fail -> Banner(ExpenseRed, state.detail)
 
@@ -854,7 +899,7 @@ private fun RecognizeBar(
             Banner(
                 if (low) ExpenseRed else Brand,
                 buildString {
-                    append("识别出来了")
+                    append(if (state.onDevice) "端侧识别出来了" else "云端识别出来了")
                     if (d.merchant != null) append(" · ${d.merchant}")
                     // 置信度低必须说出来。悄悄把一笔没把握的账填进表单，
                     // 用户不看就直接保存，错的账就进账本了。

@@ -414,4 +414,32 @@ class LocalTextParserTest {
         assertEquals("中国电信官方旗舰店", expanded.merchant)
         assertEquals(Direction.EXPENSE, expanded.direction)
     }
+
+    @Test
+    fun `mlkit style ocr text of a wechat bill parses into a usable draft`() {
+        // 端侧截图识别链（2026-10-04）的后半段：ML Kit 中文 OCR 输出的全文
+        // （按版面块序、每块一行）直接交给 LocalTextParser，字段应与读屏
+        // 同源解析成功——乳冠 -24.00 那张真机账单的版面。
+        val ocrText = """
+            本服务由财付通提供
+            账单服务
+            当前状态 支付成功
+            支付时间 2026年10月3日 11:22:50
+            商品 云南乳冠-【欧亚】谷雨苑店
+            商户全称 云南乳冠乳业有限公司
+            收单机构 随行付支付有限公司
+            支付方式 招商银行信用卡(9590)
+            交易单号 4200003153202610032689963328
+            -24.00
+            乳冠
+            RUIQUAN
+        """.trimIndent()
+        val r = LocalTextParser.parse(ocrText, FIXED_NOW)
+        assertNotNull(r)
+        val best = r!!.best
+        assertNotNull("OCR 全文应解析出可用草稿", best)
+        assertEquals(2400L, best!!.amountMinor)
+        assertEquals(Direction.EXPENSE, best.direction)
+        assertTrue(best.merchant?.contains("乳冠") == true)
+    }
 }

@@ -91,6 +91,9 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.play.services)
+    // 端侧中文 OCR（bundled 变体，模型在 APK 里，离线可用）
+    implementation(libs.mlkit.text.recognition.chinese)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
 
