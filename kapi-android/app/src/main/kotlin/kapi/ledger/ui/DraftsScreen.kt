@@ -79,6 +79,7 @@ class DraftsViewModel(
     private val repository: LedgerRepository,
     private val editor: LocalEditWriter,
     private val deviceId: () -> String,
+    private val autoBookStore: AutoBookStore? = null,
 ) : ViewModel() {
 
     val state: StateFlow<List<AutoDraftEntity>> = db.autoDraftDao().observeAll()
@@ -98,7 +99,7 @@ class DraftsViewModel(
         viewModelScope.launch {
             _busy.value = true
             runCatching {
-                editor.createTransaction(
+                val txn = editor.createTransaction(
                     amountMinor = draft.amountMinor,
                     direction = draft.direction,
                     // 兜底是 **A1（现金）**，不是 ledgerId。这两个常量都是
@@ -113,6 +114,9 @@ class DraftsViewModel(
                     source = LocalEditWriter.SOURCE_LOCAL_FALLBACK,
                     confidence = draft.confidence,
                 )
+                // 草稿转正后把单号戳/重复卡会话从草稿 id 改挂到账目 id——
+                // 不迁的话草稿一删、90 天单号判重就死了，隔天重开同一详情页重记。
+                autoBookStore?.retagDraftToTxn(draft.id, txn.id)
                 db.autoDraftDao().delete(draft.id)
             }
             _busy.value = false
@@ -153,7 +157,7 @@ class DraftsViewModel(
                 rawText = draft.rawText,
                 direction = draft.direction,
             )
-            editor.createTransaction(
+            val txn = editor.createTransaction(
                 amountMinor = draft.amountMinor,
                 direction = draft.direction,
                 accountId = draft.accountId ?: FALLBACK_ACCOUNT_ID,
@@ -166,6 +170,8 @@ class DraftsViewModel(
                 source = LocalEditWriter.SOURCE_LOCAL_FALLBACK,
                 confidence = draft.confidence,
             )
+            // 同 confirm()：单号戳/会话锚从草稿 id 改挂到账目 id。
+            autoBookStore?.retagDraftToTxn(draft.id, txn.id)
             db.autoDraftDao().delete(draft.id)
         }
     }
@@ -181,10 +187,11 @@ class DraftsViewModelFactory(
     private val repository: LedgerRepository,
     private val editor: LocalEditWriter,
     private val deviceId: () -> String,
+    private val autoBookStore: AutoBookStore? = null,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        DraftsViewModel(db, repository, editor, deviceId) as T
+        DraftsViewModel(db, repository, editor, deviceId, autoBookStore) as T
 }
 
 // ---------------------------------------------------------------------------
@@ -206,7 +213,8 @@ fun DraftsScreen(
     val factory = remember(container) {
         DraftsViewModelFactory(
             container.db, container.repository, container.editor,
-        ) { container.tokenStore.deviceId }
+            { container.tokenStore.deviceId }, container.autoBookStore,
+        )
     }
     val vm: DraftsViewModel = viewModel(factory = factory)
     val drafts by vm.state.collectAsState()
