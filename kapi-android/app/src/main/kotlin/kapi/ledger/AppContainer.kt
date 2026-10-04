@@ -57,6 +57,19 @@ class AppContainer(context: Context) {
 
     val autoBookStore = AutoBookStore(context)
 
+    init {
+        // 泄漏草稿清理（2026-10-04）：正常路径（确认/自动入账/✕ 放弃）都会
+        // 删草稿，活过一天的只剩异常残留。留着它们有两个害处：待确认页堆
+        // 垃圾，以及去重的存活判定被它们骗过——用户删了账，泄漏草稿还替
+        // 那笔账喊"已记录"。后台线程跑，失败不影响启动。
+        Thread {
+            runCatching {
+                val cutoff = System.currentTimeMillis() - 24 * 60 * 60_000L
+                kotlinx.coroutines.runBlocking { db.autoDraftDao().deleteOlder(cutoff) }
+            }
+        }.start()
+    }
+
     val autoCapture = AutoCapturePipeline(
         db = db,
         repository = repository,

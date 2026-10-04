@@ -3,6 +3,7 @@ package kapi.ledger.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import kapi.ledger.auto.AutoBookStore
 import kapi.ledger.data.AccountEntity
 import kapi.ledger.data.CategoryEntity
 import kapi.ledger.data.LedgerRepository
@@ -39,6 +40,7 @@ data class LedgerUiState(
 class LedgerViewModel(
     private val repo: LedgerRepository,
     private val sync: SyncCoordinator,
+    private val autoBookStore: AutoBookStore? = null,
 ) : ViewModel() {
 
     private val month = MutableStateFlow(YearMonth.now())
@@ -123,6 +125,10 @@ class LedgerViewModel(
 
     suspend fun deleteTransaction(id: String) {
         repo.editor.softDelete(id, sync.deviceId)
+        // 这笔账如果是无障碍自动记的，去重戳还替它占着位——不清掉的话，
+        // 同一详情页再进去会弹「已记录」，用户明明已经把账删了
+        // （2026-10-04 OPPO 真机反馈）。
+        autoBookStore?.forgetTxn(id)
     }
 
     /**
@@ -208,12 +214,13 @@ class LedgerViewModel(
 class LedgerViewModelFactory(
     private val repo: LedgerRepository,
     private val sync: SyncCoordinator,
+    private val autoBookStore: AutoBookStore? = null,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         require(modelClass.isAssignableFrom(LedgerViewModel::class.java)) {
             "不认识这个 ViewModel: ${modelClass.name}"
         }
-        return LedgerViewModel(repo, sync) as T
+        return LedgerViewModel(repo, sync, autoBookStore) as T
     }
 }

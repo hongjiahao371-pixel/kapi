@@ -160,9 +160,16 @@ class AutoCapturePipeline(
             // 戳记的可能是账目 id（入账路径）或草稿 id（草稿路径，确认后才
             // 变成账目），两边都要查——只查一边会让另一条路径永远复活。
             val seen = autoStore.seenTxnId(fingerprint)
+            // 草稿只在新鲜（30 分钟内）时才算"记录还活着"。草稿是采集时
+            // 创建的，确认/自动入账/用户 ✕ 掉都会删它；**删漏的**（卡片被
+            // 系统弹窗盖住、进程被杀这些时刻）会永远留在表里——不设保鲜期
+            // 的话，用户删了账它还在替那笔账喊"已记录"（2026-10-04 OPPO
+            // 真机：早餐 2.00 草稿泄漏，删账后详情页永远弹已记录）。
             val stillThere = seen?.txnId?.let { id ->
                 db.txnDao().byId(id)?.let { !it.deleted } == true ||
-                    db.autoDraftDao().byId(id) != null
+                    db.autoDraftDao().byId(id)?.let {
+                        now - it.createdAt < DRAFT_ALIVE_MS
+                    } == true
             } == true
             if (stillThere) {
                 return Outcome.Ignored(
@@ -553,6 +560,10 @@ class AutoCapturePipeline(
     }
 
     companion object {
+
+        /** 草稿算"还活着"的窗口。正常路径（确认/自动入账/✕ 放弃）都会删草稿，
+         * 活过这个窗口的只剩异常泄漏，不再当作"记录存在"的证据。 */
+        private const val DRAFT_ALIVE_MS = 30 * 60_000L
         private const val TAG = "AutoCapture"
         private const val DEFAULT_ACCOUNT_ID = "A1"
         private const val MAX_RAW = 2000

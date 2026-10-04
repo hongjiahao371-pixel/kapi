@@ -73,6 +73,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kapi.ledger.auto.AutoBookStore
 import kapi.ledger.container
 import kotlinx.coroutines.launch
 import androidx.compose.animation.AnimatedContent
@@ -160,7 +161,7 @@ private fun SyncLazyScroll(src: LazyListState, dst: LazyListState) {
 fun KapiRoot() {
     val container = LocalContext.current.container
     val factory = remember(container) {
-        LedgerViewModelFactory(container.repository, container.syncCoordinator)
+        LedgerViewModelFactory(container.repository, container.syncCoordinator, container.autoBookStore)
     }
     val vm: LedgerViewModel = viewModel(factory = factory)
     val scope = rememberCoroutineScope()

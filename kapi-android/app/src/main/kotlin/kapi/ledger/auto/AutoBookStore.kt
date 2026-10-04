@@ -255,6 +255,29 @@ class AutoBookStore(context: Context) {
         synchronized(lock) { stamps[fingerprint] ?: 0L }
 
     /**
+     * 用户删掉一笔账后，把它留下的去重痕迹一并抹掉：
+     * 交易号戳里凡是记着这个 txnId 的条目全部清除。不清的话，
+     * 同一详情页再进去会弹「已记录」，用户明明已经把账删了
+     * （2026-10-04 OPPO 真机反馈）。
+     *
+     * 文本指纹戳（3 分钟窗）不含 txnId，等它自己过期即可。
+     */
+    fun forgetTxn(txnId: String) {
+        synchronized(lock) {
+            val it = idStamps.entries.iterator()
+            var removed = false
+            while (it.hasNext()) {
+                if (it.next().value.substringAfter(':', "") == txnId) {
+                    it.remove()
+                    removed = true
+                }
+            }
+            if (removed) persistLocked()
+        }
+        synchronized(dupSessionIds) { dupSessionIds.remove(txnId) }
+    }
+
+    /**
      * 清掉已经不可能再造成重复的指纹。
      *
      * SharedPreferences 的 StringSet 没有写入顺序保证也没有条数上限，指纹是 16 位

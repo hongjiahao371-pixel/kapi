@@ -316,6 +316,11 @@ interface AutoDraftDao {
     @Query("SELECT * FROM auto_draft WHERE id = :id LIMIT 1")
     suspend fun byId(id: String): AutoDraftEntity?
 
+    /** 清理泄漏草稿：正常路径都会删，活过一天的是异常残留（卡片被盖住、
+     * 进程被杀的时刻），留着会一直替那笔账喊"已记录"。 */
+    @Query("DELETE FROM auto_draft WHERE createdAt < :cutoff")
+    suspend fun deleteOlder(cutoff: Long)
+
     @Query("SELECT * FROM auto_draft ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<AutoDraftEntity>>
 

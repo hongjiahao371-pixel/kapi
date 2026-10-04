@@ -142,7 +142,13 @@ class LedgerImportExport(
      * 读成 String 的那一步就已经把中文毁了，后面谁也救不回来。
      */
     suspend fun importBankBill(bytes: ByteArray, deviceId: String): ImportResult {
-        val text = BankBillParser.decode(bytes)
+        // 微信官方导出的明细常是一个 zip 包。检测 PK 头并自动解出第一个
+        // csv——直接把 zip 喂给解析器会报"没找到账单表头"，用户对着一堆
+        // 二进制乱码猜不出原因（2026-10-04 OPPO 真机反馈）。
+        val billBytes = unzipCsv(bytes) ?: return ImportResult.Failed(
+            "这是 zip 压缩包，但里面没有 csv 账单文件。请解压后选择里面的 csv 导入"
+        )
+        val text = BankBillParser.decode(billBytes)
         val existing = existingFingerprints()
         val parsed = when (val r = BankBillParser.parse(text, existing)) {
             is BankBillParser.Result.Bad -> return ImportResult.Failed(r.why)
@@ -165,6 +171,21 @@ class LedgerImportExport(
      * 和按名字查 id 的那两张表是**方向相反**的两张，混用会让去重静默失效——
      * 表现是"导入成功"但账目翻倍，不报任何错。
      */
+    /** zip（PK 头）就解出第一个 csv 条目；不是 zip 原样返回。 */
+    private fun unzipCsv(bytes: ByteArray): ByteArray? {
+        if (bytes.size < 4 || bytes[0] != 'P'.code.toByte() || bytes[1] != 'K'.code.toByte()) return bytes
+        java.util.zip.ZipInputStream(bytes.inputStream()).use { z ->
+            var e = z.nextEntry
+            while (e != null) {
+                if (!e.isDirectory && e.name.endsWith(".csv", ignoreCase = true)) {
+                    return z.readBytes()
+                }
+                e = z.nextEntry
+            }
+        }
+        return null
+    }
+
     private suspend fun existingFingerprints(): Set<String> {
         val cats = db.categoryDao().allForPush().associate { it.id to it.name }
         val accts = db.accountDao().allForPush().associate { it.id to it.name }
