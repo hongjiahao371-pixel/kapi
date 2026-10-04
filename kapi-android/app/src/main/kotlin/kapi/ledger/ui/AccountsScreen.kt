@@ -128,13 +128,24 @@ class AccountsViewModel(
     }
 
     /**
-     * 归档（软删）。**种子行不允许归档**：A1…A10 是自动记账和种子的骨架，
-     * 归档「支付宝」会让所有支付宝消费落空。子钱包归档是明确支持的——
-     * 管线会尊重 deleted（见类 KDoc）。
+     * 归档（软删）。
+     *
+     * 核心四账户（现金/银行卡/支付宝/微信）**不允许归档**：它们是自动记账
+     * 的骨架——管线按来源 App 把消费落到这四行上，归档任何一行都会让一类
+     * 消费落空。
+     *
+     * 子钱包（余额宝/零钱通/零钱/存钱罐/账户余额/花呗，A5…A10）**明确支持
+     * 归档**：管线按 [kapi.core.auto.SubWallet] 的读屏词找到账户行后会尊重
+     * deleted（见类 KDoc）——归档「零钱通」只意味着微信里零钱通↔零钱的
+     * 转入转出不再自动记，其它一切照旧。这正是 2026-10-04 用户反馈
+     * "账户太多还不能删"的解法：用不到的子钱包随时删，需要时 NAS/App
+     * 重新安装或手动重建同名账户即可恢复。
      */
     fun archive(id: String, onDone: (String?) -> Unit) {
         viewModelScope.launch {
-            if (id in SEED_ACCOUNT_IDS) return@launch onDone("内置账户不能删除")
+            if (id in CORE_ACCOUNT_IDS) {
+                return@launch onDone("现金/银行卡/支付宝/微信是自动记账的骨架，不能删除")
+            }
             val row = db.accountDao().byId(id) ?: return@launch onDone("账户不存在")
             db.accountDao().update(row.copy(deleted = true))
             onDone(null)
@@ -167,8 +178,12 @@ class AccountsViewModel(
     }
 
     private companion object {
-        /** 与 LedgerRepository.DEFAULT_ACCOUNTS 的前缀一致；UI 层不该硬编码，这里只是展示守卫。 */
-        val SEED_ACCOUNT_IDS = (1..10).map { "A$it" }.toSet()
+        /**
+         * 不可删除的核心账户：自动记账按来源 App 固定落到这四行
+         * （微信消费→微信、扫码/转账→银行卡…），删任何一行都会让一类
+         * 支付落空。子钱包 A5…A10 不在此列——归档是明确支持的。
+         */
+        val CORE_ACCOUNT_IDS = setOf("A1", "A2", "A3", "A4")
     }
 }
 
@@ -237,6 +252,7 @@ fun AccountsScreen(
                     name = a.name,
                     kindLabel = KIND_LABELS[a.kind] ?: a.kind,
                     balance = Money.toYuanDisplay(a.balanceMinor),
+                    deletable = a.id !in listOf("A1", "A2", "A3", "A4"),
                     onRename = { renaming = a },
                     onArchive = { archiving = a },
                 )
@@ -285,7 +301,14 @@ fun AccountsScreen(
         AlertDialog(
             onDismissRequest = { archiving = null },
             title = { Text("删除「${account.name}」？") },
-            text = { Text("历史账目保留，只是这个账户不再出现在选择列表里。") },
+            text = {
+                Text(
+                    if (account.id in listOf("A5", "A6", "A7", "A8", "A9", "A10"))
+                        "历史账目保留，账户从选择列表消失。注意：无障碍自动记账里「${account.name}」相关的转入转出也会停止自动记录。"
+                    else
+                        "历史账目保留，只是这个账户不再出现在选择列表里。"
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     vm.archive(account.id) { err ->
@@ -341,6 +364,7 @@ private fun AccountRow(
     name: String,
     kindLabel: String,
     balance: String,
+    deletable: Boolean,
     onRename: () -> Unit,
     onArchive: () -> Unit,
 ) {
@@ -372,7 +396,11 @@ private fun AccountRow(
             Text("$kindLabel · 余额 $balance", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
         }
         TextButton(onClick = onRename) { Text("改名") }
-        TextButton(onClick = onArchive) { Text("删除", color = MaterialTheme.colorScheme.error) }
+        // 核心四账户（现金/银行卡/支付宝/微信）是自动记账的骨架，不给删除按钮
+        // ——逻辑层虽然也会拒绝，但按钮点了才报错比不出现更让人烦。
+        if (deletable) {
+            TextButton(onClick = onArchive) { Text("删除", color = MaterialTheme.colorScheme.error) }
+        }
     }
 }
 
