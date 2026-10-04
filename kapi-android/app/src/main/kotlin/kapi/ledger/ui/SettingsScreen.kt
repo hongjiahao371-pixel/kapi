@@ -463,7 +463,7 @@ fun SyncSettingsScreen(
             // 往前挪一位，滚到底时它已经在屏幕中段，怎么滚都点得到。
             if (transfer != null) {
                 Spacer(Modifier.height(20.dp))
-                TransferSection(transfer = transfer, deviceId = deviceId)
+                TransferSection(transfer = transfer, deviceId = deviceId, vm = vm)
             }
 
             // ---- 自动记账 ----
@@ -627,6 +627,7 @@ fun formatSyncStamp(millis: Long): String =
 private fun TransferSection(
     transfer: LedgerImportExport,
     deviceId: String,
+    vm: LedgerViewModel,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -779,6 +780,20 @@ private fun TransferSection(
         }
     }
 
+    // ---- 清空全部账单（危险区，双重确认 + 输入"删除"才能执行）----
+    var showPurgeConfirm by remember { mutableStateOf(false) }
+    var purgeInput by remember { mutableStateOf("") }
+    var purging by remember { mutableStateOf(false) }
+
+    fun purgeAll() {
+        purging = true
+        scope.launch {
+            val n = vm.clearAllBills()
+            purging = false
+            say("已清空 $n 笔账单（历史账目保留为已删除，可同步到 NAS）", isError = false)
+        }
+    }
+
     fun startExport(json: Boolean) {
         scope.launch {
             busy = true
@@ -862,6 +877,60 @@ private fun TransferSection(
             color = InkFaint,
         )
 
+
+        Box(Modifier.fillMaxWidth().height(1.dp).background(InkFaint.copy(alpha = 0.12f)))
+        Spacer(Modifier.height(14.dp))
+
+        // ---- 危险区：清空全部账单（2026-10-04 新增）----
+        Text("危险区", style = MaterialTheme.typography.labelMedium, color = ExpenseRed)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "清空全部账单：所有账单标记为已删除（合计与统计立即归零），账户/分类/设置保留。" +
+                "删除会同步到 NAS。此操作不可撤销。",
+            style = MaterialTheme.typography.bodySmall,
+            color = InkSoft,
+        )
+        Spacer(Modifier.height(8.dp))
+        TextButton(
+            onClick = { showPurgeConfirm = true },
+            enabled = !busy && !purging,
+        ) { Text("清空全部账单", color = ExpenseRed) }
+
+        if (showPurgeConfirm) {
+            AlertDialog(
+                onDismissRequest = { showPurgeConfirm = false; purgeInput = "" },
+                title = { Text("清空全部账单？", color = ExpenseRed) },
+                text = {
+                    Column {
+                        Text(
+                            "将把所有账单标记为已删除（合计与统计立即归零），账户/分类/设置保留。" +
+                                "删除会同步到 NAS。此操作不可撤销。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = InkSoft,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = purgeInput,
+                            onValueChange = { purgeInput = it },
+                            placeholder = { Text("输入「删除」以确认", color = InkFaint) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = { showPurgeConfirm = false; purgeAll() },
+                        enabled = purgeInput == "删除" && !purging,
+                    ) { Text("确认清空", color = ExpenseRed) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showPurgeConfirm = false; purgeInput = "" }) {
+                        Text("取消", color = InkSoft)
+                    }
+                },
+            )
+        }
         // 反馈紧跟在按钮下面。放在卡片最末尾而不是按钮正中间，
         // 是因为出错时（没账可导、格式不对）那句话往往比按钮还长，
         // 挤在按钮中间会把两个等宽按钮挤变形。

@@ -123,6 +123,21 @@ class LedgerViewModel(
         return txn.id
     }
 
+    /** 清空全部账单（软删+同步），并清自动记账草稿与去重戳。返回删掉的笔数。 */
+    suspend fun clearAllBills(): Int {
+        var n = 0
+        // softDelete 逐笔走，保证 pending 标记与 NAS 同步一致
+        val ids = repo.aliveTxnIds()
+        for (id in ids) {
+            repo.editor.softDelete(id, sync.deviceId)
+            autoBookStore?.forgetTxn(id)
+            n++
+        }
+        repo.clearAutoDrafts()
+        autoBookStore?.purgeAllStamps()
+        return n
+    }
+
     suspend fun deleteTransaction(id: String) {
         repo.editor.softDelete(id, sync.deviceId)
         // 这笔账如果是无障碍自动记的，去重戳还替它占着位——不清掉的话，

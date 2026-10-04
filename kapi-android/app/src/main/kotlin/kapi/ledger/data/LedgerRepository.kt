@@ -218,6 +218,24 @@ class LedgerRepository(
     /** 全部标签行（账本页拼 txnId→tags 用）。 */
     fun observeTxnTags() = db.txnTagDao().observeAll()
 
+    /**
+     * 清空全部账单（2026-10-04 新增）：软删所有存活账单（带同步标记，
+     * 删除会照常同步到 NAS/其他设备），并清空自动记账草稿。
+     * 返回删掉的笔数。账户/分类/预算/设置不动。
+     */
+    /** 存活账单 id 列表（清空全部用）。 */
+    suspend fun aliveTxnIds(): List<String> = db.txnDao().aliveIds()
+
+    /** 清空自动记账草稿（清空账单时一并清）。 */
+    suspend fun clearAutoDrafts() = db.autoDraftDao().deleteOlder(0)
+
+    suspend fun clearAllBills(deviceId: String): Int {
+        val ids = db.txnDao().aliveIds()
+        for (id in ids) editor.softDelete(id, deviceId)
+        db.autoDraftDao().deleteOlder(0)  // 清空时草稿一并清（0=全部）
+        return ids.size
+    }
+
     suspend fun ensureSeeded(): String {
         val ledgerId = DEFAULT_LEDGER_ID
 

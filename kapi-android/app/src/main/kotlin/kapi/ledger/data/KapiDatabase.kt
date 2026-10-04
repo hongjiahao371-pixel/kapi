@@ -38,6 +38,9 @@ data class DayAutoSummary(val n: Int, val total: Long)
 
 @Dao
 interface TxnDao {
+    /** 清空全部账单用：只取存活的 id，逐行走 softDelete 保持同步记账一致。 */
+    @Query("SELECT id FROM txn WHERE deleted = 0")
+    suspend fun aliveIds(): List<String>
 
     @Query("SELECT * FROM txn WHERE deleted = 0 AND occurredAt >= :from AND occurredAt < :to ORDER BY occurredAt DESC")
     fun observeRange(from: Long, to: Long): Flow<List<TxnEntity>>

@@ -262,6 +262,17 @@ class AutoBookStore(context: Context) {
      *
      * 文本指纹戳（3 分钟窗）不含 txnId，等它自己过期即可。
      */
+    /** 清空全部账单时调用：去重戳全部清空，之后重新导入/采集不受旧戳阻挡。 */
+    fun purgeAllStamps() {
+        synchronized(lock) {
+            idStamps.clear()
+            stamps.clear()
+            persistLocked()
+        }
+        synchronized(dupSessionIds) { dupSessionIds.clear() }
+        dupSessionAt = 0
+    }
+
     fun forgetTxn(txnId: String) {
         synchronized(lock) {
             val it = idStamps.entries.iterator()
