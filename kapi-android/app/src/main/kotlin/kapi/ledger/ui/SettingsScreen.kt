@@ -1038,7 +1038,9 @@ private fun AutoBookSection(
         Spacer(Modifier.height(12.dp))
         Text(
             "无障碍只读屏幕上的文字，不会点任何按钮、不会滑动屏幕、不会替你在任何 App 里操作。" +
-                "账单详情页上能读到商户全称、支付方式、交易单号这些明细。",
+                "账单详情页上能读到商户全称、支付方式、交易单号这些明细。\n\n" +
+                "只监听微信 / 支付宝 / 云闪付和银行 App。淘宝、京东、美团这类购物 App 默认不读——" +
+                "浏览页满屏都是商品价，容易误记（它们的支付大多经微信/支付宝收银台完成，仍会被记录）。",
             style = MaterialTheme.typography.bodySmall,
             color = InkSoft,
         )

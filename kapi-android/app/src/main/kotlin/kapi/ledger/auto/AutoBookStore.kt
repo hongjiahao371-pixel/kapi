@@ -438,10 +438,24 @@ class AutoBookStore(context: Context) {
             "com.chinamworld.main",                    // 建设银行
             "com.android.bankabc",                     // 农业银行
             "com.cebbank.mobile",                      // 光大银行
-            "com.citic",                               // 中信银行
+            "com.citic",                                // 中信银行
             "com.cib.mobile",                          // 兴业银行
             "com.pingan",                              // 平安
-            // ---- 电商（页面结构稳定，商家名直出）----
+        )
+
+        /**
+         * **默认不监听**的电商 App（2026-10-04，按友商定案）。
+         *
+         * 钱迹对电商的取舍是直接不做（淘宝主动屏蔽无障碍回调，做不了）——
+         * 电商浏览页是读屏误报的重灾区（商品价满屏都是），而电商的支付几乎
+         * 都经微信/支付宝收银台（在监听名单里）或落成微信支付服务通知，
+         * 这笔账并不会丢。用户实测在购物界面被凭空记账（2026-10-04），把
+         * 这一组从默认名单里摘出来：**不读，就没有误报**。
+         *
+         * 保留 [PACKAGE_LABELS] 条目——待确认页展示来源、以及将来若给用户
+         * 开「手动加监听」入口，名字还得用。
+         */
+        val OPTIN_PACKAGES: Set<String> = setOf(
             "com.taobao.taobao",                       // 淘宝
             "com.jd.jrapp",                            // 京东
             "com.sankuai.meituan",                     // 美团
