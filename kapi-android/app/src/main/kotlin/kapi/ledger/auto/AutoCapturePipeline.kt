@@ -160,25 +160,39 @@ class AutoCapturePipeline(
             // 戳记的可能是账目 id（入账路径）或草稿 id（草稿路径，确认后才
             // 变成账目），两边都要查——只查一边会让另一条路径永远复活。
             val seen = autoStore.seenTxnId(fingerprint)
-            // 草稿只在新鲜（30 分钟内）时才算"记录还活着"。草稿是采集时
-            // 创建的，确认/自动入账/用户 ✕ 掉都会删它；**删漏的**（卡片被
-            // 系统弹窗盖住、进程被杀这些时刻）会永远留在表里——不设保鲜期
-            // 的话，用户删了账它还在替那笔账喊"已记录"（2026-10-04 OPPO
-            // 真机：早餐 2.00 草稿泄漏，删账后详情页永远弹已记录）。
-            val stillThere = seen?.txnId?.let { id ->
-                db.txnDao().byId(id)?.let { !it.deleted } == true ||
-                    db.autoDraftDao().byId(id)?.let {
-                        now - it.createdAt < DRAFT_ALIVE_MS
-                    } == true
-            } == true
-            if (stillThere) {
-                return Outcome.Ignored(
-                    "交易号 ${payId.value}（${payId.kind.label}）已经记过，丢弃",
-                    duplicate = true,
-                    duplicateOf = seen?.txnId,
-                )
+            // 草稿只在新鲜（30 分钟内）时才算"还活着"。草稿是采集时创建的，
+            // 确认/自动入账/用户 ✕ 掉都会删它；**删漏的**（卡片被系统弹窗盖住、
+            // 进程被杀这些时刻）会永远留在表里——不设保鲜期的话，用户删了账
+            // 它还在替那笔账喊"已记录"（2026-10-04 OPPO 真机：早餐 2.00 草稿
+            // 泄漏，删账后详情页永远弹已记录）。
+            //
+            // **账目和草稿的"活着"语义必须分开**（2026-10-04 OPPO 实测 bug）：
+            // 用户进详情页建了稿、没点确认就退出，再进来——戳指向的草稿还
+            // 活着，旧逻辑判"已记录"弹卡；可账本里根本没有这笔（草稿只是
+            // 待确认），首页查无此账，用户看到的是自相矛盾的两句话。正确的
+            // 动作是**把原稿重新端出来**（Drafted）：详细模式确认窗再弹一次
+            // （「每次进入详情页都弹」本来就是定稿形态），简约模式直接补入账
+            // ——和第一次进来同一个待遇。只有**账目**活着才配喊"已记录"。
+            val id = seen?.txnId
+            if (id != null) {
+                val txnAlive = db.txnDao().byId(id)?.let { !it.deleted } == true
+                if (txnAlive) {
+                    return Outcome.Ignored(
+                        "交易号 ${payId.value}（${payId.kind.label}）已经记过，丢弃",
+                        duplicate = true,
+                        duplicateOf = id,
+                    )
+                }
+                val draftAlive = db.autoDraftDao().byId(id)?.let {
+                    now - it.createdAt < DRAFT_ALIVE_MS
+                } == true
+                if (draftAlive) {
+                    Log.i(TAG, "交易号 ${payId.value} 已有未确认草稿 $id，重新端出来等确认")
+                    return Outcome.Drafted(id, "上次未确认，重新弹窗")
+                }
+                // 戳在但账没了（被删）/草稿已死：落到下面重新采集；
+                // 真正产出记录后 markSeen 会覆写旧戳。
             }
-            // 戳在但账没了（被删）：清掉旧戳重新采集；正常未见过也直接往下走。
         } else if (autoStore.hasSeenFingerprint(fingerprint, now)) {
             return Outcome.Ignored("指纹 $fingerprint 在去重窗口里，丢弃", duplicate = true)
         }
