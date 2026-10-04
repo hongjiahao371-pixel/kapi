@@ -5,6 +5,7 @@ import java.nio.charset.Charset
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToInt
 
 /**
  * 微信 / 支付宝**官方导出账单**的解析。
@@ -371,7 +372,152 @@ object BankBillParser {
      * 判据：按 UTF-8 严格解码成功就用 UTF-8，失败退 GBK。
      * 比引入 chardet 便宜得多，而且对这两个来源足够准。
      */
-    fun decode(bytes: ByteArray): String {
+    /**
+     * 账单文件统一入口：裸 CSV（微信 UTF-8 / 支付宝 GBK）、zip 包（里面是
+     * csv）、微信新版导出的 **xlsx**，都从这一条路进来。
+     *
+     * 2026-10-04 用户实测：微信「下载明细」现在给的是 xlsx 而不再是 csv——
+     * 直接把 xlsx 字节当文本解码会得到一堆 XML，表头扫描必然失败，
+     * 界面只会报一句没头没尾的"没找到账单表头"。
+     */
+    fun decode(bytes: ByteArray): String = when {
+        isZip(bytes) -> unzipBill(bytes) ?: ""
+        else -> decodeRaw(bytes)
+    }
+
+    private fun isZip(bytes: ByteArray): Boolean =
+        bytes.size >= 4 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()
+
+    /**
+     * 解包 zip：优先找 csv 明细文件；没有 csv 但长得像 xlsx（有
+     * xl/workbook.xml）就把第一个工作表转成 CSV 文本。两者都没有
+     * 返回 null（调用方回退到原文解码，让表头扫描给出对得上的错误）。
+     */
+    private fun unzipBill(bytes: ByteArray): String? {
+        val entries = LinkedHashMap<String, ByteArray>()
+        java.util.zip.ZipInputStream(bytes.inputStream()).use { z ->
+            var e = z.nextEntry
+            while (e != null) {
+                if (!e.isDirectory) entries[e.name] = z.readBytes()
+                e = z.nextEntry
+            }
+        }
+        entries.keys.firstOrNull { it.endsWith(".csv", ignoreCase = true) }
+            ?.let { return decodeRaw(entries.getValue(it)) }
+        if (entries.keys.none { it == "xl/workbook.xml" }) return null
+        return entries["xl/sharedStrings.xml"]?.let { sharedXml ->
+            val sheet = entries.entries.firstOrNull { it.key.startsWith("xl/worksheets/") }?.value
+                ?: return null
+            xlsxToCsv(decodeXml(sheet), parseSharedStrings(decodeXml(sharedXml)))
+        }
+    }
+
+    /** xlsx 内部 XML 是 UTF-8。 */
+    private fun decodeXml(b: ByteArray): String = String(b, Charsets.UTF_8)
+
+    /** <si> 里可能有多段富文本 <t>，全部拼接。 */
+    private fun parseSharedStrings(xml: String): List<String> =
+        Regex("<si>([\\s\\S]*?)</si>").findAll(xml).map { si ->
+            Regex("<t[^>]*>([^<]*)</t>").findAll(si.groupValues[1])
+                .joinToString("") { it.groupValues[1] }
+        }.toList()
+
+    /** 把第一个工作表转成 CSV 文本：按行拼接，日期序列号列转本地时间文本。 */
+    private fun xlsxToCsv(sheetXml: String, shared: List<String>): String {
+        fun colIndex(ref: String): Int {
+            var n = 0
+            for (c in ref) if (c.isLetter()) n = n * 26 + (c - 'A' + 1) else break
+            return n - 1
+        }
+
+        fun cellValue(cXml: String): String {
+            val t = Regex("t=.([a-z]+).").find(cXml)?.groupValues?.get(1)
+            val v = Regex("<v>([^<]*)</v>").find(cXml)?.groupValues?.get(1)
+            val inline = Regex("<t[^>]*>([^<]*)</t>").findAll(cXml).joinToString("") { it.groupValues[1] }
+            return when (t) {
+                "s" -> shared.getOrNull(v?.trim()?.toIntOrNull() ?: -1) ?: ""
+                "inlineStr" -> inline
+                "str" -> v ?: inline
+                else -> v ?: inline
+            }
+        }
+
+        // 按 <row 分段（不用正则：嵌套转义层级太容易错，纯切分反而稳）。
+        data class XRow(val num: Int, val cells: List<Pair<Int, String>>)
+
+        val xrows = mutableListOf<XRow>()
+        for (chunk in sheetXml.split("<row").drop(1)) {
+            val seg = chunk.substringBefore("</row>")
+            val num = Regex("r=.([0-9]+).").find(seg.substringBefore('>'))?.groupValues?.get(1)?.toIntOrNull() ?: continue
+            val cells = mutableListOf<Pair<Int, String>>()
+            var rest = seg.substringAfter('>')
+            while (true) {
+                val cStart = rest.indexOf("<c ")
+                if (cStart < 0) break
+                val cEnd = rest.indexOf("</c>", cStart)
+                val cXml = if (cEnd < 0) rest.substring(cStart) else rest.substring(cStart, cEnd + 4)
+                val m = Regex("r=.([A-Z]+)([0-9]+).").find(cXml)
+                if (m == null) { rest = rest.substringAfter(cXml); continue }
+                val value = cellValue(cXml)
+                if (value.isNotEmpty()) cells += (colIndex(m.groupValues[1]) to value)
+                rest = rest.substringAfter(cXml)
+            }
+            if (cells.isNotEmpty()) xrows += XRow(num, cells.sortedBy { it.first })
+        }
+        if (xrows.isEmpty()) return ""
+
+        xrows.sortBy { it.num }
+
+        // 找表头行，确定时间列（那些列的数据是 Excel 日期序列号，要转文本）
+        val headerRow = xrows.firstOrNull { row ->
+            row.cells.any { it.second.contains("交易时间") || it.second.contains("交易创建时间") || it.second.contains("付款时间") } &&
+                row.cells.any { it.second.contains("金额") }
+        }
+        val timeCols = headerRow?.cells
+            ?.filter { it.second.contains("交易时间") || it.second.contains("交易创建时间") || it.second.contains("付款时间") }
+            ?.map { it.first }
+            ?.toSet() ?: emptySet()
+
+        val p2 = { n: Int -> "%02d".format(n) }
+        fun serialToText(serial: Double): String {
+            // Excel 1900 日期系统：1899-12-30 起算（兼容 1900-02-29 那个历史 bug，
+            // 对 2026 年的账单没有任何影响）。
+            val days = serial.toLong()
+            val frac = serial - days
+            val date = java.time.LocalDate.of(1899, 12, 30).plusDays(days)
+            val secs = (frac * 24 * 3600).roundToInt()
+            val t = java.time.LocalTime.MIN.plusSeconds(secs.toLong())
+            return if (secs > 0) {
+                "${date.year}-${p2(date.monthValue)}-${p2(date.dayOfMonth)} " +
+                    "${p2(t.hour)}:${p2(t.minute)}:${p2(t.second)}"
+            } else {
+                "${date.year}-${p2(date.monthValue)}-${p2(date.dayOfMonth)}"
+            }
+        }
+
+        return xrows.joinToString("\n") { row ->
+            val out = mutableListOf<String>()
+            var col = 0
+            for ((c, value) in row.cells) {
+                while (col < c) { out += ""; col++ }
+                var v = value
+                if (c in timeCols) {
+                    // 交易时间列：纯数字 = Excel 序列号，转成本地时间文本
+                    v = v.toDoubleOrNull()?.let { serialToText(it) } ?: v
+                }
+                out += v
+                col++
+            }
+            out.joinToString(",") { v ->
+                if (v.contains(',') || v.contains('"') || v.contains('\n')) {
+                    "\"" + v.replace("\"", "\"\"") + "\""
+                } else v
+            }
+        }
+    }
+
+    /** 裸解码：按 UTF-8/GBK 把字节变成文本。 */
+    private fun decodeRaw(bytes: ByteArray): String {
         val utf8 = try {
             val d = Charsets.UTF_8.newDecoder()
                 .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
