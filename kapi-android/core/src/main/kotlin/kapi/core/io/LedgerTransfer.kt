@@ -231,6 +231,9 @@ object LedgerJson {
 
 object TransferFingerprint {
 
+    /** 宽松/完整指纹共用的字段分隔符（SOH，避免字段内容串接歧义）。 */
+    private const val SEQ = "\u0001"
+
     /**
      * 导入去重用的指纹。
      *
@@ -256,6 +259,25 @@ object TransferFingerprint {
             row.note.orEmpty().trim(),
             row.category.orEmpty(),
             row.account.orEmpty(),
-        ).joinToString("")
+        ).joinToString(SEQ)
+    }
+
+    /**
+     * 宽松指纹：金额+方向+分钟桶，**不含任何文本字段**。
+     *
+     * 2026-10-04 用户真机反馈：自动记账写的商户/备注（读屏抓的详情页字段）
+     * 和账单导入行（导出文件里的类型/商品拼接）几乎永远一字不差地不同，
+     * 完整指纹挡不住"同一笔被两个渠道各记一次"。
+     *
+     * 只用于**账单导入 vs 已有账目**这一处比对；文件内部去重仍用完整指纹
+     * （同一文件里两行文本必然同构）。
+     */
+    fun looseOf(row: TransferRow): String {
+        val minuteBucket = Math.floorDiv(row.occurredAt, 60_000L)
+        return listOf(
+            row.amountMinor.toString(),
+            row.direction,
+            minuteBucket.toString(),
+        ).joinToString(SEQ)
     }
 }

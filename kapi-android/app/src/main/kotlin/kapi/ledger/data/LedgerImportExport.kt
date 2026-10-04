@@ -52,6 +52,8 @@ class LedgerImportExport(
             val skippedBroken: Int = 0,
             /** 「微信」/「支付宝」，非账单导入时为 null。 */
             val from: String? = null,
+            /** 账单导入才有：与账本已有账目宽松判同（金额+方向+分钟桶同）而跳过的条数。 */
+            val skippedExisting: Int = 0,
         ) : ImportResult
 
         data class Failed(val why: String) : ImportResult
@@ -146,7 +148,11 @@ class LedgerImportExport(
         // 微信新版导出的 xlsx（转 csv，日期序列号转文本）。
         val text = BankBillParser.decode(bytes)
         val existing = existingFingerprints()
-        val parsed = when (val r = BankBillParser.parse(text, existing)) {
+        val rows = db.txnDao().allNotDeleted()
+        val cats = db.categoryDao().allForPush().associate { it.id to it.name }
+        val accts = db.accountDao().allForPush().associate { it.id to it.name }
+        val existingLoose = rows.map { TransferFingerprint.looseOf(toTransferRow(it, cats, accts)) }.toSet()
+        val parsed = when (val r = BankBillParser.parse(text, existing, looseSeen = existingLoose)) {
             is BankBillParser.Result.Bad -> return ImportResult.Failed(r.why)
             is BankBillParser.Result.Ok -> r.parsed
         }
@@ -156,6 +162,7 @@ class LedgerImportExport(
             skippedNeutral = parsed.skippedNeutral,
             skippedBadStatus = parsed.skippedBadStatus,
             skippedBroken = parsed.skippedBroken,
+            skippedExisting = parsed.skippedExisting,
             from = if (parsed.source == BankBillParser.SOURCE_WECHAT) "微信" else "支付宝",
         )
     }

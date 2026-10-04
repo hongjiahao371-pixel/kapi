@@ -105,6 +105,38 @@ class WechatXlsxBillTest {
     }
 
     @Test
+    fun `rows matching an existing account by amount-direction-minute are skipped`() {
+        // 2026-10-04 用户反馈：自动记账已记的账，再从微信 xlsx 导一遍会重复入账。
+        // 根因：完整指纹含商户/备注文本，两个渠道的文本必然不同。
+        // 修复后：parse 接受 looseSeen（金额+方向+分钟桶），命中的行跳过。
+        val serial = excelSerial(2026, 10, 4, 10, 34, 30)
+        val rows = listOf(
+            listOf("交易时间", "交易类型", "交易对方", "商品", "收/支", "金额(元)", "支付方式", "当前状态", "交易单号", "商户单号", "备注"),
+            listOf(serial.toString(), "商户消费", "扫二维码付款-给L♪ii♪♪", "早餐", "支出", "2.00", "零钱", "支付成功", "10003", "/"),
+        )
+        val bytes = wechatXlsx(rows)
+
+        // 已有账目：同一天 10:34（同一分钟桶）、2.00、支出——就是自动记的那笔
+        val existing = kapi.core.io.TransferRow(
+            occurredAt = java.time.LocalDateTime.of(2026, 10, 4, 10, 34, 30)
+                .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli(),
+            direction = "EXPENSE",
+            amountMinor = 200,
+            merchant = null,
+            note = "早餐",
+        )
+        val loose = setOf(kapi.core.io.TransferFingerprint.looseOf(existing))
+
+        val text = BankBillParser.decode(bytes)
+        val result = BankBillParser.parse(text, looseSeen = loose)
+
+        // 全部行都被宽松判重命中时，parse 回 Bad 并交代"都在账本里了"
+        assertTrue(result is BankBillParser.Result.Bad)
+        assertTrue((result as BankBillParser.Result.Bad).why.contains("已经在账本里"))
+        
+    }
+
+    @Test
     fun `zip without csv or xlsx degrades to header error`() {
         val out = ByteArrayOutputStream()
         ZipOutputStream(out).use { z ->

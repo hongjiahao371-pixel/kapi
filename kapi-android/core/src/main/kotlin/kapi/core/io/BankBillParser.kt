@@ -70,6 +70,8 @@ object BankBillParser {
         val skippedBadStatus: Int,
         /** 解析不了的行数。**必须报给用户**，否则用户会以为账单里就这么多。 */
         val skippedBroken: Int,
+        /** 与账本已有账目宽松判重（金额+方向+分钟桶同）命中的行数。 */
+        val skippedExisting: Int = 0,
         val source: String,
     )
 
@@ -124,6 +126,8 @@ object BankBillParser {
         text: String,
         seen: Set<String> = emptySet(),
         zone: ZoneId = ZoneId.systemDefault(),
+        /** 已有账目的宽松指纹（金额+方向+分钟桶）。命中的行=账本里已有同一笔，跳过。 */
+        looseSeen: Set<String> = emptySet(),
     ): Result {
         val body = text.removePrefix(LedgerCsv.BOM).trim()
         if (body.isEmpty()) return Result.Bad("文件是空的")
@@ -151,6 +155,7 @@ object BankBillParser {
         }
 
         val rows = ArrayList<TransferRow>()
+        var existingDup = 0
         val localSeen = HashSet(seen)
         var neutral = 0
         var badStatus = 0
@@ -216,6 +221,11 @@ object BankBillParser {
                 source = source,
             )
 
+            // 与账本已有账目的宽松比对（2026-10-04 用户反馈）：同一笔被
+            // 无障碍自动记过、又被账单文件导一遍，完整指纹因商户/备注文本
+            // 不同而必然漏过——这里按 金额+方向+分钟桶 再兜一道。
+            if (TransferFingerprint.looseOf(row) in looseSeen) { existingDup++; continue }
+
             // 同一份文件里自己重复（微信账单跨月导出会重叠）也要挡，
             // 否则用户连着导 3 个月的重叠区间，账目就是 3 倍。
             if (!localSeen.add(TransferFingerprint.of(row))) { dup++; continue }
@@ -226,8 +236,8 @@ object BankBillParser {
             // 全部是重复时**必须**说"都已经在账本里了"，不能说"没有能记的账"——
             // 用户导第二遍的真实问题是"我重复导了"，而"没有能记的账"会让他
             // 以为自己导错了文件、进而去找别的文件反复试。
-            if (dup > 0) {
-                return Result.Bad("这份账单里的 $dup 笔都已经在账本里了，没有新的可导入")
+            if (dup > 0 || existingDup > 0) {
+                return Result.Bad("这份账单里的 ${maxOf(dup, existingDup)} 笔都已经在账本里了，没有新的可导入")
             }
             return Result.Bad("这份账单里没有能记的账。" +
                 "（跳过中性交易 $neutral 笔、状态不合格 $badStatus 笔、格式不对 $broken 笔）")
@@ -237,6 +247,7 @@ object BankBillParser {
             Parsed(
                 rows = rows,
                 skippedNeutral = neutral,
+                skippedExisting = existingDup,
                 skippedBadStatus = badStatus,
                 skippedBroken = broken,
                 source = source,

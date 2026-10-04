@@ -740,6 +740,7 @@ private fun TransferSection(
         if (r.skipped > 0) sb.append("，${r.skipped} 笔和已有的重复已跳过")
         val extra = ArrayList<String>()
         if (r.skippedNeutral > 0) extra += "${r.skippedNeutral} 笔充值/提现/还款不算账"
+        if (r.skippedExisting > 0) extra += "${r.skippedExisting} 笔和账本里已有的（金额/时间相同）判为同一笔已跳过"
         if (r.skippedBadStatus > 0) extra += "${r.skippedBadStatus} 笔交易关闭没记"
         if (r.skippedBroken > 0) extra += "${r.skippedBroken} 笔格式不对读不出来"
         if (extra.isNotEmpty()) sb.append("；另有 ").append(extra.joinToString("、"))
