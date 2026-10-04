@@ -94,6 +94,44 @@ object PaymentGate {
     )
 
     /**
+     * 正面页面模板的**字段证据**（2026-10-04 友商对齐）：支付页面的结构标签。
+     *
+     * 账单详情页/支付结果页有一套内容页不会长的骨架——「交易单号」「付款方式」
+     * 「当前状态」「收款方」这类 label。命中 ≥2 个 + 有金额，就认这是支付页面
+     * （R1）；配合强动词命中 1 个也认（R2）。这是"正着认页面"的核心：
+     * 钱迹/小星的规则库认的就是这些页面特征，而不是"没有被排除的都算"。
+     *
+     * 刻意不收「订单号」：商品页/物流页也有它，会让浏览页凑够字段数；
+     * 「零钱」「银行卡」是**值**不是标签（余额页满屏都是），也不收。
+     * 「实付」一个词覆盖 实付款/实付金额 两个变体（contains 语义）。
+     */
+    private val SIGNATURE_FIELDS = listOf(
+        "交易单号", "转账单号", "交易号", "商户单号",
+        "付款方式", "支付方式", "收款方式",
+        "收款方", "付款方", "收款人", "付款人",
+        "收单机构", "当前状态", "支付时间", "收款时间",
+        "付款金额", "支付金额", "商品金额", "退款金额",
+        "实付",
+        "amount", "paid", "total",
+    )
+
+    /**
+     * 强动词屏走"短结果条"模板（R3）的长度上限（归一化后字符数）。
+     *
+     * 瞬态结果页很短："支付成功 ￥1.00 回首页 完成"。转发选人页那种几十行
+     * 的长屏装得下别人的「转账成功」预览——没有字段证据的长屏不认。
+     */
+    private const val RESULT_PAGE_MAX_CHARS = 160
+
+    /**
+     * 弱动词屏走"短通知"模板（R4）的长度上限。
+     *
+     * 转账到账通知、账单提醒、银行英文推送都塞得进 80 字；营销长文、浏览页
+     * 塞不进来——它们若有别的支付字段证据会走 R1，没有就不该记。
+     */
+    private const val NOTICE_MAX_CHARS = 80
+
+    /**
      * 列表页的标志词。这些出现在文字里，说明屏幕是"一列记录"而不是"一笔结果"。
      *
      * 「全部」**已经拿掉**。它本来是想抓"全部/支出/收入"那个 Tab 行，但它是子串
@@ -398,12 +436,38 @@ object PaymentGate {
             return Verdict.NotPayment("有 ${amountCount} 个金额却没有成功字样，像账单列表")
         }
 
-        // 反过来：有强动词就算列表也放行——用户确实停在支付结果页上。
-        // 宁可多一条草稿，也不能把真支付挡在外面。
-        if (strong != null) return Verdict.LooksLikePayment
+        // ------------------------------------------------ 正面页面模板
+        //
+        // 2026-10-04 终判从"负规则排除完就放行"翻成**友商（钱迹/小星）式正认**：
+        // 有页面身份证据才记。背景是用户连续三次误触（购物页、转发选人页）——
+        // 负规则挡得住**已知**的坏页面，挡不住没见过的页面长歪；正认之后，
+        // 一切未知页面默认不记，只有长成"支付页面"的才进管线。四条模板全部
+        // 归纳自真机页面、钉在测试里：
+        //
+        //  R1 字段≥2 + 金额：账单/结果详情页——交易单号/付款方式/当前状态/
+        //    收款方…是支付页面的骨架，普通内容页长不出两排支付字段
+        //  R2 强动词 + 任一字段：支付成功页（结果动词 + 结构标签）
+        //  R3 强动词 + 短文：瞬态结果条（"退款成功，¥56.00 已退回原路"）
+        //  R5 银行推送：【..银行】/尾号 + 动词 + 金额——读屏最典型的输入
+        //  R4 弱动词 + 短文垫底：转账到账通知、"Amount: 12.34 paid"这类
+        //     没有字段结构的通知。**放在促销/购物词之后跑**，短促销页进不来；
+        //     也因此只收 1~2 个金额、80 字以内——比旧的"弱动词任意长度放行"
+        //     严格得多，这是旧门最后的误报口子。
+        //
+        // 有强动词不再自动放行：长页面里一句别人的「转账成功」预览就是强动词
+        // （转发选人页教会我们的），没有字段证据的长屏一律不认。
+        val fieldHits = SIGNATURE_FIELDS.count { lower.contains(it) }
+        if (fieldHits >= 2 && amountCount >= 1) return Verdict.LooksLikePayment
+        if (strong != null && fieldHits >= 1) return Verdict.LooksLikePayment
+        if (strong != null && t.length <= RESULT_PAGE_MAX_CHARS && amountCount <= 3) {
+            return Verdict.LooksLikePayment
+        }
+        if ((t.contains("尾号") || t.contains("银行")) && amountCount >= 1) {
+            return Verdict.LooksLikePayment
+        }
 
-        // 促销页：有钱、有"支付"字样，但描述的是"你可以省多少"而不是"你付了多少"。
-        // 调整项行在上面已经从整段里剔掉了，这里直接查剩下的。
+        // 弱动词屏的负规则收尾：促销页/购物页/列表词。强动词屏不走这段——
+        // 真结果页也带"立减"调整行（上游已剔）和推荐位，不能被这些词误杀。
         PROMO_HINTS.firstOrNull { lower.contains(it) }?.let {
             return Verdict.NotPayment("出现了促销词「$it」")
         }
@@ -420,6 +484,14 @@ object PaymentGate {
         if (listHint != null && amountCount >= 2) {
             return Verdict.NotPayment("出现了「$listHint」且有 ${amountCount} 个金额，像列表")
         }
-        return Verdict.LooksLikePayment
+
+        // R4 弱动词短文垫底（在促销/购物/列表词之后）。
+        if (weak != null && t.length <= NOTICE_MAX_CHARS && amountCount in 1..2) {
+            return Verdict.LooksLikePayment
+        }
+
+        return Verdict.NotPayment(
+            "没有支付页面的结构证据（详情页字段/强动词/银行推送/短通知都不匹配）",
+        )
     }
 }
