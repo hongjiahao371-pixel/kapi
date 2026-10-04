@@ -76,6 +76,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/panel/tx", h.auth(h.tx))
 	mux.HandleFunc("/v1/panel/row", h.auth(h.row))
 	mux.HandleFunc("/v1/panel/facets", h.auth(h.facets))
+	// 配对码重新生成。放面板而不只在启动日志里打，是因为配对码 10 分钟
+	// 过期，而容器可能几个月才重启一次——"手机就在手上、就想现在配"的
+	// 时刻，重启容器捞日志这条路是走不通的。
+	mux.HandleFunc("/v1/panel/pair_code", h.auth(h.pairCode))
 }
 
 func (h *Handler) shell(w http.ResponseWriter, r *http.Request) {
@@ -159,6 +163,20 @@ func (h *Handler) query(r *http.Request) store.TxQuery {
 		q.Direction = ""
 	}
 	return q
+}
+
+// pairCode 重新生成 6 位配对码并返回。配对本身仍走 POST /v1/pair（免鉴权、
+// 靠码换 token），这里只是把"码从哪来"从启动日志挪到了面板。
+func (h *Handler) pairCode(w http.ResponseWriter, r *http.Request) {
+	code, err := h.st.PairCode()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error":   "rotate_failed",
+			"message": err.Error(),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"pair_code": code})
 }
 
 func (h *Handler) summary(w http.ResponseWriter, r *http.Request) {

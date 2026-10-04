@@ -168,6 +168,15 @@
       <div><div class="k">笔数</div><div class="v" id="s-cnt">—</div></div>
     </div>
 
+    <div class="card" id="pair-card">
+      <div class="k">配对新手机</div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
+        <code id="pair-code" style="font-size:30px;letter-spacing:8px;font-weight:700;min-width:180px">—— ——</code>
+        <button class="btn ghost tiny" id="pair-gen">生成配对码</button>
+      </div>
+      <div class="k" id="pair-hint" style="margin-top:8px">点「生成配对码」，然后在 App「设置 → NAS 同步 → 连接 NAS」里填本机地址（端口 8787）和这个码。10 分钟内有效。</div>
+    </div>
+
     <div class="filters card">
       <div class="f q"><label for="f-q">关键词</label><input type="text" id="f-q" placeholder="商户 / 备注 / 分类 / 账户"></div>
       <div class="f"><label for="f-from">起始</label><input type="date" id="f-from"></div>
@@ -531,6 +540,17 @@ $("#logout").addEventListener("click", signOut);
 $("#d-close").addEventListener("click", closeRow);
 $("#scrim").addEventListener("click", closeRow);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeRow(); });
+
+// 配对码：点按钮才轮换（每次调用都会生成新码并作废上一个，
+// 自动轮换会把别人刚生成的码悄悄弄失效）。
+async function rotatePairCode() {
+  const d = await api("/v1/panel/pair_code");
+  $("#pair-code").textContent = d.pair_code.slice(0, 3) + " " + d.pair_code.slice(3);
+  $("#pair-hint").textContent = "10 分钟内有效。在 App「设置 → NAS 同步 → 连接 NAS」里填本机地址（端口 8787）和这个码。";
+}
+$("#pair-gen").addEventListener("click", () => {
+  rotatePairCode().catch((e) => { $("#pair-hint").textContent = e.message; });
+});
 
 $("#f-go").addEventListener("click", () => { readFilter(); loadAll(); });
 $("#f-clear").addEventListener("click", () => {
