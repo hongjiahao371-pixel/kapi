@@ -64,13 +64,31 @@ object OcrRecognizer {
         }
     }
 
+    /** 拿输入流。`contentResolver.openInputStream` 对某些 photo picker 的 URI 会
+     * **返回 null 而不抛异常**，而 `openFileDescriptor` 对同一批 URI 是好的——
+     * 这条兜底在 ScreenshotLoader 里踩过并注释了，这里必须同样带上
+     * （2026-10-04 OPPO 真机：没有兜底时端侧识别 100% 失败，全走云端）。 */
+    private fun openStream(
+        resolver: android.content.ContentResolver,
+        uri: Uri,
+    ): java.io.InputStream {
+        resolver.openInputStream(uri)?.let { return it }
+        val fd = resolver.openFileDescriptor(uri, "r")
+            ?: throw OcrFailed("打不开这张图（相册可能刚被清理了，重新选一次）")
+        return try {
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(fd)
+        } catch (e: Exception) {
+            runCatching { fd.close() }
+            throw e
+        }
+    }
+
     /** 两遍解码（先量尺寸再采样），长边压到 [MAX_EDGE]。逻辑同 ScreenshotLoader，只是产物是 Bitmap。 */
     private fun decodeScaled(context: Context, uri: Uri): Bitmap {
         val resolver = context.contentResolver
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         try {
-            resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-                ?: throw OcrFailed("打不开这张图，重新选一次")
+            openStream(resolver, uri).use { BitmapFactory.decodeStream(it, null, bounds) }
         } catch (e: SecurityException) {
             throw OcrFailed("没有读取这张图的权限，重新选一次", e)
         }
@@ -83,8 +101,7 @@ object OcrRecognizer {
         }
         val opts = BitmapFactory.Options().apply { inSampleSize = sample }
         val decoded = try {
-            resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
-                ?: throw OcrFailed("打不开这张图，重新选一次")
+            openStream(resolver, uri).use { BitmapFactory.decodeStream(it, null, opts) }
         } catch (e: SecurityException) {
             throw OcrFailed("没有读取这张图的权限，重新选一次", e)
         } ?: throw OcrFailed("这张图解不开，换一张试试")

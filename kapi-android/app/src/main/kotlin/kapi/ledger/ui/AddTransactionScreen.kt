@@ -1,5 +1,6 @@
 package kapi.ledger.ui
 
+import android.content.Context
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -186,6 +187,18 @@ fun AddTransactionScreen(
      * 用户"识别不一定要云端"的直觉是对的：账单截图大字号高对比，
      * 端侧 OCR+本地解析的命中率足够高，云端只留给难啃的截图。
      */
+    /** 端侧识别失败现场落盘（getExternalFilesDir，adb run-as 可拉）。
+     * 这台测试机的 logd 缓冲被系统刷得只剩几十秒，靠日志抓不到现场。 */
+    fun ocrDebug(context: Context, content: String) {
+        runCatching {
+            val dir = context.getExternalFilesDir(null) ?: return
+            java.io.File(dir, "ocr_debug.txt").appendText(
+                "== " + java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+                    .format(java.util.Date()) + "\n" + content + "\n\n"
+            )
+        }
+    }
+
     suspend fun recognizeImage(uri: Uri): RecognizeState {
         // ---- 端侧 ----
         try {
@@ -197,8 +210,10 @@ fun AddTransactionScreen(
                 return RecognizeState.Done(best, onDevice = true)
             }
             Log.i("AddTxn", "端侧 OCR 读到 ${ocr.text.length} 字但没解析出可用金额，转云端")
+            ocrDebug(context, "parse-null：OCR ${ocr.text.length} 字，blocks=${ocr.blockCount}\n${ocr.text.take(500)}")
         } catch (e: Exception) {
             Log.w("AddTxn", "端侧识别失败：${e.javaClass.name}: ${e.message}")
+            ocrDebug(context, "exception：${e.javaClass.name}: ${e.message}")
         }
 
         // ---- 云端兜底 ----
