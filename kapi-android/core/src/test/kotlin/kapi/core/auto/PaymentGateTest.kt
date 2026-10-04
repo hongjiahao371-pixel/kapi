@@ -453,4 +453,39 @@ class PaymentGateTest {
     fun paymentResultWithRecommendRailStillPasses() {
         accept("支付成功\n¥23.50\n星巴克\n猜你喜欢\n¥19.90")
     }
+
+    // ------------------------------------- 转发/分享选人页（2026-10-04 用户实测）
+
+    /**
+     * 把内容转发给微信好友时的选人页：会话行预览带着「转账成功/￥0.10/1元」
+     * ——这些是**别人聊天**里的强动词级证据，必须在强动词放行之前挡。
+     */
+    @Test
+    fun wechatForwardContactPickerIsNotAPayment() {
+        reject(
+            """
+            转发给
+            搜索
+            选择一个聊天
+            Sherry
+            转账成功
+            ￥0.10
+            14:45
+            阿豪
+            微信红包
+            1.00元
+            创建新的聊天
+            """.trimIndent(),
+            because = "转发选人页的金额是别人聊天里的",
+        )
+    }
+
+    /**
+     * 「元」已从弱动词里拿掉：只有金额本身、没有任何钱类动词的屏不记。
+     * "1元"不该自己给自己当"在讲钱"的证据。
+     */
+    @Test
+    fun amountsAloneWithoutAnyMoneyVerbAreNotAPayment() {
+        reject("三楼 2.00元\n四楼 1.00元", "只有金额，没有付款/收款这类词")
+    }
 }
