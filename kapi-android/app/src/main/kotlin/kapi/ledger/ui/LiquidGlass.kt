@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
@@ -646,11 +647,14 @@ fun SurfaceCard(
  * 用弹簧而不是 tween：松手时要有一点点回弹，才像"弹起来"而不是"滑回去"。
  */
 @Composable
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 fun Modifier.glassClickable(
     enabled: Boolean = true,
     role: Role? = null,
     pressedScale: Float = 0.955f,
     onClickLabel: String? = null,
+    onLongClickLabel: String? = null,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ): Modifier {
     val interaction = remember { MutableInteractionSource() }
@@ -668,12 +672,14 @@ fun Modifier.glassClickable(
             scaleX = scale
             scaleY = scale
         }
-        .clickable(
+        .combinedClickable(
             enabled = enabled,
             interactionSource = interaction,
             indication = androidx.compose.material3.ripple(),
             role = role,
             onClickLabel = onClickLabel,
+            onLongClickLabel = onLongClickLabel,
+            onLongClick = onLongClick,
             onClick = onClick,
         )
 }

@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -114,6 +115,20 @@ fun LedgerScreen(
     // 没有这里就没有改的入口，也就没有自学习的数据。
     var editing by remember { mutableStateOf<TxnEntity?>(null) }
     var askDelete by remember { mutableStateOf<TxnEntity?>(null) }
+    // 长按进入多选模式：选中的 txnId 集合，支持批量删除。
+    var selectionMode by remember { mutableStateOf(false) }
+    val selected = remember { mutableStateListOf<String>() }
+    var askBatchDelete by remember { mutableStateOf(false) }
+
+    fun exitSelection() {
+        selectionMode = false
+        selected.clear()
+    }
+
+    fun toggleSelect(id: String) {
+        if (selected.contains(id)) selected.remove(id) else selected.add(id)
+        if (selected.isEmpty()) selectionMode = false
+    }
     // 按标签筛选：选中标签时只显示打了它的账。
     val visibleRows = remember(state.rows, tagFilter, tagsByTxn) {
         if (tagFilter == null) state.rows
@@ -143,6 +158,28 @@ fun LedgerScreen(
         // 否则 Scaffold 会自己再垫一份，列表底部凭空多出一大块空白。
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { inner ->
+        if (selectionMode) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("已选 ${selected.size} 笔", style = MaterialTheme.typography.titleSmall, color = Ink)
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = {
+                    scope.launch {
+                        selected.toList().forEach { vm.deleteTransaction(it) }
+                        exitSelection()
+                    }
+                }) { Text("删除", color = ExpenseRed) }
+                TextButton(onClick = { exitSelection() }) { Text("取消", color = InkSoft) }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
@@ -204,13 +241,22 @@ fun LedgerScreen(
                 for (group in grouped) {
                     item(key = "h-${group.day}") { DayHeader(group) }
                     items(group.rows, key = { it.id }) { row ->
+                        val isSelected = row.id in selected
                         TxnRow(
                             row = row,
                             category = row.categoryId?.let { categoryNames[it] },
                             categoryIcon = row.categoryId?.let { categoryIcons[it] },
                             account = row.accountId?.let { accountNames[it] },
                             tags = tagsByTxn[row.id].orEmpty(),
-                            onClick = { editing = row },
+                            selectionMode = selectionMode,
+                            selected = isSelected,
+                            onClick = {
+                                if (selectionMode) toggleSelect(row.id) else editing = row
+                            },
+                            onLongClick = {
+                                selectionMode = true
+                                toggleSelect(row.id)
+                            },
                         )
                     }
                 }
@@ -730,7 +776,10 @@ private fun TxnRow(
     account: String?,
     categoryIcon: String? = null,
     tags: List<String> = emptyList(),
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
     onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
 ) {
     val isExpense = row.direction == "EXPENSE"
     // 取色按**分类名**而不是 categoryId：id 在不同设备、不同同步顺序下会变，
@@ -748,7 +797,8 @@ private fun TxnRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .glassClickable { onClick() }
+            .background(if (selected) Brand.copy(alpha = 0.14f) else Color.Transparent)
+            .glassClickable(onLongClick = onLongClick) { onClick() }
             .padding(vertical = 10.dp, horizontal = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -808,6 +858,19 @@ private fun TxnRow(
             }
         }
         Spacer(Modifier.width(8.dp))
+        if (selectionMode) {
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) Brand else Color.Transparent)
+                    .border(1.5.dp, if (selected) Brand else InkSoft.copy(alpha = 0.5f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (selected) Text("✓", style = MaterialTheme.typography.labelSmall, color = Color.White)
+            }
+            Spacer(Modifier.width(6.dp))
+        }
         // 金额下面垫一行 HH:mm：放在右列而不塞进副标题，是因为副标题
         // 已经是「类目 · 备注 · 标签」拼的，再挤进去会被省略号吃掉。
         Column(horizontalAlignment = Alignment.End) {
