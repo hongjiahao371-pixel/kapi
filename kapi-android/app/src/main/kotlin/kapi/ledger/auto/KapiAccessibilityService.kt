@@ -6,6 +6,7 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import kapi.core.auto.AutoBook
+import kapi.core.auto.PaymentId
 import kapi.core.auto.PaymentShape
 import kapi.ledger.container
 import kotlinx.coroutines.CoroutineScope
@@ -236,6 +237,9 @@ class KapiAccessibilityService : AccessibilityService() {
         // 什么都不用做：这是一个只读服务，没有正在进行的操作需要中断。
     }
 
+    /** 上一次派发的页面身份（友商式单次触发的锚点）。 */
+    private var lastDispatchedPageId: String? = null
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val pkg = event?.packageName?.toString() ?: return
         val type = event?.eventType ?: -1
@@ -372,6 +376,37 @@ class KapiAccessibilityService : AccessibilityService() {
         lastHandled[pkg] = now
 
         val pageKey = text.take(200)
+
+        // 友商式触发（2026-10-05）：**一个页面只读一次**。页面身份 = 包名+页键，
+        // 与上次派发相同就是还停在同一页——后续事件一律不再派发，不管上次
+        // 的结果是弹窗、被关掉还是被门拒。换到别的页面（页键变化）才读下一页；
+        // 离开后再回到本页，页键先变走再变回，就是全新的一次。
+        // 这是钱迹/小星的模型：它们"打开特定界面时读一次"，关了不重弹、
+        // 重进才再弹——用户 2026-10-05 点名要这个语义。
+        val pageId = "$pkg/" + pageKey
+        if (pageId == lastDispatchedPageId) {
+            Log.d(TAG, "同一页面已读过一次（单次触发），不重复派发")
+            return false
+        }
+        lastDispatchedPageId = pageId
+
+        // 「不记了」页面会话（2026-10-05）：用户刚在这页点过关闭/不记，
+        // 同账单同页的后续事件一律不派发——窗口关闭动作自己都会触发新事件，
+        // 不拦的话立刻重建草稿再弹一次（"关了马上又弹"）。期间出现**不同
+        // 指纹**的派发 = 用户导航去了别的页面 → 会话解除，之后重新回到
+        // 这张详情页就是全新的一次，照常弹窗。
+        val fpNow = PaymentId.authoritative(text)?.key
+            ?: AutoBook.exactFingerprint(AutoBook.CaptureChannel.A11Y, text)
+        val store2 = store
+        if (store2 != null) {
+            if (store2.isRejectedSession(fpNow, now, REJECT_SESSION_MS)) {
+                Log.d(TAG, "不记了会话生效：$pkg 此页刚被用户关闭，不派发")
+                return false
+            }
+            if (store2.rejectedFp != null && store2.rejectedFp != fpNow) {
+                store2.clearRejected()
+            }
+        }
 
         val pipeline = runCatching { container.autoCapture }.getOrNull() ?: return false
         Log.d(TAG, "派发捕获 pageKey=${pageKey.take(60)}")
@@ -562,6 +597,9 @@ class KapiAccessibilityService : AccessibilityService() {
          * realme 实测）。动画页有持续事件，保鲜期多长都不影响。
          */
         private const val DUP_PAGE_SESSION_MS = 10 * 60_000L
+
+        /** 「不记了」页面会话保鲜期：同页不重弹；导航离开会提前解除。 */
+        private const val REJECT_SESSION_MS = 10 * 60_000L
 
         /**
          * 窗口切换后的沉降延迟。

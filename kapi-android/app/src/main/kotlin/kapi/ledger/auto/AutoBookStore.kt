@@ -224,6 +224,38 @@ class AutoBookStore(context: Context) {
         }
     }
 
+    // -------------------------------------------------------------------
+    // 「不记了」页面会话（2026-10-05）
+    //
+    // 用户在确认窗上点了关闭/不记：**同一页上就别再弹了**（窗口关闭动作
+    // 自己都会触发新的读屏事件，旧的逻辑立刻重建草稿再弹——"关了马上
+    // 又弹"就是这么来的）。锚的是**账单指纹**：期间出现任何一个不同指纹
+    // 的派发，都说明用户导航去了别的页面，会话解除——之后重新回到这张
+    // 详情页就是全新的一次，照常弹窗。正好是用户描述的语义：
+    // 「还在这一页都不弹，重新进入才弹」。
+    //
+    // 内存态即可：进程被杀最多导致"还停在本页时多弹一次"，无数据风险。
+    // -------------------------------------------------------------------
+
+    @Volatile var rejectedFp: String? = null
+    @Volatile var rejectedAt: Long = 0L
+
+    fun markRejected(fp: String?, now: Long) {
+        if (fp.isNullOrEmpty()) return
+        rejectedFp = fp
+        rejectedAt = now
+    }
+
+    fun clearRejected() {
+        rejectedFp = null
+        rejectedAt = 0L
+    }
+
+    fun isRejectedSession(fp: String, now: Long, windowMs: Long): Boolean {
+        val rfp = rejectedFp
+        return !rfp.isNullOrEmpty() && rfp == fp && now - rejectedAt < windowMs
+    }
+
     /** 用本次停留产出的账单 id 开一个新会话（覆盖旧的）。 */
     fun anchorDupSession(ids: List<String?>, now: Long) {
         synchronized(dupSessionIds) {

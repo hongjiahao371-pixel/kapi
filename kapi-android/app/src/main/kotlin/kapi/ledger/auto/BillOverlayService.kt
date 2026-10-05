@@ -712,7 +712,15 @@ class BillOverlayService : Service() {
             return
         }
         scope.launch {
-            withContext(Dispatchers.IO) { container.db.autoDraftDao().delete(id) }
+            withContext(Dispatchers.IO) {
+                // 落「不记了」页面会话：这一页别再弹了（关窗动作自己会触发
+                // 新的读屏事件），直到用户导航去别的页面再回来。
+                val fp = container.db.autoDraftDao().byId(id)?.fingerprint
+                if (!fp.isNullOrEmpty()) {
+                    container.autoBookStore.markRejected(fp, System.currentTimeMillis())
+                }
+                container.db.autoDraftDao().delete(id)
+            }
             removeWindow()
         }
     }
