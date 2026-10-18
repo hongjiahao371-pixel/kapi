@@ -9,10 +9,7 @@
 
 services:
   kapi-sync:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: kapi-sync:0.5.4
+    image: "${KAPI_IMAGE:-jvsheng/guizhang:0.5.4}"
     container_name: kapi-sync
     restart: unless-stopped
     ports:
@@ -25,7 +22,7 @@ services:
       KAPI_PANEL_TOKEN: "${KAPI_PANEL_TOKEN:-}"
       # 启动横幅里"在 App 里填哪个地址"用。容器没有宿主机的网卡视图，探测不到
       # 你的局域网 IP，只能由你告诉它。换成你自己 NAS 的 IP。
-      KAPI_LAN_IP: "${KAPI_LAN_IP:-192.168.5.10}"
+      KAPI_LAN_IP: "${KAPI_LAN_IP:-}"
       KAPI_QUOTE_PROVIDER: "${KAPI_QUOTE_PROVIDER:-}"
       KAPI_QUOTE_TOKEN: "${KAPI_QUOTE_TOKEN:-}"
     logging:

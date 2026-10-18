@@ -15,7 +15,7 @@
 
 ## 适用范围
 
-项目协议仅适用于版权方有权授权的原创代码及材料，也适用于本仓库提供的 NAS 0.5.4 原创软件部分。GitHub Release 随附同一协议及声明。今后由当前 Dockerfile 构建的镜像会在 `/opt/guizhang/project-license/` 中包含协议和声明；已发布的 0.5.4 镜像未重新构建，配套协议随 Release 单独提供。
+项目协议仅适用于版权方有权授权的原创代码及材料，也适用于本仓库提供的 NAS 0.5.4 原创软件部分。GitHub Release 随附同一协议及声明。今后由当前 Dockerfile 构建的镜像会在 `/opt/guizhang/project-license/` 中包含协议和声明；GitHub Release 的原始 0.5.4 离线镜像未重新构建，配套协议随 Release 单独提供；Docker Hub 的 0.5.4 镜像另增加授权文件层及 OCI 来源标签，包含 LICENSE、NOTICE、LICENSING.md，原有应用层保持不变。
 
 第三方库、运行时、工具、参考截图及其他第三方材料不因仓库公开而变更授权。第三方库依各自协议使用，不受本项目非商业条款的额外限制。账单读取器的许可、版权声明及 JExcelAPI 对应源码保留在 `kapi-sync/import-worker/licenses/`，运行时镜像中的路径为 `/opt/guizhang/licenses/`。这些义务同样适用于商业发行。
 
