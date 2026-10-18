@@ -43,6 +43,8 @@ docker load -i guizhang-nas-0.5.4-linux-amd64.docker.tar.gz
 
 ## HTTPS
 
+完整单文件示例见 [docker-compose.full.yml](deploy/docker-compose.full.yml)，配套变量见 [https.env.example](deploy/https.env.example)。新部署先准备证书再启动，已有部署保留原数据、CA、容器名和配对配置。
+
 先准备服务器证书与私钥，可使用受信任域名证书，也可用本项目脚本为自有 NAS 生成 CA：
 
 ```sh

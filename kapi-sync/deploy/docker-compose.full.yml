@@ -1,0 +1,26 @@
+services:
+  guizhang:
+    image: jvsheng/guizhang:0.5.4
+    container_name: guizhang
+    restart: unless-stopped
+    ports:
+      # Bind only to this NAS LAN address. Keep HTTP during phone migration.
+      - "${NAS_IP:?Set NAS_IP in .env}:8787:8787"
+      - "${NAS_IP:?Set NAS_IP in .env}:8789:8789"
+    environment:
+      KAPI_ADDR: "0.0.0.0:8787"
+      KAPI_DATA: "/data"
+      KAPI_LAN_IP: "${NAS_IP:?Set NAS_IP in .env}"
+      KAPI_PANEL_TOKEN: "${KAPI_PANEL_TOKEN:-}"
+      KAPI_TLS_ADDR: "0.0.0.0:8789"
+      KAPI_TLS_CERT: "/run/guizhang-tls/server.crt"
+      KAPI_TLS_KEY: "/run/guizhang-tls/server.key"
+    volumes:
+      - ./data:/data
+      - ./tls/server.crt:/run/guizhang-tls/server.crt:ro
+      - ./tls/server.key:/run/guizhang-tls/server.key:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
