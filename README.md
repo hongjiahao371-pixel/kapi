@@ -7,3 +7,7 @@
 - [Docker 0.5.4 发布说明](kapi-sync/RELEASE-0.5.4.md)
 
 Docker 镜像与校验文件位于 GitHub Releases。请先备份已有数据，按指南升级；源码、镜像和示例配置不含任何人的账本或可用令牌。
+
+## 授权与商业使用
+
+采用 [PolyForm Noncommercial 1.0.0](LICENSE)，允许协议范围内的个人及非商业用途；商业使用需另行书面授权。归账保留官方商业发行和收费 Pro 功能的权利。详见 [授权说明](LICENSING.md) 和 [版权声明](NOTICE)。第三方依赖仍遵循各自协议。

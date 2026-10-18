@@ -12,3 +12,5 @@ import-worker/.kotlin/
 import-worker/build/
 **/.DS_Store
 **/._*
+!LICENSE
+!NOTICE

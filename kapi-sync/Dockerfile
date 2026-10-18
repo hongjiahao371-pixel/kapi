@@ -20,6 +20,7 @@ COPY --from=go-build /out/kapi-sync /kapi-sync
 COPY --from=go-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=import-build /work/build/libs/guizhang-import.jar /opt/guizhang/guizhang-import.jar
 COPY import-worker/licenses/ /opt/guizhang/licenses/
+COPY LICENSE NOTICE /opt/guizhang/project-license/
 VOLUME ["/data"]
 EXPOSE 8787 8789
 ENV KAPI_DATA=/data KAPI_ADDR=0.0.0.0:8787 KAPI_IMPORT_JAR=/opt/guizhang/guizhang-import.jar
