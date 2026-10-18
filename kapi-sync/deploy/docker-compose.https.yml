@@ -1,0 +1,11 @@
+services:
+  kapi-sync:
+    ports:
+      - "${KAPI_TLS_BIND:-127.0.0.1}:8789:8789"
+    volumes:
+      - ./tls/server.crt:/run/guizhang-tls/server.crt:ro
+      - ./tls/server.key:/run/guizhang-tls/server.key:ro
+    environment:
+      KAPI_TLS_ADDR: "0.0.0.0:8789"
+      KAPI_TLS_CERT: "/run/guizhang-tls/server.crt"
+      KAPI_TLS_KEY: "/run/guizhang-tls/server.key"

@@ -1,18 +1,18 @@
-# 咔皮账本同步服务 —— 部署在自家 NAS 上。
+# 归账同步服务 —— 部署在自家 NAS 上。
 #
 # 用法（在 NAS 上，kapi-sync 目录里）：
 #     docker compose up -d
-#     docker compose logs -f      # 启动横幅里有配对码和面板令牌
+#     首次令牌在 data/panel-token，或通过 KAPI_PANEL_TOKEN 配置；日志不输出凭据。
 #
 # 数据只有一个目录：./data。它是 append-only 的 log.jsonl 加一个 meta.json，
-# 备份这个目录就等于备份全部账本，没有别的状态。
+# 备份这个目录可保留账本；完整迁移还须保存 .env、Compose 及启用 HTTPS 后的 tls/。
 
 services:
   kapi-sync:
     build:
       context: .
       dockerfile: Dockerfile
-    image: kapi-sync:0.2.0
+    image: kapi-sync:0.5.4
     container_name: kapi-sync
     restart: unless-stopped
     ports:
@@ -21,12 +21,13 @@ services:
     volumes:
       - ./data:/data
     environment:
-      # 面板令牌留空 = 每次启动随机生成一个并打进日志。写死它，重启后浏览器里
-      # 存的令牌才不会失效；不写死更安全。两种都支持，这里默认不写。
+      # 留空时生成并私密保存在 data/panel-token；旧环境配置保持兼容。
       KAPI_PANEL_TOKEN: "${KAPI_PANEL_TOKEN:-}"
       # 启动横幅里"在 App 里填哪个地址"用。容器没有宿主机的网卡视图，探测不到
       # 你的局域网 IP，只能由你告诉它。换成你自己 NAS 的 IP。
       KAPI_LAN_IP: "${KAPI_LAN_IP:-192.168.5.10}"
+      KAPI_QUOTE_PROVIDER: "${KAPI_QUOTE_PROVIDER:-}"
+      KAPI_QUOTE_TOKEN: "${KAPI_QUOTE_TOKEN:-}"
     logging:
       driver: json-file
       options:

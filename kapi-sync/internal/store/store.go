@@ -51,6 +51,7 @@ var (
 	ErrLimitOutOfRange = errors.New("limit must be between 1 and 1000")
 	ErrEmptyPush       = errors.New("no changes supplied")
 	ErrLogCorrupt      = errors.New("log file is corrupt beyond the final record")
+	ErrWriteForbidden  = errors.New("record write is not permitted")
 )
 
 // LogEntry is one line of the append-only log.
@@ -132,7 +133,18 @@ type Store struct {
 	logFile *os.File
 	logSize int64
 
-	now func() time.Time // injectable for tests
+	importMappings map[string]map[string]string
+	importFormats  map[string]map[string]int
+	now            func() time.Time // injectable for tests
+	writeGuard     func(string, *merge.Record, merge.Change) (merge.Change, error)
+}
+
+// SetWriteGuard is used only by an explicitly shared family space. Legacy and
+// private stores retain their existing merge protocol and behaviour.
+func (s *Store) SetWriteGuard(guard func(string, *merge.Record, merge.Change) (merge.Change, error)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.writeGuard = guard
 }
 
 func key(entity, entityID string) string { return entity + "\x00" + entityID }
@@ -143,12 +155,13 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{
-		dir:     dir,
-		rows:    map[string]*merge.Record{},
-		seen:    map[string]struct{}{},
-		devices: map[string]*Device{},
-		byHash:  map[string]*Device{},
-		now:     time.Now,
+		dir:            dir,
+		rows:           map[string]*merge.Record{},
+		seen:           map[string]struct{}{},
+		devices:        map[string]*Device{},
+		byHash:         map[string]*Device{},
+		now:            time.Now,
+		importMappings: map[string]map[string]string{},
 	}
 	if err := s.replay(); err != nil {
 		return nil, err
@@ -261,9 +274,11 @@ func (s *Store) replayMeta() error {
 		return err
 	}
 	var m struct {
-		Devices  []*Device `json:"devices"`
-		PairCode string    `json:"pair_code"`
-		PairExp  int64     `json:"pair_exp"`
+		Devices        []*Device                    `json:"devices"`
+		PairCode       string                       `json:"pair_code"`
+		PairExp        int64                        `json:"pair_exp"`
+		ImportMappings map[string]map[string]string `json:"import_category_mappings,omitempty"`
+		ImportFormats  map[string]map[string]int    `json:"import_field_mappings,omitempty"`
 	}
 	if err := json.Unmarshal(b, &m); err != nil {
 		return err
@@ -272,6 +287,10 @@ func (s *Store) replayMeta() error {
 		s.devices[d.ID] = d
 		s.byHash[d.TokenHash] = d
 	}
+	if m.ImportMappings != nil {
+		s.importMappings = m.ImportMappings
+	}
+	s.importFormats = m.ImportFormats
 	s.pairCode = m.PairCode
 	if m.PairExp > 0 {
 		s.pairExp = time.UnixMilli(m.PairExp)
@@ -281,13 +300,17 @@ func (s *Store) replayMeta() error {
 
 func (s *Store) saveMeta() error {
 	m := struct {
-		Devices  []*Device `json:"devices"`
-		PairCode string    `json:"pair_code"`
-		PairExp  int64     `json:"pair_exp"`
+		Devices        []*Device                    `json:"devices"`
+		PairCode       string                       `json:"pair_code"`
+		PairExp        int64                        `json:"pair_exp"`
+		ImportMappings map[string]map[string]string `json:"import_category_mappings,omitempty"`
+		ImportFormats  map[string]map[string]int    `json:"import_field_mappings,omitempty"`
 	}{
-		Devices:  mapValues(s.devices),
-		PairCode: s.pairCode,
-		PairExp:  s.pairExp.UnixMilli(),
+		Devices:        mapValues(s.devices),
+		PairCode:       s.pairCode,
+		PairExp:        s.pairExp.UnixMilli(),
+		ImportMappings: s.importMappings,
+		ImportFormats:  s.importFormats,
 	}
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
@@ -372,14 +395,15 @@ func (s *Store) Pair(code, deviceName string) (*PairResult, error) {
 // Authenticate resolves a bearer token to a device and bumps last-seen.
 func (s *Store) Authenticate(token string) (*Device, error) {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	d, ok := s.byHash[hex.EncodeToString(sum[:])]
 	if !ok {
 		return nil, ErrUnauthorized
 	}
-	s.mu.Lock()
 	d.LastSeenAt = s.now().UnixMilli()
-	s.mu.Unlock()
-	return d, nil
+	copy := *d
+	return &copy, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -427,6 +451,22 @@ func (s *Store) Push(deviceID string, changes []merge.Change) (*PushResult, erro
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.pushLocked(deviceID, changes)
+}
+
+// Caller holds mu. The shortcut writer shares the exact append/fsync/replay path.
+func (s *Store) pushLocked(deviceID string, changes []merge.Change) (*PushResult, error) {
+	if s.writeGuard != nil {
+		guarded := make([]merge.Change, len(changes))
+		for i, ch := range changes {
+			var err error
+			guarded[i], err = s.writeGuard(deviceID, s.rows[key(ch.Entity, ch.EntityID)], ch)
+			if err != nil {
+				return nil, err
+			}
+		}
+		changes = guarded
+	}
 
 	working := map[string]*merge.Record{}
 	entries := make([]LogEntry, 0, len(changes))
@@ -542,4 +582,4 @@ func (s *Store) HealthInfo() Health {
 }
 
 // Version is stamped at build time.
-var Version = "0.1.0-dev"
+var Version = "0.5.4"

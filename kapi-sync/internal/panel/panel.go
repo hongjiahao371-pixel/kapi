@@ -1,13 +1,10 @@
-// Package panel serves the read-only web UI that lives next to the sync API.
+// Package panel serves the ledger UI and explicitly reviewed desktop imports.
 //
 // # Why a panel at all
 //
-// The phone is the only writer, but the NAS holds the authoritative copy and is
-// the only thing that survives the phone being lost. A user who wants to check
-// "did that payment from last Tuesday make it in" currently has no way to do
-// that without SSH. This is the answer, and it is deliberately read-only: the
-// merge rules assume a single writer with a Lamport clock, and a browser
-// editing rows would be a second writer with no clock.
+// Reading never modifies the ledger. Confirmed imports use a dedicated NAS
+// origin, a Lamport counter beyond all current rows, optimistic revalidation,
+// and the store's existing append/fsync path. Edits preserve the original record ID.
 //
 // # Auth
 //
@@ -27,25 +24,35 @@
 package panel
 
 import (
+	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"embed"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
+	"kapi/sync/internal/investment"
+	"kapi/sync/internal/quotes"
 	"kapi/sync/internal/store"
 )
 
-//go:embed web/index.html
+//go:embed web/index.html web/import.js web/family.js web/edit.js
 var assets embed.FS
 
 // Handler serves the panel shell and its JSON endpoints.
 type Handler struct {
-	st    *store.Store
-	token string
+	st      *store.Store
+	token   string
+	quotes  *quotes.Service
+	imports *importService
 }
+
+func (h *Handler) EnableQuotes(s *quotes.Service) { h.quotes = s }
 
 // New builds a Handler. If token is empty a random one is generated and
 // returned as second so the caller can print it.
@@ -53,7 +60,7 @@ func New(st *store.Store, token string) (*Handler, string) {
 	if token == "" {
 		token = randomToken()
 	}
-	return &Handler{st: st, token: token}, token
+	return &Handler{st: st, token: token, imports: newImportService(st)}, token
 }
 
 func randomToken() string {
@@ -68,14 +75,72 @@ func randomToken() string {
 
 // Register mounts every panel route on mux.
 func (h *Handler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		http.Redirect(w, r, "/panel/", http.StatusFound)
+	})
 	mux.HandleFunc("/panel", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/panel/", http.StatusFound)
 	})
 	mux.HandleFunc("/panel/", h.shell)
+	mux.HandleFunc("/panel/import.js", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(405)
+			return
+		}
+		b, _ := assets.ReadFile("web/import.js")
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = w.Write(b)
+	})
+	mux.HandleFunc("/panel/edit.js", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(405)
+			return
+		}
+		b, _ := assets.ReadFile("web/edit.js")
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = w.Write(b)
+	})
+	mux.HandleFunc("/panel/family.js", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(405)
+			return
+		}
+		b, _ := assets.ReadFile("web/family.js")
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = w.Write(b)
+	})
 	mux.HandleFunc("/v1/panel/summary", h.auth(h.summary))
+	mux.HandleFunc("/v1/panel/backup", h.auth(h.backup))
+	mux.HandleFunc("/v1/panel/backups", h.auth(h.backups))
 	mux.HandleFunc("/v1/panel/tx", h.auth(h.tx))
 	mux.HandleFunc("/v1/panel/row", h.auth(h.row))
+	mux.HandleFunc("/v1/panel/edit", h.auth(h.editTransaction))
 	mux.HandleFunc("/v1/panel/facets", h.auth(h.facets))
+	mux.HandleFunc("/v1/panel/assets", h.auth(h.assets))
+	mux.HandleFunc("/v1/panel/import/catalog", h.auth(h.importCatalog))
+	mux.HandleFunc("/v1/panel/import/preview", h.auth(h.importPreview))
+	mux.HandleFunc("/v1/panel/import/commit", h.auth(h.importCommit))
+	mux.HandleFunc("/v1/panel/import/repair", h.auth(h.importRepair))
+	mux.HandleFunc("/v1/panel/import/format-plan", h.auth(h.importFormatPlan))
+	mux.HandleFunc("/v1/panel/import/format-ai", h.auth(h.importFormatAI))
+	mux.HandleFunc("/v1/panel/import/format-apply", h.auth(h.importFormatApply))
+	mux.HandleFunc("/v1/panel/import/row", h.auth(h.importRepairRow))
+	mux.HandleFunc("/v1/panel/import/cancel", h.auth(h.importCancel))
 	// 配对码重新生成。放面板而不只在启动日志里打，是因为配对码 10 分钟
 	// 过期，而容器可能几个月才重启一次——"手机就在手上、就想现在配"的
 	// 时刻，重启容器捞日志这条路是走不通的。
@@ -98,15 +163,20 @@ func (h *Handler) shell(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
+	// Authorize only the shipped inline script plus same-origin external scripts.
+	start := bytes.Index(b, []byte("<script>"))
+	end := bytes.Index(b, []byte("</script>"))
+	if start >= 0 && end > start {
+		sum := sha256.Sum256(b[start+len("<script>") : end])
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+	}
+	w.Header().Set("Referrer-Policy", "no-referrer")
 	_, _ = w.Write(b)
 }
 
 func (h *Handler) auth(next func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tok := r.URL.Query().Get("token")
-		if tok == "" {
-			tok = r.Header.Get("X-Panel-Token")
-		}
+		tok := r.Header.Get("X-Panel-Token")
 		// Constant-time compare. A ledger is worth guessing for, and a
 		// byte-by-byte early-return comparison leaks the prefix length of a
 		// 32-char hex token to anyone willing to make a few million requests.
@@ -116,8 +186,7 @@ func (h *Handler) auth(next func(http.ResponseWriter, *http.Request)) http.Handl
 				// Say where to get it. Someone standing in their own hallway
 				// with the NAS in front of them failing to log in needs the
 				// docker logs command, not a bare 401.
-				"message": "面板令牌不对。运行 docker logs kapi-sync 可以看到本次启动的面板令牌," +
-					"或者在 compose 里设置 KAPI_PANEL_TOKEN 固定它。",
+				"message": "面板令牌不对，请从 NAS 的 KAPI_PANEL_TOKEN 或 data/panel-token 获取。",
 			})
 			return
 		}
@@ -143,13 +212,15 @@ func constantTimeEqual(a, b string) bool {
 // 09-01..09-30 includes the whole of the 30th instead of stopping at 00:00.
 func (h *Handler) query(r *http.Request) store.TxQuery {
 	q := store.TxQuery{
-		Keyword:        strings.TrimSpace(r.URL.Query().Get("q")),
-		Direction:      r.URL.Query().Get("direction"),
-		CategoryID:     r.URL.Query().Get("category_id"),
-		AccountID:      r.URL.Query().Get("account_id"),
-		IncludeDeleted: r.URL.Query().Get("include_deleted") == "1",
-		Offset:         atoiDefault(r.URL.Query().Get("offset"), 0),
-		Limit:          atoiDefault(r.URL.Query().Get("limit"), 0),
+		Keyword:         strings.TrimSpace(r.URL.Query().Get("q")),
+		Direction:       r.URL.Query().Get("direction"),
+		CategoryID:      r.URL.Query().Get("category_id"),
+		ExpenseCategory: r.URL.Query().Get("expense_category"),
+		LedgerID:        r.URL.Query().Get("ledger_id"),
+		AccountID:       r.URL.Query().Get("account_id"),
+		IncludeDeleted:  r.URL.Query().Get("include_deleted") == "1",
+		Offset:          atoiDefault(r.URL.Query().Get("offset"), 0),
+		Limit:           atoiDefault(r.URL.Query().Get("limit"), 0),
 	}
 	if d := r.URL.Query().Get("from"); d != "" {
 		q.From = startOfDay(d)
@@ -188,6 +259,21 @@ func (h *Handler) summary(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) tx(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.st.ListTx(h.query(r)))
+}
+
+func (h *Handler) assets(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	cached := map[string]investment.Quote{}
+	if h.quotes != nil {
+		for symbol, q := range h.quotes.Snapshot() {
+			cached[symbol] = investment.Quote{Symbol: q.Symbol, Price: q.Price, Date: q.Date, Source: q.Source, FetchedAt: q.FetchedAt, Error: q.Error}
+		}
+	}
+	writeJSON(w, http.StatusOK, h.st.Assets(cached, r.URL.Query().Get("account_id")))
 }
 
 func (h *Handler) facets(w http.ResponseWriter, r *http.Request) {
@@ -235,4 +321,27 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (h *Handler) backup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "GET required", 405)
+		return
+	}
+	path, err := h.st.CreateBackup(true)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"message": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filepath.Base(path)+"\"")
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeFile(w, r, path)
+}
+func (h *Handler) backups(w http.ResponseWriter, r *http.Request) {
+	items, err := h.st.Backups()
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"message": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"items": items})
 }

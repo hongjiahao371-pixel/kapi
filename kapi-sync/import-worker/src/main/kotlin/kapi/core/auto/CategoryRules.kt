@@ -1,0 +1,600 @@
+package kapi.core.auto
+
+/**
+ * 账单自动分类。
+ *
+ * ## 为什么放在 `core` 而不是 app
+ *
+ * 它是纯逻辑：输入商户名和账单原文，输出一个分类路径。放 `core` 才有单测能钉住——
+ * 而这一块**必须**有单测，因为它决定的是"这笔钱记到哪一栏"。分类错了金额还是对的，
+ * 用户月底看某一栏的数字对不上，却不会知道是自动分错了。
+ *
+ * ## 为什么要两级
+ *
+ * 原来只有 11 个平铺的顶级分类。`餐饮` 下面什么都不分，意味着包子铺和火锅在统计里
+ * 长得一样——但这两笔在用户的生活里根本不是一回事。`购物` 更极端：一件 T 恤和一台
+ * 显示器放在同一栏里，这栏数字没有任何意义。
+ *
+ * 顶级分类保持不变（已有的库里有 `cat-0`…`cat-10`，改名会打断用户的数据），
+ * 细分类挂在它们下面，用 `parentId` 串起来。
+ *
+ * ## 匹配顺序
+ *
+ * 商品字段的具体品类 → 商户品牌/业态 → 提取后的交易内容 → 平台兜底。
+ * 有账单字段结构时，原文兜底只使用商品、账单分类和独立平台名；
+ * 付款账户、收单机构、推荐位和导航不参与。规则表中具体品类排在平台兜底前。
+ */
+object CategoryRules {
+
+    /** 分类路径。`minor` 为空表示只判出了大分类。 */
+    data class Path(val major: String, val minor: String? = null) {
+        /** 用于查库和展示：`餐饮/早餐`。 */
+        val text: String get() = if (minor == null) major else "$major/$minor"
+    }
+
+    /**
+     * 一条规则。[keywords] 里**任意一个**出现在被判定的文本里就命中。
+     *
+     * [merchantOnly] 的规则只在商户名里找——用来放那些**绝不能**从商品标题里
+     * 认的词。比如"外卖"：商户名叫"某某外卖"说明是外卖，但商品标题里出现"外卖"
+     * 往往只是在描述一个菜名（「黄焖鸡外卖套餐」），那笔仍然是餐饮里的正餐。
+     *
+     * [rawOnly] 的规则**只在账单原文里找**（商户轮跳过）——用来放平台名。
+     * 商户 `杭州淘宝通信技术有限公司` 含"淘宝"，但淘宝什么稿都卖：商户轮若参与，
+     * 淘宝上买的耳机就永远轮不到数码（商户轮会先扫完全部规则）。放到原文轮，
+     * 具体品类词先判，全落空了才轮到平台名兜底——而商户名本身就在原文里，
+     * 纯平台消费照样能兜到「购物」。
+     */
+    private data class Rule(
+        val major: String,
+        val minor: String?,
+        val keywords: List<String>,
+        val merchantOnly: Boolean = false,
+        val rawOnly: Boolean = false,
+    )
+
+    // ==================================================================
+    // 支出
+    // ==================================================================
+
+    /**
+     * 支出规则。**顺序即优先级，改动时把具体的往前挪。**
+     *
+     * 每一档都尽量收窄到"只有它才会这么写"的程度。宁可漏判——
+     * 漏判的结果是"未分类"，用户两秒能改；错判的结果是统计被污染，他不会发现。
+     */
+    // Concrete purchased objects outrank descriptive food/color words in a product title.
+    // These overrides never scan the merchant, navigation or payment account.
+    private val PRODUCT_RULES: List<Rule> = listOf(
+        // The consumable's purpose wins over the appliance named on its packaging.
+        Rule("日用", "清洁", listOf("清洁剂", "除垢剂", "除垢清洁剂")),
+        Rule("购物", "家电", listOf("咖啡机", "豆浆机", "面包机", "榨汁机", "破壁机", "电吹风", "吹风机")),
+        Rule("购物", "美妆", listOf("口红", "唇釉", "唇彩", "眼影", "粉底液", "染发剂", "指甲油")),
+        Rule("购物", "服饰", listOf("T恤", "衬衫", "卫衣", "连衣裙", "运动鞋", "羽绒服", "牛仔裤", "毛衣", "短袖", "外套", "裤子", "西装", "帽子", "围巾", "内衣", "内裤", "文胸", "睡衣", "袜子")),
+        Rule("购物", "数码", listOf("手机壳", "手机膜", "钢化膜", "手机维修", "电脑维修", "3D打印机配件", "游戏手柄")),
+        Rule("购物", null, listOf("成人玩具")),
+        Rule("餐饮", "烘焙", listOf("鲜花饼")),
+
+    )
+
+    private val PRODUCT_FALLBACK_RULES: List<Rule> = listOf(
+        Rule("餐饮", null, listOf("外卖餐饮", "餐饮消费")),
+    )
+
+    private val EXPENSE_RULES: List<Rule> = listOf(
+        // 软件和影音的具体名称优先于设备品牌；泛泛的「会员/订阅」不说明用途。
+        Rule("其他", "软件服务", listOf(
+            "腾讯文档", "腾讯会议", "WPS", "Microsoft 365", "Office 365",
+            "ChatGPT", "Claude", "MiniMax", "TokenPlanMax", "TokenPlan", "OpenAI", "Cursor", "Notion",
+            "软件订阅", "软件会员", "软件服务", "云存储", "云服务器", "云主机",
+            "域名续费", "云盘", "网盘", "iCloud", "API费用", "API充值", "API调用",
+            "API 费用", "API 充值", "API 调用", "接口调用费", "模型调用费", "Token充值",
+        )),
+        Rule("娱乐", "会员", listOf(
+            "爱奇艺", "腾讯视频", "优酷", "芒果TV", "Netflix", "Spotify",
+            "网易云音乐", "QQ音乐", "Apple Music", "Apple TV", "哔哩哔哩大会员",
+            "视频会员", "音乐会员", "影视会员",
+        )),
+        // 猫玩具和洗发水不能被更宽泛的玩具/美妆规则抢走。
+        Rule("宠物", "宠物用品", listOf("猫玩具", "宠物玩具", "狗玩具")),
+        Rule("日用", "个护", listOf("洗发水", "沐浴露")),
+        // ---------- 餐饮 · 早餐 ----------
+        // 收在最前面：包子铺同时含「包」和「铺」，不先摘掉会被下面的规则抢走。
+        Rule("餐饮", "早餐", listOf(
+            "包子", "馒头", "油条", "豆浆", "稀饭", "粥铺", "粥店",
+            "早点", "早餐", "早茶", "烧麦", "煎饼", "油煎", "肠粉", "豆浆店",
+        )),
+        // ---------- 餐饮 · 火锅 ----------
+        Rule("餐饮", "火锅", listOf(
+            "火锅", "串串", "冒菜", "麻辣烫", "呷哺", "海底捞",
+        )),
+        // ---------- 餐饮 · 烘焙 ----------
+        // 2026-10-02 真机：云南嘉华食品有限公司（鲜花饼/烘焙连锁）此前未分类。
+        // 品牌词只收连锁烘焙牌子；蛋糕/面包/点心 同时也是商品标题里的常见词。
+        Rule("餐饮", "烘焙", listOf(
+            "烘焙", "蛋糕", "面包", "点心", "饼屋", "饼店", "糕点", "酥包",
+            "嘉华", "鲍师傅", "泸溪河", "好利来", "味多美", "桃李",
+        )),
+        // ---------- 餐饮 · 零食 ----------
+        // 2026-10-02 竞品对齐（钱迹把零食独立成一级）：高频小额类目，混进正餐后
+        // 这栏数字没有意义。软饮/雪糕归这里而不是酒水——酒水只收酒和喝酒的店。
+        Rule("餐饮", "零食", listOf(
+            "零食", "膨化", "薯片", "辣条", "饼干", "糖果", "巧克力",
+            "坚果", "炒货", "果冻", "蜜饯", "话梅", "果干",
+            "鸭脖", "卤味", "雪糕", "冰淇淋", "口香糖",
+        )),
+        // ---------- 餐饮 · 水果 ----------
+        // 2026-10-04 用户真机反馈：果切/水果店里买水果是高频支出，
+        // 混在零食或正餐里都对着。果汇/果切是云南一带水果店常用的字号。
+        Rule("餐饮", "水果", listOf(
+            "水果", "水果店", "果汇", "果切", "鲜果", "果业", "果园",
+        )),
+        // ---------- 餐饮 · 咖啡茶饮 ----------
+        Rule("餐饮", "咖啡茶饮", listOf(
+            "咖啡", "星巴克", "瑞幸", "库迪", "manner", "MANNER",
+            "奶茶", "喜茶", "奈雪", "蜜雪", "茶百道", "古茗", "沪上阿姨",
+            "茶铺", "茶楼",
+            "书亦", "益禾堂", "茶颜", "霸王茶姬", "茶饮", "咖啡店",
+            "luckin", "Luckin", "coffee",
+        )),
+        // ---------- 餐饮 · 酒水 ----------
+        Rule("餐饮", "酒水", listOf(
+            "酒吧", "酒馆", "清吧", "精酿", "啤酒", "夜宵店", "大排档",
+        )),
+        // ---------- 餐饮 · 外卖 ----------
+        // merchantOnly：商品标题里的「外卖」多半是套餐名的一部分，不是"这笔是外卖"。
+        Rule("餐饮", "外卖", listOf("外卖"), merchantOnly = true),
+        // ---------- 餐饮 · 正餐 ----------
+        Rule("餐饮", "正餐", listOf(
+            "餐厅", "饭店", "酒楼", "饭馆", "面馆", "米粉", "米线", "螺蛳粉",
+            "餐饮店", "餐饮部", "美食店", "小吃店",
+            "快餐", "简餐", "盖饭", "炒饭", "炒面", "饺子", "馄饨", "食堂",
+            "菜馆", "食府", "小吃", "烧烤", "烤肉", "自助餐", "料理", "日料",
+            "韩料", "泰国菜", "西餐", "披萨", "汉堡", "麻辣香锅", "干锅",
+            "寿司", "刺身", "午餐", "晚餐", "牛肉面", "兰州拉面", "重庆小面", "煲仔饭", "猪脚饭", "沙县小吃", "牛排", "麻婆豆腐", "番茄鸡蛋面",
+            // 连锁快餐品牌（2026-10-02 微信样本：麦当劳详情页，商户全称是
+            // 「云南滇美餐饮有限公司」毫无品类信息）
+            "麦当劳", "肯德基", "汉堡王", "必胜客", "德克士", "塔斯汀", "大米先生",
+            // 菜名/业态直呼（2026-10-04 OPPO 真机：渝八两重庆鸡公煲，美团
+            // 外卖的微信账单，商户字段只有「美团」平台名，全靠商品行救回来）
+            "煸鸡", "鸡公煲", "黄焖鸡", "酸菜鱼", "烤鱼", "牛蛙", "卤味", "熟食", "新疆菜", "大盘鸡", "烤羊排", "拌面",
+        )),
+        // **刻意没有「餐饮」的兜底规则。**
+        //
+        // 原来有 `餐/饮` 两个单字。`饮` 看着安全，`餐` 不然：支付宝账单详情页上
+        // 有一行 `餐饮美食`（分类筛选器），而真机那一笔的商户是 `加载中` 这个占位
+        // 行、被跳过，于是落到原文兜底，命中这个「餐」→ 一笔判不出是什么的支付
+        // 被记成了「餐饮」。
+        //
+        // 具体的餐厅/火锅/咖啡/外卖各有一条，判不出来返回 null（未分类）。
+        // 用户两秒能改，而"餐饮"这个错他不会发现。
+
+        // ---------- 居住 · 水电燃气 ----------
+        // **刻意排在交通前面**：燃气公司的全名常带能源巨头字号——2026-10-02
+        // 真机「云南中石油昆仑燃气有限公司」若先撞上加油规则的「中石油」
+        // 就会被记成加油。「燃气」二字放这里，缴燃气费永远赢过字号。
+        Rule("居住", "水电燃气", listOf("燃气", "水费", "电费", "自来水", "国家电网", "供电局", "热力费")),
+
+        // ---------- 交通 ----------
+        // **这里刻意没有"交通"的兜底规则。**
+        //
+        // 原来的兜底是 `车/行/驾/票`，四个字在真实账单里全部是地雷：
+        //  - 「行」→ `交通银行信用卡`、`深圳市腾讯计算机系统**有限**公司`
+        //  - 「车」→ `中国银行储蓄卡` 之外的 `火车`/`车库`，但 `行车` 也中
+        //  - 「票」→ `发票`、`机票`（那是出行，不是交通方式）
+        //
+        // 而 `交通银行` 出现在**几乎每一笔**微信/支付宝账单里，商户名
+        // `深圳市腾讯计算机系统有限公司` 也是「行」字结尾。
+        // 有兜底时这两笔全被记成"交通"——2026-10-01 真机上一笔数码购物
+        // 和一笔腾讯文档自动续费都被它抢走。
+        //
+        // 下面每一条都是具体的出行方式，判不出来就返回 null（未分类），
+        // 那比"记成交通"诚实得多。
+        Rule("交通", "加油", listOf("加油", "中石化", "中石油", "壳牌", "加油站", "石油")),
+        Rule("交通", "打车", listOf(
+            "打车", "滴滴", "出租车", "网约车", "曹操出行", "T3出行", "花小猪", "高德打车",
+        )),
+        Rule("交通", "公共交通", listOf(
+            "地铁", "公交", "乘车码", "一卡通", "公交卡", "轨道交通", "有轨电车",
+        )),
+        Rule("交通", "火车", listOf("12306", "火车票", "铁路")),
+        Rule("交通", "飞机", listOf("机票", "航空", "机场", "携程", "去哪儿", "飞猪", "南航", "国航", "东航")),
+        Rule("交通", "停车", listOf("停车", "车位", "车库", "泊车")),
+        Rule("交通", "车辆保养", listOf("洗车", "4S店", "轮胎", "机油", "车险", "年检")),
+        Rule("交通", "过路费", listOf("高速", "ETC", "过路费", "通行费")),
+        Rule("交通", "共享单车", listOf("共享单车", "共享电单车", "美团电单车", "美团单车", "哈啰单车", "电单车骑行", "助力车", "哈啰骑行")),
+
+        // ---------- 旅行（2026-10-02 竞品对齐，新增顶级） ----------
+        // 钱迹把旅行独立成一级是对的：一次出行是"机票+酒店+门票"的支出大项，
+        // 埋在娱乐下统计失真。**机票/火车刻意留在交通**——飞行未必是度假（出差、
+        // 探亲都是），而且交通的 8 细类是既有强项，不为对齐把已判准的拽走。
+        // 旅行收住宿与游玩：这两个词只会在出行时出现。
+        Rule("旅行", "酒店住宿", listOf("酒店", "民宿", "客栈", "青旅", "度假", "公寓式酒店")),
+        Rule("旅行", "景点门票", listOf("旅游", "景点", "景区", "度假区", "门票代订")),
+
+        // ---------- 育儿（2026-10-02 竞品对齐，新增顶级） ----------
+        // 钱迹的「孩子」是 22 类里用户心智最强的之一，此前 kapi 完全空白
+        // （购物/母婴只够到实物一半）。规则放在购物**之前**：奶粉/玩具/童装
+        // 这些词从母婴/服饰的词表里迁过来，由这里先接住。
+        Rule("育儿", "奶粉尿布", listOf(
+            "奶粉", "尿不湿", "纸尿裤", "拉拉裤", "奶瓶", "辅食",
+        )),
+        Rule("育儿", "玩具绘本", listOf("玩具", "积木", "乐高", "绘本", "布书", "摇铃")),
+        Rule("育儿", "幼教学费", listOf("幼儿园", "早教", "托育", "幼小衔接", "亲子园")),
+        Rule("育儿", "亲子游玩", listOf("亲子", "游乐园", "儿童乐园", "遛娃")),
+        Rule("育儿", "儿童医疗", listOf("儿科", "儿童医院", "儿保")),
+        // 童装/婴儿床这类"东西"判不出上面哪个细类，落到育儿顶级。
+        Rule("育儿", null, listOf("童装", "安全座椅", "儿童", "宝宝", "婴儿")),
+
+        // ---------- 购物 ----------
+        // 商户名只认品牌和店名形态；商品标题走后面的通用规则。
+        //
+        // 「电子」和「手机」**刻意不在词表里**：真机账单上出现过
+        // `申请电子凭证`（把腾讯文档自动续费抢成数码）和 `手机银行`——
+        // 这类词在金融/凭证语境里是常客，而它指向的商品品类通常是别的。
+        // 数码靠具体的设备名认。
+        Rule("购物", "数码", listOf(
+            "小米之家", "华为商城", "苹果官方",
+            "数码", "电脑城", "电子产品", "消费电子",
+            "耳机", "蓝牙耳机", "音箱", "充电宝", "数据线", "充电线", "移动电源",
+            "Type-C转换", "Type-C转", "USB转接头", "转换USB", "扩展坞",
+            "平板", "笔记本电脑", "台式机", "显卡", "硬盘", "U盘", "路由器",
+            "打印机", "3D打印", "相机", "摄像头", "TP-LINK", "TL-IPC", "开发板", "ESP32", "微单", "单反", "键盘", "鼠标", "显示器", "智能手表", "手环",
+        )),
+        Rule("购物", "服饰", listOf(
+            "优衣库", "UNIQLO", "ZARA", "H&M", "耐克", "NIKE", "阿迪达斯",
+            "李宁", "安踏", "太平鸟", "森马", "海澜之家", "波司登", "ONLY",
+            "以纯", "美特斯邦威", "服饰", "服装", "衣服", "鞋店", "箱包",
+            // 衣物本体。淘宝/京东的旗舰店名字毫无信息量，全靠这些词。
+            "短袖", "T恤", "t恤", "衬衫", "裤子", "外套", "羽绒服", "连衣裙",
+            "卫衣", "毛衣", "西装", "牛仔裤", "运动鞋", "球鞋", "帽子", "围巾", "内衣", "内裤", "內裤", "内褲", "內褲", "文胸", "睡衣", "袜子",
+            // （童装已迁到「育儿」顶级，见上。）
+        )),
+        // **「家电」不作为关键词。** 微信账单详情页上有一行 `商家电话`——
+        // 商**家电**话，子串匹配直接命中，真机上一笔腾讯文档自动续费被抢成"购物/家电"。
+        // 短中文词会跨词边界命中不相干的词，这类词只能靠具体家电名认。
+        Rule("购物", "家电", listOf(
+            "冰箱", "洗衣机", "空调", "电视", "微波炉", "烤箱", "电饭煲",
+            "电水壶", "加湿器", "吸尘器", "扫地机器人",
+        )),
+        Rule("购物", "美妆", listOf(
+            "化妆品", "口红", "面霜", "护肤", "香水", "洗发", "珀莱雅", "欧莱雅",
+            "兰蔻", "雅诗兰黛", "薇诺娜", "花西子", "完美日记", "彩妆", "美容院",
+            "精华", "精华液", "面膜", "水乳", "洗面奶", "防晒", "粉底液", "眼影",
+        )),
+        // 母婴留下的词全指向**孕产期**的妈妈（育儿的词已上移到「育儿」顶级，
+        // 见上）：孕妇装、待产包这类消费落在购物是合理的。
+        Rule("购物", "母婴", listOf("孕婴", "母婴", "孕妇", "待产", "月子中心")),
+        // 烟酒（2026-10-03 咔皮对齐：咔皮购物下有「烟」）。只收买酒的词；
+        // 喝酒的店（酒吧/精酿）由更靠前的 餐饮/酒水 接。
+        Rule("购物", "烟酒", listOf("香烟", "烟草", "烟酒", "白酒", "红酒", "洋酒", "黄酒")),
+        Rule("购物", "图书", listOf("图书", "书店", "当当", "新华书店", " kindle", " Kindle")),
+        Rule("购物", "家居", listOf("家具", "沙发", "床垫", "收纳", "宜家", "林氏木业", "全友", "顾家", "家居")),
+        // 品牌词（2026-10-02 用户指认：小佩是宠物品牌 PETKIT）。页面自带的
+        // 「宠物」分类角标不是每屏都有，品牌名才是商户自己的稳定信号。
+        // 只收知名且判定无歧义的：这些字符串出现在支付页里几乎不可能是别的消费。
+        //
+        // 2026-10-02 竞品对齐：「宠物」提升为**顶级**——支出主体是口粮/医疗/
+        // 驱虫这类"饲养"，不是"购物"。（原 购物/宠物 规则整体迁到这里。）
+        Rule("宠物", "口粮", listOf("猫粮", "狗粮", "猫砂", "主粮", "冻干", "宠物粮")),
+        Rule("宠物", "宠物用品", listOf("宠物用品", "猫窝", "狗窝", "猫爬架", "猫玩具", "宠物玩具", "猫笼", "牵引绳")),
+        Rule("宠物", "宠物医疗", listOf("宠物医院", "驱虫", "绝育")),
+        Rule("宠物", "宠物服务", listOf("宠物服务", "宠物美容", "宠物寄养", "宠物训练", "洗猫", "洗狗", "猫洗澡", "狗洗澡", "猫咪洗护", "宠物洗护")),
+        // **刻意不收「猫」「狗」单字**：猫眼电影、热狗这些词会被子串命中——
+        // 和「交通银行」同一个坑。具体词收不够时宁可漏判，让用户自己挑。
+        Rule("宠物", null, listOf("宠物", "宠物店", "猫咖", "狗咖", "小佩", "petkit", "PETKIT", "波奇", "麦富迪")),
+
+        // ---------- 居住 ----------
+        Rule("居住", "房租", listOf("房租", "租金", "房东", "中介费", "押金")),
+        // （燃气费那条已前移到交通之前，见上——防燃气公司的能源字号被加油抢走。）
+        Rule("居住", "物业", listOf("物业", "物业费", "取暖费", "暖气费")),
+        Rule("居住", "宽带", listOf("宽带", "网费", "固话")),
+
+        // ---------- 通讯 ----------
+        Rule("通讯", "话费", listOf("话费", "手机充值", "手机缴费", "流量包", "充值中心")),
+        Rule("通讯", "快递", listOf("快递", "运费", "寄件", "裹裹", "顺丰", "圆通", "中通", "申通", "菜鸟", "京东物流", "邮政")),
+
+        Rule("通讯", "话费", listOf("中国移动", "中国联通", "中国电信"), merchantOnly = true),
+
+        // ---------- 日用 ----------
+        // 「日用百货」是支付宝**账单分类**字段的原值（2026-10-02 真机 TP-LINK
+        // 摄像头页），整串只出现在分类位，不会误伤别的话。
+        Rule("日用", null, listOf("日用百货")),
+        Rule("日用", "超市", listOf(
+            "超市", "沃尔玛", "家乐福", "永辉", "盒马", "大润发", "山姆", "华润万家", "苏果",
+        )),
+        Rule("日用", "便利店", listOf("便利店", "711", "7-11", "全家", "罗森", "美宜佳", "十足")),
+        Rule("日用", "个护", listOf("牙膏", "洗发水", "沐浴露", "纸巾", "理发", "美容美发", "美甲", "剪发")),
+        Rule("日用", "清洁", listOf("洗洁精", "洗衣液", "拖把", "抹布", "消毒液", "家政保洁", "干洗服务", "洗衣服务")),
+
+        // ---------- 娱乐 ----------
+        Rule("娱乐", "电影", listOf("电影", "影院", "影城", "猫眼", "淘票票", "万达影城", "CGV", "UME")),
+        Rule("娱乐", "游戏", listOf("游戏", "Steam", "steam", "腾讯游戏", "网易游戏", "点券")),
+        // 「游戏充值」不在词表：它是支付宝分类推荐位的 chip 文案（2026-10-02
+        // 审计，MiniMax 会员订阅页被它劫持成游戏）。真游戏充值页认「游戏」就够。
+        Rule("娱乐", "演出", listOf("演出", "演唱会", "话剧", "音乐会", "大麦", "门票", "livehouse")),
+        // （旅行规则已上移为**顶级分类**，见交通块之后——2026-10-02 竞品对齐。）
+        Rule("娱乐", "运动健身", listOf("健身", "篮球", "羽毛球", "瑜伽", "游泳", "Keep", "乐刻", "超级猩猩")),
+        Rule("娱乐", "桌游", listOf("棋牌", "麻将", "桌游", "剧本杀", "密室")),
+        Rule("娱乐", "潮玩", listOf("泡泡玛特", "POPMART", "POP MART", "LABUBU", "收藏公仔", "手办")),
+
+        // ---------- 医疗 ----------
+        Rule("医疗", "药品", listOf("药店", "药房", "大药房", "医药", "买药", "同仁堂", "益丰", "大参林", "老百姓大药房", "阿莫西林", "布洛芬", "对乙酰氨基酚")),
+        Rule("医疗", "口腔", listOf("牙科", "口腔", "洗牙", "正畸", "镶牙", "补牙")),
+        Rule("医疗", "保健", listOf("保健品", "维生素", "蛋白粉", "益生菌")),
+        // 保险（2026-10-02 真机好医保页：商品「2026.9月保费缴清-好医保·长期医疗」，
+        // 页面分类值「保险」）。险种与产品名也应识别，不能依赖读屏恰好取到保险公司的全称；「车险」被更靠前的
+        // 交通/车辆保养抢走，是刻意的——车险归交通不属于医疗。
+        Rule("医疗", "保险", listOf("保险", "保费", "保单", "投保", "健康险", "医疗险", "意外险", "重疾险", "微医保", "好医保")),
+        Rule("医疗", null, listOf("医院", "门诊", "挂号", "急诊", "住院", "体检", "诊所", "输液")),
+
+        // ---------- 教育 ----------
+        Rule("教育", "培训", listOf("培训", "课程", "网课", "补课", "学而思", "新东方", "猿辅导", "作业帮", " tuition")),
+        // （幼儿园已迁到「育儿/幼教学费」——那笔钱是养孩子不是上学，2026-10-02 竞品对齐。）
+        Rule("教育", "学费", listOf("学费", "学校", "大学", "研究生", "培训费")),
+        Rule("教育", "书籍文具", listOf("文具", "笔记本", "笔袋", "书包", "打印", "复印", "教材", "教辅", "课本")),
+        Rule("教育", "考试", listOf("报名费", "考试费", "四六级", "教资", "CPA", "证书")),
+
+        // ---------- 人情 ----------
+        Rule("人情", "红包", listOf("红包", "压岁钱", "份子钱"), merchantOnly = true),
+        Rule("人情", "礼物", listOf("鲜花", "礼品", "礼物", "送礼")),
+
+        // ---------- 平台兜底（购物，rawOnly） ----------
+        // **rawOnly + 刻意放在几乎最后**：平台什么稿都卖，"淘宝"本身的分类信息量
+        // 是零。商户轮不参与（见 [Rule.rawOnly] 的 KDoc——否则淘宝商户的耳机永远
+        // 轮不到数码）；原文轮里具体品类词全部落空后才轮到它——那时"至少知道
+        // 是在淘宝上买的"也比"未分类"强。2026-10-02 真机：「先用后付」页商户是
+        // `杭州淘宝通信技术有限公司`，此前整页判 null。
+        // 闲鱼单独一档（二手），查库查不到「购物/二手」时 AutoCategory 会退回顶级。
+        Rule("购物", "二手", listOf("闲鱼"), rawOnly = true),
+        Rule("购物", null, listOf("淘宝", "天猫", "拼多多", "小红书", "京东", "苏宁", "国美"), rawOnly = true),
+
+        // ---------- 其他 ----------
+        Rule("其他", "罚款", listOf("罚款", "违章", "滞纳金")),
+        Rule("其他", "手续费", listOf("手续费", "服务费", "年费", "利息", "违约金")),
+    )
+
+    // ==================================================================
+    // 收入
+    // ==================================================================
+
+    private val INCOME_RULES: List<Rule> = listOf(
+        Rule("工资", null, listOf("工资", "薪资", "薪水", "月薪", "代发")),
+        Rule("奖金", null, listOf("奖金", "年终奖", "绩效", "提成", "补贴")),
+        Rule("兼职", null, listOf("兼职", "劳务", "外快", "稿费")),
+        Rule("理财", null, listOf("理财", "利息", "收益", "基金", "余额宝", "零钱通", "分红", "赎回", "理财通")),
+        Rule("退款", null, listOf("退款", "退货", "退票")),
+        Rule("报销", null, listOf("报销", "赔付", "理赔")),
+        Rule("红包", null, listOf("红包")),
+    )
+
+    // ==================================================================
+
+    /**
+     * 解析器在读不到商户时会填的**占位文本**，以及页面还没稳定时的第一行。
+     *
+     * 它们不是商户名，拿去匹配规则只会制造假账。2026-10-01 真机上一笔
+     * `merchant="加载中"` 就是这么被记成"餐饮"的。
+     */
+    private val PLACEHOLDER_MERCHANTS = listOf(
+        "（没读到商户）", "没读到商户", "加载中", "正在加载", "加载失败", "未知商户",
+    )
+
+    /**
+     * 分类一筆账单。
+     *
+     * @param merchant 解析出来的商户名，可能为 null 或是"没读到商户"那类占位。
+     * @param rawText 账单详情页的原始文本，商品标题在里面。
+     * @param income  true = 收入。
+     * @return 判不出来时返回 **null**（界面上显示「未分类」），不猜。
+     */
+    /** An Alipay native transfer result has explicit transfer status and complete
+     * receipt fields. Its payee is a person, even if the nickname resembles a brand.
+     * Ordinary 支付成功/付款成功 merchant receipts keep normal category matching. */
+    private fun isNativePeerTransfer(text: String): Boolean =
+        AlipayPaymentResult.canonicalText(text)?.lineSequence()?.any {
+            it.startsWith("转账成功￥")
+        } == true
+
+    fun classify(merchant: String?, rawText: String?, income: Boolean): Path? {
+        PeerPaymentReceipt.read(rawText.orEmpty())?.let {peer ->
+            return if(peer.kind==PeerPaymentReceipt.Kind.RED_PACKET) {
+                if(income) Path("红包") else Path("人情","红包")
+            } else null
+        }
+        val rules = if (income) INCOME_RULES else EXPENSE_RULES
+        val raw = merchant?.trim().orEmpty()
+        val m = if (PLACEHOLDER_MERCHANTS.any { raw.contains(it) }) "" else raw
+        val text = rawText?.trim().orEmpty()
+
+        // 0. 转账页整类豁免：`对方账户` 在 ⇒ 这是人与人的往来（转出/收款），
+        // 页面上的「转账红包」分类值/推荐 chip 是界面噪音，品类规则一律不参与。
+        // 2026-10-02 审计抓到：转给啦啦啦的 10000 被判成 人情/红包、收到的
+        // 12100 被判成 红包——借给朋友的钱和收到的还款根本不是红包。
+        // 宁可未分类（用户两秒能改），不塞一个错档。
+        // OwnAccount 拦下的自转账不会走到这里；走到这里的转账本来就该让人挑。
+        // 「转给」同管：微信转账详情页的标题就是「转账-转给加油无忧无虑」，
+        // 商户名含「加油」会被交通规则抢走（2026-10-02 OPPO 真机样本）——
+        // 人与人的往来不猜品类，与「对方账户」同一理由。
+        // 支付宝红包有专属「红包说明」，区别于普通转账的「转账红包」分类入口。
+        val lines = ScreenFields.collapse(text.lines())
+        if (income && (text.contains("退款成功") || text.contains("退款到账") || "退款方式" in lines))
+            return Path("退款")
+        val packet = ScreenFields.valueNear(lines, "红包说明", ScreenFields.orientation(lines))
+        if (packet?.contains("红包") == true) {
+            return if (income) Path("红包") else Path("人情", "红包")
+        }
+        if (isNativePeerTransfer(text) || text.contains("对方账户") || text.contains("转给") ||
+            listOf("扫二维码付款-给", "扫二维码付款－给", "扫二维码付款—给").any(text::contains)) return null
+
+        // 0.5 分类推荐位（「为您推荐」+ 分类 chips）是界面噪音，整体剥掉。
+        // chips 是支付宝在猜你可能要的分类入口，不是这笔账的分类：
+        // 2026-10-02 审计，MiniMax 会员订阅页因 chip「游戏充值」被劫持成游戏。
+        // 真机 3 页证实 chips 夹在 为您推荐 … 计入收支/开关 之间，lazy 截断即可。
+        //
+        // 「商家小程序」行（微信账单页跳商户小程序的导航入口）同理剥掉——
+        // 那一行是**平台的全名**，不是这笔的消费内容。2026-10-04 OPPO 真机：
+        // 微信付的美团外卖（渝八两重庆鸡公煲 31.90），这行是
+        // 「美团丨外卖团购特价美食**酒店**电影」，里面的「酒店」把一笔外卖
+        // 拽进了 旅行/酒店住宿。
+        val cleaned = text
+            .replace(Regex("(?s)为您推荐.*?(?=计入收支|开关|备注)"), "")
+            .replace(Regex("(?m)^\\s*商家小程序.*$"), "")
+
+        // 商品字段比平台字号和页面分类更具体；优先匹配未截断的真实交易内容。
+        val product = NoteComposer.productText(cleaned)
+        if (!product.isNullOrBlank()) {
+            if (!income) {
+                // Multiple explicitly listed purchases must agree. Different subtypes in
+                // one major use that major; unrelated majors (or unknown items) need review.
+                val items = product.split(BASKET_SEPARATOR).map { it.trim() }.filter { it.isNotEmpty() }
+                if (items.size > 1) {
+                    val paths = items.map(::expenseProduct)
+                    if (paths.any { it == null }) return null
+                    val known = paths.filterNotNull().distinct()
+                    return when {
+                        known.size == 1 -> known.single()
+                        known.map { it.major }.distinct().size == 1 -> Path(known.first().major)
+                        else -> null
+                    }
+                }
+                expenseProduct(product)?.let { return it }
+            } else {
+                rules.firstOrNull { r -> !r.merchantOnly && !r.rawOnly &&
+                    r.keywords.any { matchesKeyword(product, it) }
+                }?.let { return Path(it.major, it.minor) }
+            }
+        }
+        val page = classificationText(cleaned)
+
+        // 1. 商户名。第一轮只跑 merchantOnly 的规则，第二轮跑其余——
+        // rawOnly 的（平台名）两轮都不参与，只在原文轮兜底。
+        if (m.isNotEmpty()) {
+            for (r in rules) {
+                if (!r.merchantOnly || r.rawOnly) continue
+                if (r.keywords.any { matchesKeyword(m, it) }) {
+                    return Path(r.major, r.minor)
+                }
+            }
+        }
+        if (m.isNotEmpty()) {
+            for (r in rules) {
+                if (r.merchantOnly || r.rawOnly) continue
+                if (r.keywords.any { matchesKeyword(m, it) }) {
+                    return Path(r.major, r.minor)
+                }
+            }
+        }
+
+        // 2. 账单原文兜底。商户名不认识时，商品标题是这个唯一的信息源。
+        // merchantOnly 的规则在原文轮**必须跳过**——那条约束的全文就是
+        // "只从商户名认"（外卖是菜名、红包是转账页噪音，出现在原文里一律不算）。
+        if (page.isEmpty() && m.isEmpty()) return null
+        for (r in rules) {
+            if (r.merchantOnly || r.rawOnly) continue
+            if (r.keywords.any { matchesKeyword(page, it) }) return Path(r.major, r.minor)
+        }
+        // A broad product hint must not suppress a more specific merchant/business.
+        if (!income && product != null) PRODUCT_FALLBACK_RULES.firstOrNull { r ->
+            r.keywords.any { matchesKeyword(product, it) }
+        }?.let { return Path(it.major, it.minor) }
+        // 明确的账单分类可兜到大类；商品/商户证据仍优先。商业服务、转账红包、
+        // 文化休闲语义太宽，不据此猜细类；加载中的页面不使用分类兜底。
+        if (!income && m.isNotEmpty()) {
+            when (ScreenFields.valueNear(lines, "账单分类", ScreenFields.orientation(lines))) {
+                "餐饮美食" -> return Path("餐饮")
+                "数码电器" -> return Path("购物")
+            }
+        }
+        for (r in rules.filter { it.rawOnly && !it.merchantOnly }) {
+            if (r.keywords.any { matchesKeyword("$m\n$page", it) }) return Path(r.major, r.minor)
+        }
+        return null
+    }
+
+    private val PRODUCT_EXPENSE_RULES = (PRODUCT_RULES + EXPENSE_RULES).filter { !it.merchantOnly && !it.rawOnly }
+    private val BASKET_SEPARATOR = Regex("[、；;]|\\s+\\+\\s+")
+
+    private fun expenseProduct(product: String): Path? {
+        if (listOf("泡泡玛特", "POPMART", "POP MART", "LABUBU", "收藏公仔", "手办")
+                .any { matchesKeyword(product, it) }) return Path("娱乐", "潮玩")
+        val rule = PRODUCT_EXPENSE_RULES.firstOrNull { r ->
+            !r.merchantOnly && !r.rawOnly && r.keywords.any { matchesKeyword(product, it) }
+        } ?: return null
+        // Audience only refines an identified garment; it cannot swallow children's
+        // medicine, toiletries, toys or unrelated merchant names.
+        if (rule.major == "购物" && rule.minor == "服饰" &&
+            listOf("儿童", "宝宝", "婴儿", "童装", "童鞋").any(product::contains)) return Path("育儿")
+        return Path(rule.major, rule.minor)
+    }
+
+    private fun matchesKeyword(text: String, keyword: String): Boolean {
+        if (!text.contains(keyword, ignoreCase = true)) return false
+        // 英文品牌不能咬住另一个英文单词（Keep ≠ Keeper，WPS ≠ WPSomething）。
+        if (keyword.all { it.code < 128 } && keyword.any { it.isLetter() }) {
+            return Regex("(?<![A-Za-z0-9])${Regex.escape(keyword)}(?![A-Za-z0-9])",
+                RegexOption.IGNORE_CASE).containsMatchIn(text)
+        }
+        return true
+    }
+
+    /** 仅用于寻找用户自建的 API 费用分类，普通 AI 会员订阅不套用。 */
+    fun isApiUsage(rawText: String?): Boolean = Regex(
+        "(?i)(?<![a-z0-9])api\\s*(费用|充值|调用|计费|额度|credits)|接口调用费|模型调用费|token\\s*充值",
+    ).containsMatchIn(classificationText(rawText))
+
+    /** Relevant alternatives only; personal counterparties never generate guesses from nicknames. */
+    fun candidates(merchant:String?,rawText:String?,income:Boolean):List<Path> {
+        val text=rawText.orEmpty()
+        PeerPaymentReceipt.read(text)?.let {peer->
+            return if(peer.kind==PeerPaymentReceipt.Kind.RED_PACKET) listOfNotNull(classify(merchant,text,income)) else emptyList()
+        }
+        if(isNativePeerTransfer(text) || text.contains("对方账户") || text.contains("转给") ||
+            listOf("扫二维码付款-给","扫二维码付款－给","扫二维码付款—给").any(text::contains)) return emptyList()
+        val primary=classify(merchant,text,income)
+        val product=NoteComposer.productText(text)
+        val parts=if(!income && product!=null) product.split(BASKET_SEPARATOR).mapNotNull {expenseProduct(it.trim())} else emptyList()
+        return (listOfNotNull(primary)+parts).distinct().take(3)
+    }
+
+    /** Imported notes are purchased content; existing structured fields retain their noise guards. */
+    fun importText(note: String?): String? {
+        if (note.isNullOrBlank()) return null
+        val structured = ScreenFields.collapse(note.lines()).any { line ->
+            ScreenFields.FIELD_LABELS.any { label -> line == label ||
+                listOf("：", ":", " ").any { line.startsWith(label + it) } }
+        }
+        return if (structured) note else "商品说明：$note"
+    }
+
+    /** 用户内容规则和内置兜底共用：有字段结构时，不拿整页导航和付款账户猜分类。 */
+    fun classificationText(rawText: String?): String {
+        val text = rawText.orEmpty()
+            .replace(Regex("(?s)为您推荐.*?(?=计入收支|开关|备注|账单分类|交易详情|商品说明|商品|支付时间|付款方式|$)"), "")
+            .replace(Regex("(?m)^\\s*商家小程序.*$"), "")
+        val lines = ScreenFields.collapse(text.lines())
+        val structured = lines.any { line ->
+            ScreenFields.FIELD_LABELS.any { label ->
+                line == label || line.startsWith("$label：") || line.startsWith("$label:")
+            }
+        }
+        if (!structured) return text
+        val orientation = ScreenFields.orientation(lines)
+        return listOfNotNull(
+            NoteComposer.productText(text),
+            ScreenFields.valueNear(lines, "账单分类", orientation),
+            // 理财赎回等专用账单将交易类型放在标题，不放商品字段。
+            lines.firstOrNull { it.startsWith("理财通赎回") || it.startsWith("零钱通收益") },
+            // 单独的平台名可以兜底购物；平台小程序的完整广告名称不参与。
+            lines.firstOrNull { it in listOf("淘宝", "天猫", "闲鱼", "京东", "拼多多", "小红书") },
+        ).distinct().joinToString("\n")
+    }
+
+    /** 全部大分类，铺库和做覆盖率统计用。 */
+    fun majors(income: Boolean): List<String> =
+        (if (income) INCOME_RULES else EXPENSE_RULES).map { it.major }.distinct()
+
+    /** 某个大分类下的全部细分类。 */
+    fun minors(major: String): List<String> =
+        EXPENSE_RULES.filter { it.major == major }.mapNotNull { it.minor }.distinct()
+}

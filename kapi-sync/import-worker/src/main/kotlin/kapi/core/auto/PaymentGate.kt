@@ -1,0 +1,549 @@
+package kapi.core.auto
+
+import java.util.Locale
+
+/**
+ * 判断一段屏幕文字**像不像**一笔支付通知。
+ *
+ * 为什么必须有这个门：无障碍读屏看到的是**当前屏幕上的一切**，不是"支付成功页"。
+ * 用户在账单列表页停留一秒，根节点里就是整屏的历史流水：
+ * ```
+ * 账单
+ * 全部  支出  收入
+ * -23.50  星巴克  餐饮
+ * -8.00   地铁    交通
+ * -156.80 盒马    购物
+ * ```
+ * 里面当然有金额，`LocalTextParser` 也能解析出 23.50——但那是一笔**三天前**的消费。
+ * 没有这道门，用户每次打开账单都会凭空多出一笔草稿，几天下来他只会把自动记账
+ * 关掉，理由还特别糟糕："它老记重复的"。
+ *
+ * 这道门宁可放过，不可错杀：放过的代价是一条用户看得见、点一下就能删的草稿；
+ * 错杀的代价是这笔支付**根本没被发现**，用户只能自己手动补。
+ */
+object PaymentGate {
+
+    sealed interface Verdict {
+        /** 像一笔支付。 */
+        data object LooksLikePayment : Verdict
+
+        /** 不像。 [why] 会写进日志，方便事后调门。 */
+        data class NotPayment(val why: String) : Verdict
+    }
+
+    /**
+     * 强动词：出现它们就说明**这笔**刚发生，而不是列表里的一条历史。
+     */
+    private val STRONG_VERBS = listOf(
+        "支付成功", "付款成功", "交易成功", "已成功", "已支付", "支付完成",
+        "收款成功", "转账成功", "扣款成功", "消费成功", "付款成功",
+        "成功支付", "已收款", "已退款", "退款成功", "payment successful",
+        // 2026-10-01 realme 支付宝**信用卡还款**详情页（43 节点 / 1 个金额 739.9 元）
+        // 被整屏丢掉，日志是：
+        // ```
+        // 丢弃[A11Y/…]：这是付款确认页（命中「处理中」），钱还没付出去
+        // ```
+        // 命中的「处理中」来自页面上一行**子状态**`处理进度 → 银行处理中`——
+        // 银行入账要 1~3 个工作日，而钱在提交那一刻就已经从储蓄卡划走了。
+        // 同一屏还有 `还款成功` 和 `银行反馈已入账，如有疑问`，只是这三条
+        // 一个都不在 [STRONG_VERBS]，于是 [DONE_HINTS] 兜底不住 [PENDING_HINTS]。
+        //
+        // 「已到账」早就在 [DONE_HINTS] 里，缺的正是「已入账」——银行 App 那边
+        // 两个词都写，支付宝这边只写「入账」。
+        "还款成功", "入账成功", "已入账", "还款完成",
+    )
+
+    /**
+     * 文本里有没有强动词。给 [PaymentWindow] 用——它要在决定"取哪一小块"
+     * 之前先找锚点，不能因为动词表是私有的就自己再抄一份。
+     *
+     * 两处各抄一份的话，改了一处忘了另一处，锚点会慢慢和门脱节，
+     * 症状是"明明是支付结果页却取了整屏"，而且没有任何报错。
+     */
+    fun hasStrongVerb(text: String?): Boolean {
+        if (text.isNullOrBlank()) return false
+        val lower = text.lowercase(Locale.ROOT)
+        return STRONG_VERBS.any { lower.contains(it.lowercase(Locale.ROOT)) }
+    }
+
+    /** A standalone settled status, never a successful-payment phrase quoted in product/chat text.
+     * Automatic/scheduled variants carry the same evidence as the base status. */
+    fun isSettledStatusLine(text: String): Boolean {
+        val line = text.trim().lowercase(Locale.ROOT)
+        return listOf("", "自动", "定时").any { prefix ->
+            STRONG_VERBS.any { line == prefix + it.lowercase(Locale.ROOT) }
+        }
+    }
+
+    /**
+     * 文本里有没有任何形态的金额（不要求是独立节点）。
+     *
+     * 给 [PaymentWindow] 用：那层只数"独立金额节点"，而订单详情页的金额全带
+     * 字段名（`实付 ¥88.00`），一个独立节点都没有。没有这一条兜底的话，
+     * 「我的 / 首页」这种连金额都没有的屏幕也会被整屏塞进管线。
+     */
+    fun hasAmount(text: String?): Boolean {
+        if (text.isNullOrBlank()) return false
+        return AMOUNT.findAll(text).any()
+    }
+
+    /**
+     * 弱动词：说明这段文字在讲钱，但不能证明是**刚发生**的一笔。
+     *
+     * 「元」**已经拿掉**（2026-10-04）。它原来是想给"23.50元"这种不带动词的
+     * 银行推送兜底，但银行推送必带"消费/支出"等动词，兜底是空的；而它带来
+     * 的误报面极大——"1元""2元"这种**金额自身**就满足了弱动词，等于任何
+     * 摆着价格的页面（转发选人页的会话预览、商品角标、标注价格）都自带
+     * "在讲钱"的证据。判不出动词的屏宁可不要。
+     */
+    private val WEAK_VERBS = listOf(
+        "付款", "支付", "交易", "扣款", "消费", "收款", "转账", "退款",
+        "实付", "实收", "金额", "余额", "账单",
+        "paid", "payment", "amount", "total",
+    )
+
+    /**
+     * 正面页面模板的**字段证据**（2026-10-04 友商对齐）：支付页面的结构标签。
+     *
+     * 账单详情页/支付结果页有一套内容页不会长的骨架——「交易单号」「付款方式」
+     * 「当前状态」「收款方」这类 label。命中 ≥2 个 + 有金额，就认这是支付页面
+     * （R1）；配合强动词命中 1 个也认（R2）。这是"正着认页面"的核心：
+     * 钱迹/小星的规则库认的就是这些页面特征，而不是"没有被排除的都算"。
+     *
+     * 刻意不收「订单号」：商品页/物流页也有它，会让浏览页凑够字段数；
+     * 「零钱」「银行卡」是**值**不是标签（余额页满屏都是），也不收。
+     * 「实付」一个词覆盖 实付款/实付金额 两个变体（contains 语义）。
+     */
+    private val SIGNATURE_FIELDS = listOf(
+        "交易单号", "转账单号", "交易号", "商户单号",
+        "付款方式", "支付方式", "收款方式",
+        "收款方", "付款方", "收款人", "付款人",
+        "收单机构", "当前状态", "支付时间", "收款时间",
+        "创建时间", "转账备注", "对方账户", "红包说明", "商户全称",
+        "付款金额", "支付金额", "商品金额", "退款金额",
+        "实付",
+        "amount", "paid", "total",
+    )
+
+    /**
+     * 强动词屏走"短结果条"模板（R3）的长度上限（归一化后字符数）。
+     *
+     * 瞬态结果页很短："支付成功 ￥1.00 回首页 完成"。转发选人页那种几十行
+     * 的长屏装得下别人的「转账成功」预览——没有字段证据的长屏不认。
+     */
+    private const val RESULT_PAGE_MAX_CHARS = 160
+
+    /**
+     * 弱动词屏走"短通知"模板（R4）的长度上限。
+     *
+     * 转账到账通知、账单提醒、银行英文推送都塞得进 80 字；营销长文、浏览页
+     * 塞不进来——它们若有别的支付字段证据会走 R1，没有就不该记。
+     */
+    private const val NOTICE_MAX_CHARS = 80
+
+    /**
+     * 列表页的标志词。这些出现在文字里，说明屏幕是"一列记录"而不是"一笔结果"。
+     *
+     * 「全部」**已经拿掉**。它本来是想抓"全部/支出/收入"那个 Tab 行，但它是子串
+     * 匹配，于是「**查看全部**」这种跟列表毫无关系的按钮文案也命中——2026-09-30
+     * 真机上支付宝的确认付款页（"…确认付款，向XX转账，付款金额1.00元人民币…
+     * 查看全部…"）就这样被误杀，一笔真实的支付凭空消失。
+     * 抓 Tab 行靠下面的「账单/明细/交易记录」已经够了。
+     */
+    private val LIST_HINTS = listOf(
+        "收支", "收入", "支出", "明细", "交易记录", "账单", "历史",
+        "月账单", "年度", "统计", "筛选", "全部交易", "资金往来记录",
+    )
+
+    /**
+     * 会话列表页的专属标志。
+     *
+     * 2026-09-30 真机实测：支付宝首页往下滚一屏就是会话列表，里面每一条消息都带
+     * 一个完整金额和"转账成功/自动扣款成功"字样——「闲鱼 | 自动扣款成功￥55.00」、
+     * 「\*\*奇向你转账7000.00元」。原来的门只看"强动词 + 金额个数"，这些**全部放行**，
+     * 于是一条别人的通知在用户的账本里生成了 55 元收入、一条 9 月 9 日的旧消息
+     * 生成了 7000 元支出。
+     *
+     * 假账比漏账严重得多：漏记用户会自己补，假账用户只会觉得"这 App 在乱记"，
+     * 然后关掉自动记账。所以这一类必须在**看强动词之前**就挡掉。
+     */
+    private val CONVERSATION_HINTS = listOf(
+        "全部会话", "消息(", "通讯录", "搜索好友", "关注动态", "兴趣社区",
+        "群福利", "我的客服", "通知消息", "资金往来",
+        // 2026-10-01 realme 微信：会话的**浮窗预览**被当成了一笔真实的转账。
+        // 那一屏长这样，它带着完整的「转账 + ￥0.10」，两道门都放行了：
+        // ```
+        // 更多功能按钮，已折叠 │ 表情 │ 听写 │ 切换到按住说话 │ Sherry头像
+        // 转账 │ 你发起了一笔转账 │ ￥0.10 │ 14:45 │ 更多信息 │ 1
+        // 返回 │ 退出浮窗 │ 浮窗
+        // ```
+        // 交易详情页上不会有**聊天输入栏**，也不会有「浮窗」——这两个词比
+        // "全部会话" 之类更硬：它们是聊天 UI 的结构性标志，不是某屏特有的文案。
+        "切换到按住说话", "按住说话", "退出浮窗", "更多功能按钮",
+    )
+
+    /**
+     * 转发/分享的**选择联系人页**标志。与 [CONVERSATION_HINTS] 同一组、
+     * 同一个时机（强动词之前）挡。
+     *
+     * 2026-10-04 用户实测：把内容转发给微信好友时，选人页的会话行预览带着
+     * 「转账/红包」的金额（「1元」「2元」），整页被当成一笔支付记了下来。
+     * 这页比会话列表更刁：行预览里的「转账成功」「¥2.00」是**强动词**级别
+     * 的证据（来自别的聊天），所以必须在强动词放行之前挡——促销词/购物词
+     * 那种"只在弱动词屏生效"的纪律在这里不够。
+     *
+     * 收的词全是选人页的结构性按钮/标题：支付结果页、账单详情页、银行推送
+     * 都不会出现「转发给」「创建新的聊天」这类文案。
+     */
+    private val SHARE_PICKER_HINTS = listOf(
+        "转发给", "发送给", "分享到",
+        "选择一个聊天", "创建新的聊天", "新建聊天", "选择联系人",
+        // 2026-10-05 OPPO 转发到群的实际选人页原文（用户实测误触）：
+        // 群行是「群名 + (N人)」，页面有「多选」「选择聊天」「折叠的聊天」
+        // 字样——"自媒体互助三连群1元"里的 1元 被旧版记成了 1 元账单。
+        "选择聊天", "折叠的聊天",
+    )
+
+    /**
+     * 屏幕上的**历史**时间标记——留着当记录，**但不参与判定**。
+     *
+     * 曾经想过"文本里出现 2 个以上日期就说明在翻旧账"，2026-09-30 真机实测否掉了：
+     * 银行 App 的付款推送长这样——
+     * ```
+     * 【工商银行】您尾号1234的储蓄卡9月29日15:30消费支出人民币23.50元，余额1234.56元。
+     * ```
+     * 这里有 `9月29日` 和 `15:30` 两个时间标记，是**真实发生的付款**，
+     * 按那条规则会被挡掉——而它是自动记账最典型的输入。
+     *
+     * 区分不了的原因是：一条付款推送本来就自带时间戳，"多个时间戳"并不是
+     * 历史页独有的特征。真正能分开的是**页面性质**（会话列表 / 账单列表），
+     * 那由 [CONVERSATION_HINTS] 和 [LIST_HINTS] 负责。
+     *
+     * 留在这里是因为"哪些特征被试过并被否决"本身是有价值的信息，
+     * 免得下一个人再想一遍同样的主意。
+     */
+    private val HISTORY_TOKEN = Regex(
+        """\d{1,2}月\d{1,2}日""" +
+            """|\d{1,2}:\d{2}""" +
+            """|昨天|今天|前天|今晚|昨日|明日""" +
+            """|\d+\s*(?:天|周|个月|年)前""" +
+            """|刚刚|分钟前|小时前""",
+    )
+
+    /**
+     * 促销词。
+     *
+     * 支付类 App 里促销页和支付成功页挨着，"支付"两个字两边都有，只有促销词能把
+     * 它们分开。没有这条，"支付立减 20 元 · 余额 ¥45.00" 会被当成一笔 20.00 的
+     * 消费记进草稿——用户点掉就是了，但这属于我们自己能挡的假账。
+     *
+     * 只在**没有强动词**时才用促销词否决。真的退款页也可能写"红包"。
+     */
+    private val PROMO_HINTS = listOf(
+        "立减", "满减", "优惠券", "领券", "券后", "限时", "秒杀", "拼团",
+        "可用余额", "下单", "立即购买", "去支付", "新人专享", "折扣",
+    )
+
+    /**
+     * 购物/浏览页的**结构性**标志词。
+     *
+     * 2026-10-04 用户实测：逛购物 App 时草稿凭空多出来，金额就是商品价——
+     * 「在别的购物的界面也会触发记账，只是有商品的价格」。漏网形状是
+     * **弱动词 + 少量金额 + 无促销词**：商品页页脚的「微信支付」「支付方式」
+     * 给了弱动词，一两处商品价给了金额，而页面上恰好没有促销词时，
+     * 旧门一路放行到 `LooksLikePayment`。监听名单里有淘宝/京东/美团（它们的
+     * 自家收银台值得监听），浏览页就必然在读屏范围内，只能在门上分。
+     *
+     * 收的词全是购物 UI 的**结构性按钮/角标**（购物车、销量、店铺入口、
+     * 推荐位），支付结果页、银行推送里不会出现——银行推送提商户也只提
+     * 名字，所以「店铺」「旗舰店」这类**可能出现在商户名里的词刻意不收**，
+     * 宁可漏挡一页也不能错杀一笔真推送。
+     *
+     * 和促销词同一纪律：只在**没有强动词**时才否决——真支付结果页带一个
+     * 推荐位照样放行（见 PaymentGateTest.paymentResultWithRecommendRailStillPasses）。
+     */
+    private val SHOPPING_HINTS = listOf(
+        "加入购物车", "购物车", "月售", "已售", "包邮", "宝贝", "进入店铺",
+        "联系客服", "猜你喜欢", "商品详情", "七天无理由", "找相似", "已拼",
+    )
+
+    /**
+     * 页面**还没稳定**的占位词。命中就不记。
+     *
+     * 只收"明确表示还在等"的词，不收网络类抱怨（`网络异常` 常常和
+     * "重试" 一起出现，而重试之后页面会正常——那时候我们宁可等沉降延迟
+     * 再读一次，也不要因为一句报错就永远不记这一笔）。
+     */
+    private val LOADING_HINTS = listOf(
+        "加载中", "正在加载", "加载失败", "请稍候", "请稍等", "稍候",
+    )
+
+    /**
+     * 「页面已渲染完毕」的字段证据。
+     *
+     * 2026-10-02 微信 H5（realme + OPPO 双机，mcode 三轮扫描）：微信账单详情页
+     * 有一个**常驻**的懒加载哨兵节点「加载中」，稳定排在无障碍节点流第一位、
+     * 与 转账单号/付款方式/收款时间 等已渲染字段**共存**——按词直接拦，微信
+     * 转账/收款类详情页被 100% 永久丢弃（停留 7 秒与 11 秒结果相同，见
+     * mcode 扫描报告）。加载词只在屏幕**没有**这些证据时才拦：真正还在
+     * 加载的屏（9-30「-3.99/加载中」假账）既没有强动词也没有字段。
+     */
+    private val SETTLED_FIELD_HINTS = listOf(
+        "交易单号", "转账单号", "商户单号", "订单号", "当前状态",
+    )
+    // 证据门槛刻意是**单号级**字段，不含支付时间/付款方式这类普通字段：
+    // 支付宝半屏真机（10-01）上「支付时间 + 金额」先渲染出来而金额是错的，
+    // 普通字段不足以证明页面已定型（半屏用例钉在 RealScreenFalsePositiveTest）。
+
+    /**
+     * 金额的宽松形态，够用来数"这段文字里有几笔钱"。
+     *
+     * **必须和 [kapi.core.llm.LocalTextParser.AMOUNT_PATTERNS] 认的东西一致。**
+     * 门放行一段解析器读不出的文本毫无价值：产出的草稿没有金额，用户只会看到一个
+     * 空条目然后困惑。两边口径不一致时，这条是唯一的收敛点——所以改动其中一边，
+     * 必须同时改另一边，并跑 `PaymentGateTest` 里的口径用例。
+     *
+     * 这里只负责数个数，不负责解析成金额。
+     *
+     * ## 第四段：裸金额
+     *
+     * 微信账单详情页把金额写成 **`-80.00`**——没有 `¥`，也没有 `元`，就是标题正下方
+     * 一个大号的负数。2026-09-30 照抄真机录屏写测试时才发现：前三种形态**一个都不认**
+     * 它，于是门判 `NotPayment("没有金额")`，形状闸同一时刻也报"整屏没有任何金额"。
+     * 换句话说，我们准备改用的那条最稳的通路，当时正被自己的闸门挡死在门口。
+     *
+     * 两侧环视是必须的：裸的 `\d+\.\d{2}` 会把 `8.0.55`（版本号）、`1.5.3` 啃掉一段
+     * 冒充金额。加上 `(?<![\d.])` / `(?![\d.年月日])` 之后，只有**独立**的两位小数才算。
+     */
+    private val AMOUNT = Regex(
+        """[¥￥]\s*\d+(?:[.,]\d{1,2})?""" +
+            """|\d+(?:\.\d{1,2})?\s*元""" +
+            """|(?i)(?:实付|实收|付款金额|支付金额|交易金额|消费金额|金额|合计|总计|订单金额|paid|total|amount)\s*[:：]?\s*\d+(?:[.,]\d{1,2})?""" +
+            """|(?<![\d.])\d{1,8}\.\d{2}(?![\d.年月日])"""
+    )
+
+    /**
+     * 金额个数超过这个数，并且没有强动词，就当列表处理。
+     *
+     * 4 是刻意选的：一笔支付的详情页最多也就"原价 / 优惠 / 实付"三个金额，
+     * 而一屏账单轻松七八个。留一格余量给"运费"之类的附加项。
+     */
+    private const val LIST_AMOUNT_THRESHOLD = 4
+
+    /**
+     * **还没付出去**的措辞。
+     *
+     * 这一组词描述的是"用户正在准备付"，不是"钱已经出去了"。
+     *
+     * ## 为什么必须有它
+     *
+     * 2026-09-30 真机实测：用户在支付宝付了一笔 1.00 元，App 弹出**两条**草稿。
+     * 原因是同一笔支付在读屏通路上会先后出现**两个不同的屏**：
+     * ```
+     * 付款,确认付款，向啦啦啦(朱娜娜)转账，付款金额1.00元人民币
+     * 付款 / 查看全部 / 工商银行储蓄卡 / 尾号(1353) …
+     * ```
+     * （确认付款页）和
+     * ```
+     * 回首页 / 完成 / 付款方式 / 啦啦啦(朱娜娜) / 收款方 / 转账成功￥1.00
+     * ```
+     * （支付成功页）。两段文字不同 → 指纹不同 → 两条草稿。
+     *
+     * 但**第一个屏压根不该记**：它是付款前的意图页，证的是"用户打算付"，
+     * 不是"钱已经出去了"。用户点错了没付、被余额拦下、扫了又退，App 都不该
+     * 给他记一笔。真正证明钱出去了的是结果页、通知和银行推送。
+     *
+     * 顺带一提：这两屏的关系早就能判了，却一直没人判——
+     * 最早那个版本里，确认付款页因为「查看全部」里的「全部」被误杀，
+     * 于是**恰好**只剩一条草稿，看着"正常"。把那处误杀修好之后，
+     * 语义错误就露出来了。修 A 放出 B 说的是同一件事。
+     */
+    private val PENDING_HINTS = listOf(
+        "确认付款", "确认支付", "确认转账", "待付款", "等待付款", "立即支付",
+        "去支付", "是否支付", "确认收款", "确认订单", "核对账单", "选择支付方式",
+        "请确认", "付款前", "交易进行中", "处理中", "等待付款确认",
+    )
+
+    /**
+     * 已经完成的措辞。用来给 [PENDING_HINTS] 兜底：
+     * 出现这些说明这屏讲的是"付完了"，哪怕旁边也写"确认"。
+     */
+    private val DONE_HINTS = STRONG_VERBS + listOf("已支付", "已到账", "已收款", "已退款")
+
+    /** 整屏读屏只接受账单详情结构；短通知和余额文字不能证明当前页面是账单。 */
+    fun screenVerdict(text: String?, originPackage: String? = null): Verdict {
+        if(originPackage==WechatPaymentResult.PACKAGE && PeerPaymentReceipt.read(text.orEmpty())!=null)
+            return Verdict.LooksLikePayment
+        val completion=WalletPaymentCompletion.read(originPackage,text.orEmpty())
+        val base = verdict(completion?.canonicalText ?: text)
+        if (base is Verdict.NotPayment) return base
+        if (completion != null) return Verdict.LooksLikePayment
+        val lines = ScreenFields.collapse(text.orEmpty().lines())
+        fun hasLabel(label: String) = lines.any { line ->
+            line == label || line.startsWith("$label：") || line.startsWith("$label:") ||
+                line.startsWith("$label ")
+        }
+        // 同义字段只算一组，不能用「支付金额」和「付款金额」凑出两份证据。
+        val groups = listOf(
+            listOf("付款方式", "支付方式", "收款方式", "退款方式"),
+            listOf("支付时间", "付款时间", "收款时间", "转账时间", "创建时间"),
+            listOf("当前状态", "交易状态"),
+            listOf("商品", "商品说明", "红包说明", "缴费说明", "关联记录", "还款到", "借还款说明", "收款方", "付款方", "对方账户", "商户全称", "收款方全称", "商户名称", "商家名称"),
+            listOf("转账备注"),
+        ).count { labels -> labels.any(::hasLabel) }
+        val hasDetailTitle = lines.any { it in listOf("账单详情", "交易详情", "转账详情", "退款详情") }
+        val hasPlatformId = PaymentId.authoritative(text) != null
+        // Collapsed Alipay bills expose product text beneath a 交易详情 section,
+        // without a 商品说明 field. Require both bill title and section plus a settled status.
+        val collapsedBill = hasLabel("账单详情") && hasLabel("交易详情") &&
+            lines.any(::isSettledStatusLine) && groups >= 2 &&
+            !NoteComposer.productText(text.orEmpty()).isNullOrBlank()
+        if ((hasPlatformId && groups >= 2) || (hasDetailTitle && groups >= 3) || collapsedBill) {
+            return Verdict.LooksLikePayment
+        }
+        return Verdict.NotPayment("读屏未匹配账单详情结构（字段组=$groups，平台交易号=$hasPlatformId）")
+    }
+
+    fun verdict(text: String?): Verdict {
+        PeerPaymentReceipt.rejectionReason(text.orEmpty())?.let { return Verdict.NotPayment(it) }
+        // One receipt definition for screen, shape and pipeline gates. Packet credits
+        // are transfers themselves, never a checkout discount adjustment.
+        if(PeerPaymentReceipt.read(text.orEmpty())!=null)return Verdict.LooksLikePayment
+        // ## 顺序不能反：先剔调整项行，再归一化
+        //
+        // 剔调整项（立减金/优惠/红包…）依赖**行结构**——要靠"某一行的下一行是不是
+        // 标签"来判断。而 [AutoBook.normalizeForJudging] 会把连续空白压成一个空格，
+        // 换行也在内，等它跑完整段已经是一行了，再也分不出哪一行是标签。
+        //
+        // 2026-10-01 realme 真机踩过：支付宝支付详情页有一行 `交通银行立减金`，
+        // 整屏子串匹配判成促销页，一笔真实的 244.93 被丢掉：
+        // ```
+        // 丢弃[A11Y/com.eg.android.AlipayGphone]：出现了促销词「立减」
+        // ```
+        // 而"这一笔减了 1.98"是**这一笔的明细**，它不说明页面性质。
+        // 同一个理由让形状闸把它排除在"独立记录"之外（见 [PaymentShape]）。
+        val t = AutoBook.normalizeForJudging(
+            PaymentShape.withoutAdjustmentRows(text.orEmpty()),
+        )
+        if (t.isEmpty()) return Verdict.NotPayment("没有可读的文本")
+
+        val lower = t.lowercase(Locale.ROOT)
+        val amountCount = AMOUNT.findAll(t).count()
+
+        if (amountCount == 0) return Verdict.NotPayment("没有金额")
+
+        // 屏还没稳定就不记。**必须在数金额之前判。**
+        //
+        // 2026-10-01 realme 支付宝：详情页还在加载时读到的那一屏，第一行就是
+        // `加载中`，而金额恰好已经出现了——于是生成了一条 `-3.99 / 加载中` 的草稿。
+        // 商户是脏的，可以事后改；**金额是错的就没法事后改了**，错账会一直污染统计，
+        // 而用户不会发现。所以这一条要卡在解析之前。
+        //
+        // 沉降延迟（KapiAccessibilityService 的 SETTLE_DELAY_MS）是 1.2 秒，
+        // 那是个**估计值**：支付宝这一屏的详情是异步补的，1.2 秒不够。
+        // 与其赌延迟调大到多少合适，不如让屏自己说"我还没准备好"。
+        // 加载词只在**没有已渲染证据**时才拦——微信 H5 的常驻「加载中」哨兵
+        // 与已渲染字段共存（见 SETTLED_FIELD_HINTS 的 KDoc）。
+        val settled = STRONG_VERBS.any { lower.contains(it.lowercase(Locale.ROOT)) } ||
+            SETTLED_FIELD_HINTS.any { lower.contains(it) }
+        if (!settled) {
+            LOADING_HINTS.firstOrNull { lower.contains(it) }?.let {
+                return Verdict.NotPayment("页面还在加载中（命中「$it」），这一屏不是最终形态")
+            }
+        }
+
+        // 会话/消息列表页：在看任何动词之前挡掉。
+        // 这些页面里每条消息都自带完整金额和"成功"字样，靠动词分辨不出来。
+        CONVERSATION_HINTS.firstOrNull { lower.contains(it) }?.let {
+            return Verdict.NotPayment("这是会话/消息列表页（命中「$it」），不是刚发生的一笔")
+        }
+
+        // 转发/分享选人页：同样在强动词之前挡——行预览里的「转账成功/¥2.00」
+        // 是**别人聊天**的证据，够格喂出强动词，晚了就拦不住了（2026-10-04
+        // 用户实测：转发内容到微信好友，选人页被记成一笔支付）。
+        SHARE_PICKER_HINTS.firstOrNull { lower.contains(it) }?.let {
+            return Verdict.NotPayment("这是转发/分享选人页（命中「$it」），不是刚发生的一笔")
+        }
+
+        // 还没付出去的屏：没有"完成"措辞、却有明确的"待付"措辞。
+        // 这个判据必须排在强动词放行**之前**——「确认付款」里含"付款"，
+        // 放着不管的话它会一路走到 LooksLikePayment。
+        val pending = PENDING_HINTS.firstOrNull { lower.contains(it) }
+        if (pending != null) {
+            val done = DONE_HINTS.firstOrNull { lower.contains(it) }
+            if (done == null) {
+                return Verdict.NotPayment("这是付款确认页（命中「$pending」），钱还没付出去")
+            }
+        }
+
+        val strong = STRONG_VERBS.firstOrNull { lower.contains(it.lowercase(Locale.ROOT)) }
+        val weak = WEAK_VERBS.firstOrNull { lower.contains(it.lowercase(Locale.ROOT)) }
+
+        if (strong == null && weak == null) {
+            return Verdict.NotPayment("只有金额，没有付款/收款这类词")
+        }
+
+        // 列表页：金额很多，又没有强动词。整屏历史流水就是这个样子。
+        if (strong == null && amountCount >= LIST_AMOUNT_THRESHOLD) {
+            return Verdict.NotPayment("有 ${amountCount} 个金额却没有成功字样，像账单列表")
+        }
+
+        // ------------------------------------------------ 正面页面模板
+        //
+        // 2026-10-04 终判从"负规则排除完就放行"翻成**友商（钱迹/小星）式正认**：
+        // 有页面身份证据才记。背景是用户连续三次误触（购物页、转发选人页）——
+        // 负规则挡得住**已知**的坏页面，挡不住没见过的页面长歪；正认之后，
+        // 一切未知页面默认不记，只有长成"支付页面"的才进管线。四条模板全部
+        // 归纳自真机页面、钉在测试里：
+        //
+        //  R1 字段≥2 + 金额：账单/结果详情页——交易单号/付款方式/当前状态/
+        //    收款方…是支付页面的骨架，普通内容页长不出两排支付字段
+        //  R2 强动词 + 任一字段：支付成功页（结果动词 + 结构标签）
+        //  R3 强动词 + 短文：瞬态结果条（"退款成功，¥56.00 已退回原路"）
+        //  R5 银行推送：【..银行】/尾号 + 动词 + 金额——读屏最典型的输入
+        //  R4 弱动词 + 短文垫底：转账到账通知、"Amount: 12.34 paid"这类
+        //     没有字段结构的通知。**放在促销/购物词之后跑**，短促销页进不来；
+        //     也因此只收 1~2 个金额、80 字以内——比旧的"弱动词任意长度放行"
+        //     严格得多，这是旧门最后的误报口子。
+        //
+        // 有强动词不再自动放行：长页面里一句别人的「转账成功」预览就是强动词
+        // （转发选人页教会我们的），没有字段证据的长屏一律不认。
+        val fieldHits = SIGNATURE_FIELDS.count { lower.contains(it) }
+        if (fieldHits >= 2 && amountCount >= 1) return Verdict.LooksLikePayment
+        if (strong != null && fieldHits >= 1) return Verdict.LooksLikePayment
+        if (strong != null && t.length <= RESULT_PAGE_MAX_CHARS && amountCount <= 3) {
+            return Verdict.LooksLikePayment
+        }
+        if ((t.contains("尾号") || t.contains("银行")) && amountCount >= 1) {
+            return Verdict.LooksLikePayment
+        }
+
+        // 弱动词屏的负规则收尾：促销页/购物页/列表词。强动词屏不走这段——
+        // 真结果页也带"立减"调整行（上游已剔）和推荐位，不能被这些词误杀。
+        PROMO_HINTS.firstOrNull { lower.contains(it) }?.let {
+            return Verdict.NotPayment("出现了促销词「$it」")
+        }
+
+        // 购物/浏览页（2026-10-04 用户实测）：弱动词 + 少量金额 + 无促销词的
+        // 商品页，旧门会一路放行。能走到这里说明没有强动词，屏上又没有任何
+        // 支付结果的结构性证据，购物 UI 的结构性按钮/角标一票否决。
+        SHOPPING_HINTS.firstOrNull { lower.contains(it) }?.let {
+            return Verdict.NotPayment("这是商品/购物浏览页（命中「$it」），不是刚发生的一笔")
+        }
+
+        // 弱动词 + 少量金额。再用列表词收紧一下："账单"里出现"支付"太常见了。
+        val listHint = LIST_HINTS.firstOrNull { lower.contains(it) }
+        if (listHint != null && amountCount >= 2) {
+            return Verdict.NotPayment("出现了「$listHint」且有 ${amountCount} 个金额，像列表")
+        }
+
+        // R4 弱动词短文垫底（在促销/购物/列表词之后）。
+        if (weak != null && t.length <= NOTICE_MAX_CHARS && amountCount in 1..2) {
+            return Verdict.LooksLikePayment
+        }
+
+        return Verdict.NotPayment(
+            "没有支付页面的结构证据（详情页字段/强动词/银行推送/短通知都不匹配）",
+        )
+    }
+}

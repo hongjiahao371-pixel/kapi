@@ -3,598 +3,224 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>咔皮账本 · NAS 面板</title>
+<meta name="color-scheme" content="light dark">
+<title>归账 · NAS 面板</title>
 <style>
-  :root{
-    /* 和 App 同一套语言，现在两边都是**冷蓝玻璃**。取值来自
-       kapi-visual-compare B 列（视觉提示词的给定值），不是各改各的——
-       面板和 App 指的是同一个账本，两边配色必须同源。
-       暖白底 + 墨绿那一版是为对标 ColorOS 留的，已整体作废。 */
-    --bg:#F7F9FC; --card:#FFFFFF; --ink:#202C40; --soft:#5B6D85; --faint:#8296AE;
-    --line:rgba(255,255,255,.82); --brand:#2868D8; --brand-deep:#1F4699; --brand-soft:#DCE7FA;
-    --expense:#C9482F; --income:#2C7A55; --radius:18px;
-    --shadow:0 1px 2px rgba(55,83,118,.05), 0 18px 48px rgba(55,83,118,.14);
-    /* 页面底的两道光晕，App 那边在 LiquidBackground 里画的是同一组 */
-    --glow-warm:rgba(255,210,157,.46); --glow-cool:rgba(160,207,255,.50);
-    /* 若干中性填充的冷色对应：原来一律 #F1EDE6 / #FBF9F5 暖灰 */
-    --fill:#E9EFF8; --fill-hover:#F2F6FC;
-    /* 冷蓝灰的遮罩/投影色，替掉 rgba(35,31,27,…) */
-    --veil:55,83,118;
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0;padding:0}
-  body{
-    /* 页面底的两道光晕——App 那边在 LiquidBackground 里画的是同一组
-       （暖 #FFD29D .46 @左上 / 冷 #A0CFFF .50 @右上）。两边同源，
-       面板不该是一块和 App 无关的纯色底。background-attachment:fixed
-       是必须的：面板内容长，渐变不跟随滚动就变成"只有首屏有光"。 */
-    background:
-      radial-gradient(40rem 26rem at -8% 6%, var(--glow-warm), transparent 55%),
-      radial-gradient(40rem 25rem at 108% 9%, var(--glow-cool), transparent 58%),
-      var(--bg);
-    background-attachment:fixed;
-    color:var(--ink);
-    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
-    -webkit-font-smoothing:antialiased;
-  }
-  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 64px}
+:root{color-scheme:light;--bg:#F2F3F5;--surface:#fff;--card:rgba(255,255,255,.62);--glass:rgba(255,255,255,.32);--ink:#20242B;--soft:#5D6673;--faint:#697382;--brand:#2868D8;--brand-deep:#1F4699;--brand-soft:#E5EAF3;--expense:#C9482F;--income:#2C7A55;--line:rgba(105,115,130,.12);--rim:rgba(255,255,255,.9);--fill:rgba(105,115,130,.075);--hover:rgba(255,255,255,.65);--shadow:0 8px 28px rgba(24,32,48,.045),inset 0 1px 0 var(--rim);--veil:rgba(27,33,43,.24);--warm:rgba(233,220,221,.38);--cool:rgba(217,225,237,.55);--primary-ink:#fff;--ease:cubic-bezier(.22,.8,.25,1);--radius:26px}
+:root[data-theme=dark]{color-scheme:dark;--bg:#14161B;--surface:#24282F;--card:rgba(36,40,47,.78);--glass:rgba(36,39,45,.5);--ink:#F0F1F4;--soft:#AEB4BF;--faint:#929BA8;--brand:#5C9BF0;--brand-deep:#9CC4FA;--brand-soft:#253246;--expense:#E88A75;--income:#7FC7A4;--line:rgba(255,255,255,.10);--rim:rgba(255,255,255,.14);--fill:rgba(255,255,255,.055);--hover:rgba(255,255,255,.06);--shadow:0 8px 28px rgba(0,0,0,.12),inset 0 1px 0 var(--rim);--veil:rgba(0,0,0,.5);--warm:rgba(233,220,221,.025);--cool:rgba(217,225,237,.07);--primary-ink:#0A1220}
+*{box-sizing:border-box}html,body{margin:0;padding:0}html{min-height:100%}body{background:radial-gradient(ellipse 55vw 65vh at -8% 22%,var(--warm),transparent),radial-gradient(ellipse 55vw 75vh at 108% 25%,var(--cool),transparent),var(--bg);background-attachment:fixed;color:var(--ink);font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit}button{cursor:pointer;color:inherit}button:disabled{opacity:.4;cursor:default}button,select,input{ -webkit-tap-highlight-color:transparent}button,summary,a,input,select{touch-action:manipulation}button:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid var(--brand);outline-offset:4px}button{transition:background .2s,box-shadow .2s,transform .28s var(--ease)}button:active:not(:disabled){transform:scale(.975)}.hide,[hidden]{display:none!important}.icon{width:21px;height:21px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;vertical-align:middle}.sprite{position:absolute;width:0;height:0;overflow:hidden}.spacer{flex:1}.muted,.sub2{color:var(--soft)}.num{font-variant-numeric:tabular-nums}.amt-exp{color:var(--expense)}.amt-inc{color:var(--income)}.card,.glass{position:relative;border:1px solid var(--rim);border-radius:var(--radius);box-shadow:var(--shadow);background:var(--card)}.glass{background:var(--glass);backdrop-filter:blur(22px) saturate(1.15);-webkit-backdrop-filter:blur(22px) saturate(1.15)}.glass:before{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;background:radial-gradient(ellipse 190px 140px at var(--light-x,30%) var(--light-y,0%),var(--rim),transparent 85%);opacity:.28;transition:opacity .25s}.glass:hover:before{opacity:.55}.glass.is-pressed:before{opacity:.9}.card>* ,.glass>*{position:relative}.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:9px 17px;border:1px solid var(--line);border-radius:15px;background:var(--fill);font-weight:500;white-space:nowrap}.btn:hover:not(:disabled){background:var(--hover)}.btn.primary{color:var(--primary-ink);background:var(--brand);border-color:transparent;box-shadow:0 4px 12px color-mix(in srgb,var(--brand) 15%,transparent)}.btn.primary:hover{background:var(--brand-deep)}.btn.ghost{color:var(--soft);background:transparent}.btn.tiny{font-size:12px;min-height:32px;padding:5px 10px;border-radius:11px}.icon-btn{display:grid;place-items:center;width:42px;height:42px;border:1px solid var(--rim);border-radius:50%;background:var(--glass);box-shadow:inset 0 1px 0 var(--rim)}.icon-btn:hover{background:var(--hover)}.linkbtn{border:0;background:transparent;color:var(--soft);padding:8px 12px;border-radius:12px;display:inline-flex;gap:9px;align-items:center}.linkbtn:hover{background:var(--fill)}
+.wrap{display:grid;grid-template-columns:208px minmax(0,1fr);gap:36px;max-width:1440px;margin:auto;padding:32px 36px 64px}.sidebar{position:sticky;top:32px;height:calc(100dvh - 64px);max-height:920px;display:flex;flex-direction:column;padding:26px 16px 18px;align-self:start}.brand{display:flex;align-items:center;gap:12px;padding:0 10px}.brand-mark{width:40px;height:40px;border-radius:15px;display:grid;place-items:center;background:linear-gradient(135deg,var(--surface),var(--brand-soft));box-shadow:inset 0 1px 0 var(--rim),0 4px 10px rgba(32,45,65,.06);color:var(--brand)}.brand-mark .icon{width:25px;height:25px}.brand strong{display:block;font-size:18px;font-weight:600;letter-spacing:.4px}.brand small{color:var(--soft);font-size:11px}.nav-label{color:var(--faint);font-size:11px;padding:0 13px;margin:46px 0 12px;letter-spacing:1px}.menu{display:flex;flex-direction:column;gap:7px;background:transparent;border:0;box-shadow:none;backdrop-filter:none}.menu:before{display:none}.nav-btn{display:flex;align-items:center;gap:13px;min-height:48px;padding:12px 16px;border:1px solid transparent;background:transparent;color:var(--soft);border-radius:18px;text-align:left;font-weight:500}.nav-btn:hover{background:var(--hover)}.nav-btn[aria-selected=true]{background:var(--card);border-color:var(--rim);box-shadow:0 3px 12px rgba(20,28,43,.04),inset 0 -1px 2px var(--line);color:var(--brand)}.sidebar-bottom{margin-top:auto;padding:22px 10px 0}.status{display:flex;align-items:center;gap:8px;color:var(--soft);font-size:12px}.status-dot{width:6px;height:6px;border-radius:50%;background:var(--income);box-shadow:0 0 0 4px color-mix(in srgb,var(--income) 7%,transparent)}.sidebar-bottom p{font-size:11px;color:var(--faint);margin:9px 0 14px}.sidebar-bottom .linkbtn{font-size:12px;padding-left:0}.main{min-width:0}.page-head{display:flex;align-items:center;gap:14px;min-height:75px;margin-bottom:26px}.page-head h1{font-size:29px;font-weight:500;letter-spacing:-.5px;margin:0 0 3px;line-height:1.3}.page-head p{margin:0;color:var(--soft);font-size:12px}.head-actions{display:flex;align-items:center;gap:9px;margin-left:auto}#mobile-logout{display:none}.read-only{display:inline-flex;gap:6px;align-items:center;font-size:11px;color:var(--soft);padding:6px 11px;border-radius:999px;background:var(--fill)}.read-only .icon{width:14px;height:14px}.period{font-size:12px;color:var(--soft)}.overview{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(0,1fr);gap:18px;margin-bottom:25px}.hero{padding:25px 30px;overflow:hidden;background:linear-gradient(120deg,var(--card),color-mix(in srgb,var(--brand-soft) 40%,var(--card)))}.hero .eyebrow{color:var(--soft);font-size:12px;display:flex;align-items:center;justify-content:space-between}.hero .balance{font-size:42px;letter-spacing:-1.3px;line-height:1.3;font-weight:400;margin:7px 0 23px;transition:color .2s}.hero-metrics{display:grid;grid-template-columns:1fr 1fr;gap:20px}.metric{padding-left:12px;border-left:3px solid var(--expense);line-height:1.5}.metric.income{border-color:var(--income)}.metric .k{font-size:12px;color:var(--soft)}.metric .v{font-size:21px;font-weight:500;letter-spacing:-.3px;margin-top:3px}.count-card{padding:24px 26px;display:flex;flex-direction:column;overflow:hidden}.count-heading{display:flex;align-items:center;gap:9px;color:var(--soft);font-size:12px}.count-heading .icon{width:17px;height:17px}.count-value{font-size:40px;font-weight:400;line-height:1.4;margin:12px 0 2px;letter-spacing:-.7px}.count-value small{font-size:13px;color:var(--soft);margin-left:8px;letter-spacing:0}.count-card .period{margin-top:auto;padding-top:11px;border-top:1px solid var(--line)}.count-caption{font-size:11px;color:var(--faint);margin:0 0 12px}.error-banner{padding:12px 16px;background:color-mix(in srgb,var(--expense) 8%,var(--surface));color:var(--expense);border-radius:16px;font-size:13px;margin-bottom:16px}
+.filters{padding:17px 20px;margin-bottom:25px}.filter-top{display:flex;align-items:center;gap:14px}.searchbox{display:flex;align-items:center;gap:9px;flex:1;min-width:0;border-radius:14px;background:var(--fill);padding:0 12px;height:43px;color:var(--soft)}.searchbox .icon{width:18px;height:18px}.searchbox input{border:0;background:transparent;width:100%;min-width:0;padding:0;height:100%;outline:none;color:var(--ink);font-size:13px}.searchbox:focus-within{box-shadow:0 0 0 2px var(--brand)}input::placeholder{color:var(--faint);opacity:1}.quick-period{display:flex;gap:3px;padding:4px;background:var(--fill);border-radius:15px}.quick-period button{font-size:12px;min-height:32px;padding:5px 11px;border:0;background:transparent;border-radius:11px;color:var(--soft);white-space:nowrap}.quick-period button[aria-pressed=true]{background:var(--card);box-shadow:inset 0 1px 0 var(--rim),0 2px 4px var(--line);color:var(--ink)}.filter-details{margin-top:12px}.filter-details summary{display:flex;align-items:center;gap:7px;cursor:pointer;list-style:none;color:var(--soft);font-size:12px;width:fit-content;padding:5px 0}.filter-details summary::-webkit-details-marker{display:none}.filter-details summary .icon{width:14px;height:14px;transition:transform .25s var(--ease)}.filter-details[open] summary .icon{transform:rotate(180deg)}.filter-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-top:10px}.f{display:flex;flex-direction:column;gap:5px;min-width:0}.f label{font-size:11px;color:var(--soft)}input[type=date],input[type=password],select{color:var(--ink);background:var(--fill);border:1px solid var(--line);border-radius:13px;padding:8px 10px;width:100%;height:42px;min-width:0;outline:none;font-size:12px}input:focus,select:focus{border-color:var(--brand);box-shadow:0 0 0 2px color-mix(in srgb,var(--brand) 15%,transparent)}.filter-foot{display:flex;align-items:center;justify-content:space-between;margin-top:10px}.chk{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--soft);cursor:pointer;min-height:36px}.chk input{accent-color:var(--brand);width:15px;height:15px}.section-heading{display:flex;align-items:center;justify-content:space-between;margin:0 2px 13px}.section-heading h2{font-size:16px;font-weight:500;margin:0}.section-heading p{font-size:11px;color:var(--faint);margin:2px 0 0}.section-heading .icon-btn{width:34px;height:34px;background:transparent;border-color:var(--line)}.section-heading .icon{width:17px;height:17px}.view{animation:view-in .32s var(--ease)}@keyframes view-in{from{opacity:.72;transform:translateY(7px)}to{opacity:1;transform:none}}.table-card{overflow:hidden}.table-scroll{width:100%;overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px;text-align:left}thead th{font-size:11px;font-weight:400;color:var(--soft);padding:15px 21px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--fill)}tbody td{padding:16px 21px;border-bottom:1px solid var(--line);vertical-align:middle}tbody tr:last-child td{border-bottom:0}tbody tr{cursor:pointer;transition:background .18s}tbody tr:hover{background:var(--hover)}tbody tr[aria-selected=true]{background:var(--brand-soft)}tbody tr:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}th.num,td.num{text-align:right;white-space:nowrap}.merchant-cell{display:flex;gap:12px;align-items:center;min-width:0}.category-icon{width:40px;height:40px;display:grid;place-items:center;flex-shrink:0;border-radius:16px;color:var(--tone,var(--soft));background:color-mix(in srgb,var(--tone,var(--soft)) 11%,transparent)}.category-icon .icon{width:20px;height:20px}.title{font-weight:500;overflow-wrap:anywhere;max-width:360px;line-height:1.5}.sub2{font-size:11px;margin-top:3px;overflow-wrap:anywhere}.date-cell{font-size:11px;color:var(--soft);line-height:1.5;white-space:nowrap}.date-cell small{display:block;color:var(--faint);font-size:11px}.amount{font-size:15px;font-weight:500;letter-spacing:-.2px}.pill{display:inline-block;padding:4px 9px;border-radius:10px;background:var(--fill);color:var(--soft);font-size:11px;max-width:150px;overflow-wrap:anywhere}.empty{padding:50px 20px;text-align:center;color:var(--soft);font-size:13px}.empty .icon{width:34px;height:34px;display:block;margin:0 auto 12px;opacity:.5}.pager{display:flex;align-items:center;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--line)}.pager .count{margin-right:auto;color:var(--soft);font-size:11px}.pager .btn{min-height:34px;font-size:11px;padding:5px 11px;border-radius:11px}
+.stats{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:18px}.panel{padding:24px;min-width:0}.panel h2{font-size:15px;font-weight:500;margin:0}.panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:21px}.panel .sub2{margin-top:5px}.donut-block{display:flex;align-items:center;justify-content:center;padding:5px 0 27px}.donut{width:164px;height:164px;border-radius:50%;display:grid;place-items:center;background:var(--fill);position:relative}.donut:before{content:"";position:absolute;inset:17px;border-radius:50%;background:var(--surface);box-shadow:inset 0 1px 3px var(--line)}.donut-center{position:relative;text-align:center}.donut-center small{font-size:11px;color:var(--soft)}.donut-center strong{display:block;font-size:20px;font-weight:500;margin-top:3px;font-variant-numeric:tabular-nums}.bar{display:grid;grid-template-columns:1fr auto;gap:5px 12px;margin-bottom:18px}.bar .lbl{font-size:12px;color:var(--soft);overflow-wrap:anywhere;display:flex;align-items:center;gap:7px}.cat-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--tone,var(--brand))}.bar .val{text-align:right;font-size:12px;font-weight:500;font-variant-numeric:tabular-nums}.bar .val small{font-size:10px;color:var(--faint);font-weight:400;margin-left:7px}.track{grid-column:1/-1;height:6px;background:var(--fill);border-radius:999px;overflow:hidden}.fill{height:100%;background:var(--brand);border-radius:999px;transition:width .4s var(--ease)}.chart-note{font-size:11px;color:var(--faint);margin:20px 0 0}.tools-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.tool-card{padding:25px}.tool-icon{width:43px;height:43px;border-radius:16px;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand);margin-bottom:19px}.tool-card h2{font-size:18px;font-weight:500;margin:0 0 7px}.tool-card p{font-size:12px;color:var(--soft);margin:0 0 20px;line-height:1.8}.pair-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:15px}#pair-code{font-size:28px;letter-spacing:5px;font-weight:500;font-variant-numeric:tabular-nums;background:var(--fill);border:1px solid var(--line);border-radius:15px;padding:7px 15px;min-width:164px;text-align:center}#pair-hint,#backup-note{font-size:11px;line-height:1.8;color:var(--soft);margin-top:15px}.connect-address{font-size:12px;color:var(--soft);padding:11px 13px;background:var(--fill);border-radius:13px;margin-bottom:20px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}.connect-address code{font:inherit;color:var(--ink)}.backup-meta{display:flex;gap:14px;font-size:11px;color:var(--soft);margin:14px 0}.snapshot{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);gap:10px;font-size:11px;color:var(--soft)}.snapshot:last-child{border:0}.server-card{grid-column:1/-1;padding:23px 26px}.server-head{display:flex;align-items:center;gap:9px;font-size:13px;margin-bottom:17px}.server-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}.server-grid small{font-size:11px;color:var(--soft);display:block}.server-grid strong{font-size:20px;font-weight:400;display:block;margin-top:3px;letter-spacing:-.2px}.server-caption{font-size:11px;color:var(--faint);margin:13px 0 0}
+.gate{max-width:420px;margin:8vh auto;padding:34px}.gate .brand-mark{width:52px;height:52px;margin-bottom:25px;border-radius:19px}.gate h2{font-size:25px;font-weight:500;margin:0 0 10px;letter-spacing:-.4px}.gate p{font-size:12px;line-height:1.8;color:var(--soft);margin:0 0 25px}.gate label{font-size:11px;color:var(--soft);display:block;margin-bottom:7px}.gate input{font-size:14px;height:48px;padding:12px 14px}.gate .btn{margin-top:15px;width:100%;height:46px}.gate .err{color:var(--expense);font-size:12px;min-height:19px;margin-top:12px}.gate details{font-size:11px;color:var(--soft);margin-top:12px}.gate summary{cursor:pointer}.gate details p{margin:10px 0 0;font-size:11px}.scrim{position:fixed;inset:0;z-index:10;background:var(--veil);backdrop-filter:blur(4px);opacity:0;pointer-events:none;transition:opacity .3s}.scrim.on{opacity:1;pointer-events:auto}.drawer{position:fixed;z-index:11;top:16px;right:16px;height:calc(100dvh - 32px);width:min(440px,calc(100% - 32px));border:1px solid var(--rim);border-radius:30px;background:var(--card);backdrop-filter:blur(30px) saturate(1.1);-webkit-backdrop-filter:blur(30px) saturate(1.1);box-shadow:0 20px 80px rgba(20,28,43,.16);transform:translateX(calc(100% + 24px));visibility:hidden;transition:transform .36s var(--ease),visibility 0s .36s;display:flex;flex-direction:column}.drawer.on{transform:none;visibility:visible;transition:transform .36s var(--ease),visibility 0s}.drawer header{display:flex;align-items:center;gap:12px;padding:19px 22px;border-bottom:1px solid var(--line)}.drawer header h2{font-size:14px;font-weight:500;margin:0}.drawer .body{padding:24px;overflow:auto;flex:1}.detail-hero{text-align:center;padding:9px 0 24px}.detail-hero .category-icon{margin:0 auto 14px;width:50px;height:50px;border-radius:19px}.detail-hero h3{font-size:17px;font-weight:500;margin:0 0 7px;overflow-wrap:anywhere}.detail-hero .detail-amount{font-size:34px;font-weight:400;letter-spacing:-.7px;line-height:1.4}.detail-group{background:var(--fill);padding:6px 16px;border-radius:19px}.kv{display:grid;grid-template-columns:92px minmax(0,1fr);gap:10px;font-size:12px;padding:13px 0;border-bottom:1px solid var(--line)}.kv:last-child{border:0}.kv .k{color:var(--soft)}.kv .v{text-align:right;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}.technical-details{margin-top:24px}.technical-details summary{font-size:11px;color:var(--faint);cursor:pointer}.technical-details .kv{font-size:10px}.technical-details .kv .k{font-size:10px}.drawer-note{font-size:11px;line-height:1.8;color:var(--faint);padding:14px 4px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(min-width:1680px){.wrap{padding-top:44px;gap:44px}.sidebar{top:44px}.page-head{margin-bottom:31px}.overview{margin-bottom:30px}}
+@media(max-width:1150px){.wrap{grid-template-columns:180px minmax(0,1fr);padding:25px;gap:24px}.sidebar{padding:23px 12px;top:25px}.hero{padding:23px}.count-card{padding:23px}.hero .balance{font-size:36px}thead th,tbody td{padding-left:15px;padding-right:15px}.stats{grid-template-columns:1fr}.filter-top{gap:9px}.quick-period button{padding:5px 8px}.brand{padding:0 3px;gap:8px}.brand strong{font-size:16px}}
+@media(max-width:850px){.wrap{display:block;padding:22px 22px 116px;max-width:740px}.sidebar{height:auto;position:static;border:0;border-radius:0;box-shadow:none;background:transparent;padding:0;margin-bottom:27px;backdrop-filter:none}.sidebar:before{display:none}.sidebar .brand{padding:0}.brand strong{font-size:18px}.sidebar .brand small{font-size:10px}.nav-label,.sidebar-bottom{display:none}.menu{position:fixed;z-index:6;bottom:max(14px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);width:calc(100% - 32px);max-width:460px;display:grid;grid-template-columns:1fr 1fr 1.25fr;gap:5px;padding:7px;background:var(--glass);border:1px solid var(--rim);border-radius:30px;box-shadow:0 8px 28px rgba(20,28,43,.1),inset 0 1px 0 var(--rim);backdrop-filter:blur(24px) saturate(1.2);-webkit-backdrop-filter:blur(24px) saturate(1.2)}.menu:before{display:block}.nav-btn{flex-direction:column;align-items:center;gap:4px;font-size:10px;padding:6px;min-height:54px;border-radius:24px;text-align:center}.nav-btn .icon{width:22px;height:22px}.nav-btn[aria-selected=true]{background:var(--card)}.page-head{min-height:53px;margin-bottom:20px}.page-head h1{font-size:26px}#mobile-logout:not(.hide){display:grid}.read-only{display:none}.page-head p{font-size:11px}.overview{gap:14px}.hero .balance{font-size:34px}.count-card{padding:21px}.filter-top{flex-wrap:wrap}.searchbox{min-width:calc(100% - 86px);order:0}.filter-top>.btn{order:1;padding:8px 13px}.quick-period{order:2;width:100%;margin-top:2px}.quick-period button{flex:1}.tools-grid{grid-template-columns:1fr}.server-grid{gap:12px}.server-grid strong{font-size:18px}.table-scroll{overflow:visible}thead .date-col,thead .account-col,thead .category-col,tbody .date-col,tbody .account-col,tbody .category-col{display:none}thead th{padding:13px 19px}tbody td{padding:15px 19px}.title{max-width:none;font-size:13px}.merchant-cell{gap:11px}.mobile-meta{display:block!important}.pager{flex-wrap:wrap}.table-card{overflow:hidden}.gate{margin:4vh auto}.tools-grid .server-card{grid-column:auto}}
+@media(max-width:480px){.wrap{padding:20px 16px 116px}.sidebar{margin-bottom:25px}.page-head h1{font-size:24px}.head-actions{gap:7px}.head-actions .icon-btn{width:37px;height:37px}.overview{grid-template-columns:1fr}.hero{padding:23px 24px}.hero .balance{font-size:38px;margin-bottom:22px}.metric .v{font-size:21px}.count-card{display:grid;grid-template-columns:1fr auto;gap:1px 12px;padding:14px 21px;align-items:center;border-radius:20px}.count-heading{font-size:11px}.count-value{grid-column:2;grid-row:1/3;font-size:25px;margin:0}.count-caption{font-size:10px;margin:0}.count-card .period{display:none}.filters{padding:15px 17px;border-radius:22px;margin-bottom:22px}.filter-grid{grid-template-columns:1fr 1fr;gap:10px}input[type=date]{font-size:11px;padding:8px}.section-heading h2{font-size:15px}.category-icon{width:35px;height:35px;border-radius:14px}.merchant-cell{gap:10px}.merchant-cell .title{font-size:12px;max-width:180px}.sub2{font-size:10px}.amount{font-size:14px}thead th,tbody td{padding-left:15px;padding-right:15px}.pager{padding:12px 15px;gap:5px}.pager .count{font-size:10px}.pager .btn{padding:5px 8px}.panel{padding:21px}.tool-card{padding:23px}.server-grid{grid-template-columns:1fr 1fr}.server-card{padding:23px}.gate{padding:28px 24px}.drawer{right:8px;top:8px;width:calc(100% - 16px);height:calc(100dvh - 16px);border-radius:25px}.drawer .body{padding:20px}.bar .val small{display:block;margin:0}.panel-head{gap:5px}.panel-head .btn.tiny{font-size:10px;padding:5px 8px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
-  header{display:flex;align-items:baseline;gap:12px;margin-bottom:20px;flex-wrap:wrap}
-  header h1{font-size:22px;margin:0;letter-spacing:.2px}
-  header .sub{color:var(--faint);font-size:13px}
-  header .spacer{flex:1}
-  .linkbtn{background:none;border:0;color:var(--brand);font:inherit;font-size:13px;cursor:pointer;padding:4px 2px}
-  .linkbtn:hover{text-decoration:underline}
+.asset-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:22px}.asset-metric{padding:21px 23px}.asset-metric small{display:block;color:var(--soft);font-size:12px}.asset-metric strong{display:block;font-size:26px;font-weight:450;letter-spacing:-.6px;margin-top:7px;overflow-wrap:anywhere}.asset-note{color:var(--soft);font-size:12px;line-height:1.8;margin:0 0 23px}.asset-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}.asset-toolbar select{min-width:190px;max-width:100%;padding:10px 14px;border-radius:15px}.asset-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.account-card,.holding-card{padding:23px 25px;min-width:0}.asset-card-head{display:flex;align-items:center;gap:12px;margin-bottom:20px}.asset-card-head .category-icon{width:44px;height:44px;border-radius:17px}.asset-card-head h3{margin:0;font-size:16px;font-weight:500;overflow-wrap:anywhere}.asset-card-head p{margin:3px 0 0;font-size:11px;color:var(--soft)}.asset-card-value{font-size:29px;font-weight:400;letter-spacing:-.5px;line-height:1.4;margin:5px 0 17px;overflow-wrap:anywhere}.asset-card-label{font-size:11px;color:var(--soft)}.asset-fields{display:grid;grid-template-columns:1fr 1fr;gap:16px 14px;padding-top:17px;border-top:1px solid var(--line);margin-bottom:10px}.asset-fields span{display:block;font-size:11px;color:var(--soft)}.asset-fields strong{display:block;font-size:15px;font-weight:500;margin-top:3px;overflow-wrap:anywhere}.asset-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:13px}.quote-note{font-size:11px;color:var(--soft);line-height:1.8;margin:14px 0}.quote-note.warn{color:var(--expense)}.asset-issue{padding:13px 18px;margin-bottom:18px;border-radius:18px;background:color-mix(in srgb,var(--expense) 7%,var(--card));font-size:12px;color:var(--expense)}.trade-table{margin-top:28px}.trade-table .table-scroll{overflow:auto}.trade-table table{min-width:690px}.trade-table .title{max-width:none}.asset-detail-trade{padding:13px 0;border-bottom:1px solid var(--line);font-size:12px;display:flex;justify-content:space-between;gap:15px}.asset-detail-trade small{display:block;color:var(--soft);font-size:10px;margin-top:4px}.asset-empty{grid-column:1/-1;padding:42px 22px;text-align:center}.asset-empty h3{font-size:18px;font-weight:500;margin:12px 0 7px}.asset-empty p{max-width:380px;margin:0 auto;font-size:12px;color:var(--soft);line-height:1.9}.asset-empty .icon{width:34px;height:34px;color:var(--brand)}
+.import-editor{width:min(560px,calc(100vw - 32px));max-height:85dvh;overflow:auto;border:1px solid var(--rim);border-radius:var(--radius);padding:28px;background:var(--surface);color:var(--ink);box-shadow:0 24px 80px rgba(24,32,48,.15)}.import-editor::backdrop{background:var(--veil);backdrop-filter:blur(6px)}.import-editor[open]{animation:import-enter .22s var(--ease)}.import-editor h2{margin:0;font-size:20px}.import-editor .import-fields label{color:var(--ink)}.import-editor input,.import-editor select{display:block;width:100%;margin-top:8px}.import-editor small{display:block;margin:6px 0 12px;color:var(--soft)}.import-existing{padding:8px 10px;margin-top:8px;border-radius:12px;background:var(--fill);font-size:11px;color:var(--soft)}.import-warning li{margin:8px 0}@keyframes import-enter{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.import-editor[open]{animation:none}}
+@media(max-width:850px){.menu{grid-template-columns:repeat(5,minmax(0,1fr));max-width:540px;gap:2px}.asset-metrics{grid-template-columns:1fr 1fr}.asset-metric strong{font-size:23px}.asset-card-value{font-size:25px}.account-card,.holding-card{padding:21px}.asset-grid{grid-template-columns:1fr}.asset-toolbar select{flex:1}.trade-table tbody td,.trade-table thead th{display:table-cell}.trade-table table{min-width:630px}}
+@media(max-width:480px){.asset-metrics{gap:10px}.asset-metric{padding:17px 18px;border-radius:22px}.asset-metric strong{font-size:22px}.asset-toolbar{gap:8px}.nav-btn{font-size:10px;padding:6px 2px}.asset-fields strong{font-size:14px}}
 
-  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.nav-label-short{display:none}
+@media(max-width:850px){.nav-label-full{display:none}.nav-label-short{display:inline}}
+@media(max-width:360px){.asset-metrics{grid-template-columns:1fr}.asset-metric{padding:16px 20px}}
+.import-card{padding:28px;margin-bottom:20px}.import-steps{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:22px}.import-steps span{border-radius:100px;padding:7px 16px;background:var(--fill);color:var(--soft);font-size:12px}.import-steps .active{background:var(--brand-soft);color:var(--brand-deep)}.import-upload{display:grid;grid-template-columns:1.2fr 1fr;gap:28px;align-items:start}.file-drop{border:1px dashed var(--line);background:var(--fill);border-radius:22px;padding:30px;text-align:center}.file-drop label{display:block;font-size:18px;margin:10px 0}.file-drop input{display:block;width:100%;margin-top:20px;font-size:12px}.file-drop input::file-selector-button{border:0;border-radius:14px;background:var(--brand-soft);color:var(--brand-deep);padding:9px 14px;margin-right:10px;cursor:pointer}.import-fields{display:grid;gap:14px}.import-fields label{display:block;color:var(--soft);font-size:12px;margin-bottom:5px}.import-fields select{width:100%}.import-help{color:var(--soft);font-size:12px;line-height:1.9}.import-summary{display:flex;gap:14px;flex-wrap:wrap;margin:16px 0}.import-summary span{background:var(--fill);border-radius:16px;padding:12px 17px}.import-summary strong{display:block;font-size:19px;font-weight:500}.import-options{display:flex;gap:18px;flex-wrap:wrap;margin:20px 0}.import-options label{display:flex;gap:8px;align-items:center;font-size:12px}.import-actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:22px}.import-table table{min-width:740px}.import-table td{font-size:12px}.import-table select{min-width:135px;max-width:210px}.import-detail{color:var(--soft);font-size:11px;white-space:normal;overflow-wrap:anywhere}.import-warning{border-radius:18px;padding:16px 20px;background:var(--fill);margin:16px 0;color:var(--soft);font-size:12px}.import-warning summary{cursor:pointer;color:var(--expense)}.import-result h2{margin-top:0}.import-result{padding:32px}.import-status{margin:16px 0;color:var(--soft)}
+@media(max-width:850px){.menu{grid-template-columns:repeat(6,minmax(0,1fr))}.import-upload{grid-template-columns:1fr}.import-card{padding:22px}.import-table table{min-width:740px}.import-table thead th,.import-table tbody td{display:table-cell}.import-table tr{display:table-row}}
+#import-format-dialog{width:min(760px,calc(100vw - 32px))}#import-format-fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0}#import-format-dialog details{margin:16px 0}@media(max-width:600px){#import-format-fields{grid-template-columns:1fr}}
 
-  /* ---- 概览 ---- */
-  .sum{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);
-       border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin-bottom:18px}
-  .sum > div{background:var(--card);padding:16px 18px}
-  .sum .k{color:var(--faint);font-size:12px;margin-bottom:6px}
-  .sum .v{font-size:24px;font-weight:600;letter-spacing:-.4px;font-variant-numeric:tabular-nums}
-  @media(max-width:720px){.sum{grid-template-columns:repeat(2,1fr)}}
-
-  /* ---- 筛选 ---- */
-  .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;padding:14px 16px;margin-bottom:18px}
-  .f{display:flex;flex-direction:column;gap:5px}
-  .f label{font-size:12px;color:var(--faint)}
-  input[type=text],input[type=date],select{
-    font:inherit;font-size:14px;color:var(--ink);background:#fff;
-    border:1px solid var(--line);border-radius:10px;padding:7px 10px;height:36px;min-width:0;
-  }
-  input:focus,select:focus{outline:2px solid var(--brand-soft);border-color:var(--brand)}
-  .f.q{flex:1;min-width:190px}
-  .f.q input{width:100%}
-  .btn{font:inherit;font-size:14px;height:36px;padding:0 18px;border-radius:10px;cursor:pointer;border:1px solid transparent}
-  .btn.primary{background:var(--brand-deep);color:#fff}
-  .btn.primary:hover{background:var(--brand)}
-  .btn.ghost{background:#fff;border-color:var(--line);color:var(--soft)}
-  .btn.ghost:hover{border-color:var(--faint)}
-  .btn.tiny{height:24px;padding:0 10px;font-size:12px;border-radius:8px;margin-left:8px;vertical-align:1px}
-  .chk{display:flex;align-items:center;gap:6px;height:36px;color:var(--soft);font-size:14px;user-select:none}
-
-  .tabs{display:flex;gap:4px;margin:0 0 14px}
-  .tab{font:inherit;font-size:14px;padding:8px 16px;border-radius:10px;border:1px solid transparent;
-       background:none;color:var(--soft);cursor:pointer}
-  .tab[aria-selected=true]{background:var(--card);border-color:var(--line);color:var(--ink);font-weight:600;box-shadow:var(--shadow)}
-
-  /* ---- 表格 ---- */
-  table{width:100%;border-collapse:collapse;font-size:14px}
-  thead th{text-align:left;font-size:12px;font-weight:500;color:var(--faint);
-           padding:12px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
-  tbody td{padding:12px 16px;border-bottom:1px solid var(--line);vertical-align:middle}
-  tbody tr:last-child td{border-bottom:0}
-  tbody tr{cursor:pointer}
-  tbody tr:hover{background:var(--fill-hover)}
-  tbody tr[aria-selected=true]{background:var(--brand-soft)}
-  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-  .amt-exp{color:var(--expense);font-weight:600}
-  .amt-inc{color:var(--income);font-weight:600}
-  .muted{color:var(--faint)}
-  .title{font-weight:500}
-  .sub2{color:var(--soft);font-size:13px}
-  .pill{display:inline-block;padding:2px 9px;border-radius:999px;background:var(--fill);color:var(--soft);font-size:12px}
-  .empty{padding:48px 16px;text-align:center;color:var(--faint)}
-  .pager{display:flex;align-items:center;gap:12px;justify-content:flex-end;padding:12px 16px}
-  .pager .count{margin-right:auto;color:var(--faint);font-size:13px}
-
-  /* ---- 统计 ---- */
-  .stats{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-  @media(max-width:820px){.stats{grid-template-columns:1fr}}
-  .panel h2{font-size:15px;margin:0;padding:16px 18px 10px;font-weight:600}
-  /* 刻度切换按钮挂在 h2 里，得让标题行自己撑开，别让 h2 的 line-height 把按钮压扁 */
-  .panel h2{display:flex;align-items:center}
-  .bar{display:grid;grid-template-columns:82px 1fr 130px;gap:12px;align-items:center;padding:7px 18px}
-  .bar .lbl{color:var(--soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .track{height:9px;background:var(--fill);border-radius:999px;overflow:hidden}
-  .fill{height:100%;background:var(--brand);border-radius:999px}
-  .bar .val{text-align:right;font-variant-numeric:tabular-nums}
-  .bar .val small{color:var(--faint);margin-left:6px}
-
-  /* ---- 详情抽屉 ---- */
-  .scrim{position:fixed;inset:0;background:rgba(var(--veil),.34);opacity:0;pointer-events:none;transition:opacity .18s}
-  .scrim.on{opacity:1;pointer-events:auto}
-  .drawer{position:fixed;top:0;right:0;height:100%;width:min(460px,100%);background:var(--card);
-          box-shadow:-12px 0 40px rgba(var(--veil),.14);transform:translateX(100%);transition:transform .22s cubic-bezier(.3,.8,.3,1);
-          display:flex;flex-direction:column}
-  .drawer.on{transform:none}
-  .drawer header{padding:20px 22px 12px;margin:0;border-bottom:1px solid var(--line)}
-  .drawer .body{padding:18px 22px;overflow:auto;flex:1}
-  .kv{display:grid;grid-template-columns:96px 1fr;gap:8px 14px;font-size:14px;padding:7px 0;border-bottom:1px solid var(--line)}
-  .kv:last-child{border-bottom:0}
-  .kv .k{color:var(--faint);font-size:13px}
-  .kv .v{font-variant-numeric:tabular-nums;word-break:break-all}
-  h3.sec{font-size:12px;color:var(--faint);font-weight:500;margin:22px 0 6px;letter-spacing:.4px}
-
-  /* ---- 登录 ---- */
-  .gate{max-width:420px;margin:14vh auto;padding:28px}
-  .gate h2{font-size:18px;margin:0 0 8px}
-  .gate p{color:var(--soft);font-size:14px;margin:0 0 18px}
-  .gate input{width:100%}
-  .gate .btn{width:100%;margin-top:12px;height:40px}
-  .gate .err{color:var(--expense);font-size:13px;margin-top:12px;min-height:20px}
-  .hide{display:none !important}
-  code{background:var(--fill);padding:1px 5px;border-radius:5px;font-size:12.5px;
-       font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.family-card{min-width:0}.family-card #family-state{font-size:12px;color:var(--soft);line-height:1.8;margin:12px 0 18px}.family-card #family-actions{display:flex;flex-direction:column;align-items:flex-start;gap:10px}.family-card label{display:block;color:var(--soft);font-size:12px}.family-card input{box-sizing:border-box;width:100%;min-height:44px;padding:10px 14px;border:1px solid var(--line);border-radius:15px;background:var(--fill);color:var(--ink);font:inherit;outline:none}.family-card #family-roster{margin-top:20px;font-size:12px;color:var(--soft)}.family-card code{display:block;font-size:16px;letter-spacing:1px;background:var(--fill);border-radius:14px;padding:14px;margin:10px 0;color:var(--ink)}.family-card textarea{width:100%;height:150px;color:var(--ink);background:var(--fill);border:1px solid var(--line);border-radius:14px;padding:12px}.family-card .btn{flex-shrink:0}.family-card #family-error{margin-top:12px}
+.category-drill{width:100%;border:1px solid transparent;background:transparent;text-align:left;padding:10px;border-radius:16px;margin-bottom:4px}.category-drill:hover{background:var(--fill);border-color:var(--line)}.category-drill .lbl:after{content:"›";margin-left:4px;color:var(--faint)}.category-context{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:16px 20px;margin-bottom:18px}.category-context strong{font-weight:500}.category-context p{margin:5px 0 0;font-size:12px;color:var(--soft)}
+.bill-editor{width:min(560px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:24px}.bill-editor::backdrop{background:rgba(20,28,43,.3);backdrop-filter:blur(8px)}.bill-edit-fields{display:grid;grid-template-columns:1fr 1fr;gap:18px}.bill-edit-fields label{display:grid;gap:8px;font-size:12px;color:var(--soft)}.bill-edit-fields .full{grid-column:1/-1}.bill-edit-fields input,.bill-edit-fields select,.bill-edit-fields textarea{margin-top:0;width:100%;min-width:0;border:1px solid var(--line);border-radius:14px;background:var(--fill);color:var(--ink);padding:12px;font:inherit;font-size:14px}.bill-edit-fields textarea{resize:vertical;min-height:100px}.bill-edit-amount{display:flex;align-items:center;gap:12px;background:var(--fill);border-radius:18px;padding:10px 16px}.bill-edit-amount input{border:0;background:none;font-size:30px;padding:6px}.bill-edit-amount span{font-size:24px}.bill-edit-status{min-height:24px;color:var(--expense);font-size:13px;margin-top:16px}.bill-edit-intro{margin-bottom:20px;color:var(--soft);font-size:13px;line-height:1.6}.bill-edit-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}.save-notice{padding:14px 18px;background:var(--brand-soft);border-radius:16px;color:var(--ink);font-size:13px;margin-bottom:18px}@media(max-width:420px){.bill-editor{padding:20px}.bill-edit-fields{grid-template-columns:1fr;gap:14px}}
 </style>
 </head>
 <body>
-<div class="wrap">
-
-  <header>
-    <h1>咔皮账本</h1>
-    <span class="sub" id="hstat">NAS 面板 · 只读</span>
-    <span class="spacer"></span>
-    <button class="linkbtn hide" id="logout">退出</button>
-  </header>
-
-  <!-- 令牌门：外壳本身不含任何账本数据，所以可以匿名加载 -->
-  <div class="gate card hide" id="gate">
-    <h2>输入面板令牌</h2>
-    <p>这个令牌在 NAS 上运行 <code>docker logs kapi-sync</code> 的启动横幅里。
-       它和手机配对用的配对码是两回事,不要填错。</p>
-    <input type="text" id="tok" placeholder="面板令牌" autocomplete="off" spellcheck="false">
-    <button class="btn primary" id="tokgo">进入</button>
-    <div class="err" id="tokerr"></div>
-  </div>
-
-  <div id="app" class="hide">
-    <div class="sum">
-      <div><div class="k">支出</div><div class="v" id="s-exp">—</div></div>
-      <div><div class="k">收入</div><div class="v" id="s-inc">—</div></div>
-      <div><div class="k">结余</div><div class="v" id="s-bal">—</div></div>
-      <div><div class="k">笔数</div><div class="v" id="s-cnt">—</div></div>
-    </div>
-
-    <div class="card" id="pair-card">
-      <div class="k">配对新手机</div>
-      <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
-        <code id="pair-code" style="font-size:30px;letter-spacing:8px;font-weight:700;min-width:180px">—— ——</code>
-        <button class="btn ghost tiny" id="pair-gen">生成配对码</button>
-      </div>
-      <div class="k" id="pair-hint" style="margin-top:8px">点「生成配对码」，然后在 App「设置 → NAS 同步 → 连接 NAS」里填本机地址（端口 8787）和这个码。10 分钟内有效。</div>
-    </div>
-
-    <div class="filters card">
-      <div class="f q"><label for="f-q">关键词</label><input type="text" id="f-q" placeholder="商户 / 备注 / 分类 / 账户"></div>
-      <div class="f"><label for="f-from">起始</label><input type="date" id="f-from"></div>
-      <div class="f"><label for="f-to">结束</label><input type="date" id="f-to"></div>
-      <div class="f"><label for="f-dir">类型</label>
-        <select id="f-dir"><option value="">全部</option><option value="EXPENSE">支出</option><option value="INCOME">收入</option></select>
-      </div>
-      <div class="f"><label for="f-cat">分类</label><select id="f-cat"><option value="">全部</option></select></div>
-      <label class="chk"><input type="checkbox" id="f-del"> 含已删除</label>
-      <button class="btn primary" id="f-go">查询</button>
-      <button class="btn ghost" id="f-clear">重置</button>
-    </div>
-
-    <div class="tabs">
-      <button class="tab" data-tab="list" aria-selected="true">明细</button>
-      <button class="tab" data-tab="stats" aria-selected="false">统计</button>
-    </div>
-
-    <div id="view-list" class="card">
-      <table>
-        <thead><tr>
-          <th style="width:132px">时间</th><th>商户 / 备注</th>
-          <th style="width:110px">分类</th><th style="width:104px">账户</th>
-          <th class="num" style="width:132px">金额</th>
-        </tr></thead>
-        <tbody id="rows"></tbody>
-      </table>
-      <div class="empty hide" id="empty">没有符合条件的账单</div>
-      <div class="pager">
-        <span class="count" id="cnt"></span>
-        <button class="btn ghost" id="prev">上一页</button>
-        <button class="btn ghost" id="next">下一页</button>
-      </div>
-    </div>
-
-    <div id="view-stats" class="stats hide">
-      <div class="card panel">
-        <h2>支出构成
-          <button class="btn ghost tiny" id="scale-toggle"
-                  title="线性刻度下，最大的一类会占满整条，其余几乎看不见。平方根刻度保持大小顺序不变，但让小额类别也可读。">平方根刻度</button>
-        </h2>
-        <div id="bycat"></div>
-      </div>
-      <div class="card panel"><h2>每月净额</h2><div id="bymonth"></div></div>
-    </div>
-  </div>
-</div>
-
-<div class="scrim" id="scrim"></div>
-<aside class="drawer" id="drawer">
-  <header>
-    <h1 style="font-size:17px" id="d-title">账单详情</h1>
-    <span class="sub" id="d-sub"></span>
-    <span class="spacer"></span>
-    <button class="linkbtn" id="d-close">关闭</button>
-  </header>
-  <div class="body" id="d-body"></div>
+<svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+<symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 6.5 17 3v4M4 7h15a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/><path d="M21 11h-5a2 2 0 0 0 0 4h5M16 13h.01"/></symbol>
+<symbol id="i-ledger" viewBox="0 0 24 24"><rect x="5" y="4" width="15" height="17" rx="3"/><path d="M9 4v17M3 8h4M3 13h4M3 18h4M13 9h4M13 13h4"/></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><path d="M21 13a9 9 0 1 1-10-10v10zM15 3.5V9h5.5A9 9 0 0 0 15 3.5Z"/></symbol>
+<symbol id="i-server" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="8" rx="3"/><rect x="4" y="13" width="16" height="8" rx="3"/><path d="M8 7h.01M8 17h.01M13 7h3M13 17h3"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM8.5 12l2.5 2.5 4.5-5"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 8a8 8 0 1 0 .5 7M20 3v5h-5"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+<symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4H5v16h5M10 12h11m-4-4 4 4-4 4"/></symbol>
+<symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="3"/><path d="M10 5h4M11 18h2"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 15v5h16v-5"/></symbol>
+<symbol id="i-cup" viewBox="0 0 24 24"><path d="M4 8h12v7a5 5 0 0 1-10 0V8M16 9h2a3 3 0 0 1 0 6h-2M7 3v2M12 2v3M4 21h14"/></symbol>
+<symbol id="i-food" viewBox="0 0 24 24"><path d="M5 3v7a3 3 0 0 0 6 0V3M8 3v18M18 3c-3 3-3 9 0 10h2V3h-2M20 13v8"/></symbol>
+<symbol id="i-shopping" viewBox="0 0 24 24"><path d="M5 8h14l2 13H3zM8 9V6a4 4 0 0 1 8 0v3"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="m3 11 9-8 9 8M5 9v12h14V9M10 21v-7h4v7"/></symbol>
+<symbol id="i-train" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="16" rx="4"/><path d="M5 11h14M12 3v8M8 15h.01M16 15h.01M8 19l-2 3M16 19l2 3"/></symbol>
+<symbol id="i-gift" viewBox="0 0 24 24"><path d="M4 11v10h16V11M12 7v14"/><rect x="3" y="7" width="18" height="4" rx="1"/><path d="M12 7c-4 0-6-1-6-3 0-3 6-1 6 3 0-4 6-6 6-3 0 2-2 3-6 3"/></symbol>
+<symbol id="i-code" viewBox="0 0 24 24"><path d="m7 6-5 6 5 6M17 6l5 6-5 6M14 3l-4 18"/></symbol>
+<symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20 3 11c-5-7 5-12 9-5 4-7 14-2 9 5z"/></symbol>
+<symbol id="i-book" viewBox="0 0 24 24"><path d="M12 5c-3-2-6-2-10-1v15c4-1 7-1 10 1 3-2 6-2 10-1V4c-4-1-7-1-10 1v15"/></symbol>
+<symbol id="i-dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+</defs></svg>
+<div class="wrap" id="workspace">
+<aside class="sidebar glass">
+ <div class="brand"><span class="brand-mark"><svg class="icon"><use href="#i-wallet"/></svg></span><div><strong>归账</strong><small id="space-caption">NAS · 你的私人账本</small></div></div>
+ <div class="nav-label">我的空间</div>
+ <nav class="menu glass" aria-label="主要导航">
+  <button class="nav-btn tab" data-tab="list" aria-selected="true"><svg class="icon"><use href="#i-ledger"/></svg><span>账本</span></button>
+  <button class="nav-btn tab" data-tab="stats" aria-selected="false"><svg class="icon"><use href="#i-chart"/></svg><span>统计</span></button>
+  <button class="nav-btn tab" data-tab="accounts" aria-selected="false"><svg class="icon"><use href="#i-wallet"/></svg><span>账户</span></button>
+  <button class="nav-btn tab" data-tab="investments" aria-selected="false"><svg class="icon"><use href="#i-chart"/></svg><span>投资</span></button>
+  <button class="nav-btn tab" data-tab="import" aria-selected="false"><svg class="icon"><use href="#i-download"/></svg><span>导入</span></button>
+  <button class="nav-btn tab" data-tab="tools" aria-label="连接与备份" aria-selected="false"><svg class="icon"><use href="#i-server"/></svg><span class="nav-label-full" aria-hidden="true">连接与备份</span><span class="nav-label-short" aria-hidden="true">连接</span></button>
+ </nav>
+ <div class="sidebar-bottom"><div class="status"><span class="status-dot"></span><span id="connection-status">等待连接</span></div><p>数据保存在你的 NAS 上</p><button class="linkbtn hide" id="logout"><svg class="icon"><use href="#i-logout"/></svg>退出面板</button></div>
 </aside>
+<main class="main">
+ <header class="page-head"><div><h1 id="page-title">账本概览</h1><p id="page-subtitle">每一笔收支，清晰可见</p></div><div class="head-actions"><span class="read-only"><svg class="icon"><use href="#i-shield"/></svg>手机 · NAS 同步</span><button class="icon-btn" id="theme-toggle" aria-label="切换深色模式" title="切换深色模式"><svg class="icon"><use href="#i-moon"/></svg></button><button class="icon-btn hide" id="mobile-logout" aria-label="退出面板" title="退出面板"><svg class="icon"><use href="#i-logout"/></svg></button></div></header>
+ <div class="gate glass hide" id="gate"><div class="brand-mark"><svg class="icon"><use href="#i-shield"/></svg></div><h2>打开你的账本</h2><p>输入 NAS 面板令牌，查看手机同步的账单、账户、投资与备份。</p><label for="tok">面板令牌</label><input type="password" id="tok" placeholder="输入面板令牌" autocomplete="off" spellcheck="false"><button class="btn primary" id="tokgo">进入账本</button><div class="err" id="tokerr" role="alert"></div><details><summary>在哪里找到令牌？</summary><p>令牌保存在 NAS 的服务配置中，也可从启动日志读取。此处填写面板令牌；连接手机时使用配对码。</p></details></div>
+ <div id="app" class="hide">
+  <div class="error-banner hide" id="error-banner" role="alert"></div>
+  <div id="ledger-overview">
+   <div class="overview"><section class="hero card"><div class="eyebrow"><span id="balance-label">本月结余</span><span id="period-label">—</span></div><div class="balance num" id="s-bal">—</div><div class="hero-metrics"><div class="metric"><div class="k">净支出</div><div class="v num" id="s-exp">—</div></div><div class="metric income"><div class="k">收入</div><div class="v num" id="s-inc">—</div></div></div></section><section class="count-card card"><div class="count-heading"><svg class="icon"><use href="#i-ledger"/></svg>本期账单</div><div class="count-value num"><span id="s-cnt">—</span><small>笔</small></div><p class="count-caption">记录生活里的每一笔</p><div class="period" id="date-range">—</div></section></div>
+   <section class="filters card" aria-label="账单筛选"><div class="filter-top"><div class="searchbox"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><label class="sr-only" for="f-q">搜索账单</label><input type="text" id="f-q" placeholder="搜索商户、备注、分类或账户"></div><div class="quick-period" aria-label="快捷时间范围"><button data-period="current" aria-pressed="true">本月</button><button data-period="previous" aria-pressed="false">上月</button><button data-period="all" aria-pressed="false">全部</button></div><button class="btn primary" id="f-go">查询</button></div><details class="filter-details"><summary>更多筛选<svg class="icon"><use href="#i-down"/></svg></summary><div class="filter-grid"><div class="f"><label for="f-from">起始日期</label><input type="date" id="f-from"></div><div class="f"><label for="f-to">结束日期</label><input type="date" id="f-to"></div><div class="f"><label for="f-dir">收支类型</label><select id="f-dir"><option value="">全部类型</option><option value="EXPENSE">支出</option><option value="INCOME">收入</option></select></div><div class="f"><label for="f-book">账本</label><select id="f-book"><option value="">全部账本</option></select></div><div class="f"><label for="f-cat">分类</label><select id="f-cat"><option value="">全部分类</option></select></div></div><div class="filter-foot"><label class="chk"><input type="checkbox" id="f-del">包含已删除账单</label><button class="linkbtn" id="f-clear">重置筛选</button></div></details></section>
+  </div>
+  <section id="view-list" class="view"><p id="bill-save-status" role="status" class="save-notice" hidden></p><div id="category-context" class="category-context glass hide"><div><strong id="category-context-name"></strong><p>支出与关联退款 · 与分类统计保持一致，不含已删除账单及账户划转</p></div><span class="spacer"></span><button id="category-back" class="btn ghost">返回分类统计</button></div><div class="section-heading"><div><h2>账单明细</h2><p>点击账单查看详情与编辑</p></div><button class="icon-btn" id="refresh" title="刷新账本" aria-label="刷新账本"><svg class="icon"><use href="#i-refresh"/></svg></button></div><div class="table-card card"><div class="table-scroll"><table><thead><tr><th>账单</th><th class="category-col">分类</th><th class="account-col">账户</th><th class="date-col">时间</th><th class="num">金额</th></tr></thead><tbody id="rows"></tbody></table></div><div class="empty hide" id="empty"><svg class="icon"><use href="#i-ledger"/></svg>没有符合条件的账单</div><div class="pager"><span class="count" id="cnt"></span><button class="btn ghost" id="prev">上一页</button><button class="btn ghost" id="next">下一页</button></div></div></section>
+  <section id="view-stats" class="stats view hide"><div class="card panel"><div class="panel-head"><div><h2>支出构成</h2><div class="sub2">退款已抵扣</div></div><button class="btn ghost tiny" id="scale-toggle" title="平方根刻度让小额类别更清楚；金额和占比保持原值。">刻度：平方根</button></div><div class="donut-block"><div class="donut" id="donut" role="img" aria-label="分类净支出分布"><div class="donut-center"><small>分类净支出</small><strong id="donut-total">—</strong></div></div></div><div id="bycat"></div><p class="chart-note" id="chart-note">圆环按金额占比展示，条形可切换刻度。</p></div><div class="card panel"><div class="panel-head"><div><h2>每月结余</h2><div class="sub2">收入减去净支出</div></div><svg class="icon muted"><use href="#i-chart"/></svg></div><div id="bymonth"></div></div></section>
 
+  <section id="view-accounts" class="view hide" aria-label="账户资产">
+   <div class="asset-metrics"><div class="asset-metric card"><small>净资产</small><strong class="num" id="asset-net">—</strong></div><div class="asset-metric card"><small>资产</small><strong class="num" id="asset-total">—</strong></div><div class="asset-metric card"><small>负债</small><strong class="num" id="asset-debt">—</strong></div><div class="asset-metric card"><small>已估值账户</small><strong id="asset-known">—</strong></div></div>
+   <p class="asset-note" id="asset-coverage">已校准、计入净资产的人民币账户参与汇总。投资账户包含现金与持仓参考市值。</p>
+   <div class="section-heading"><div><h2>我的账户</h2><p>余额和持仓来自手机同步</p></div><button class="icon-btn" id="accounts-refresh" aria-label="刷新账户" title="刷新账户"><svg class="icon"><use href="#i-refresh"/></svg></button></div>
+   <div class="asset-toolbar"><label class="chk"><input type="checkbox" id="show-hidden-accounts">包含隐藏账户</label></div><div id="accounts-issues"></div><div class="asset-grid" id="account-cards"></div>
+  </section>
+  <section id="view-import" class="view hide" aria-label="账单导入">
+   <div class="import-steps"><span class="active" id="import-step-file">1 · 选择文件</span><span id="import-step-review">2 · 核对账单</span><span id="import-step-sync">3 · 保存并同步</span></div>
+   <div class="import-card card" id="import-upload-card"><div class="import-upload">
+    <div class="file-drop"><svg class="icon" style="width:32px;height:32px"><use href="#i-download"/></svg><label for="import-file">把账单带到归账</label><p class="import-help">选择微信、支付宝或其他记账软件导出的文件<br>CSV · TSV · XLS · XLSX · PDF · ZIP，最大 20 MB</p><input type="file" id="import-file" accept=".csv,.tsv,.xls,.xlsx,.pdf,.zip"></div>
+    <div class="import-fields"><div><label for="import-ledger">导入到哪个账本</label><select id="import-ledger"><option value="">正在读取账本…</option></select><button class="btn ghost tiny" id="import-catalog-refresh" style="margin-top:10px">刷新账本列表</button></div><p class="import-help">请先让手机与 NAS 完成一次同步，带来你的账户和分类。上传后只做预览，确认前不会新增账单。</p><button class="btn primary" id="import-preview">读取并核对</button><p class="import-help">读取在你的 NAS 上完成。疑似重复默认不选，复杂退款、借贷等未支持内容会单独提示。</p></div>
+   </div></div>
+   <div id="import-status" class="import-status" role="status" aria-live="polite"></div>
+   <div id="import-review" class="hide">
+    <section class="import-card card"><div class="panel-head"><div><h2 id="import-source">核对账单</h2><p class="sub2" id="import-filename"></p></div><button class="btn ghost" id="import-restart">重新选择文件</button></div><div class="import-summary" id="import-summary"></div><div id="import-issues"></div><div class="import-actions"><button class="btn ghost" id="import-format-open">调整字段匹配 / AI 建议</button></div>
+     <div class="import-fields"><div><label for="import-account">未匹配账户的账单统一记入</label><select id="import-account"><option value="">请明确选择账户</option></select></div></div>
+     <div class="import-actions"><button class="btn ghost" id="import-map-open">批量映射分类</button><label><input type="checkbox" id="import-remember" checked>成功入库后记住分类与字段匹配</label></div><div class="import-options"><label id="import-preserve-label"><input type="checkbox" id="import-preserve" checked>保留原分类，补充缺少的分类</label><label><input type="checkbox" id="import-unclassified">允许未匹配分类记为未分类</label></div><p class="import-help">划转账单需要明确转出、转入账户，借贷等内容不会当作普通收支。重复候选仍可单独核对选择。</p>
+    </section>
+    <section class="table-card card import-table"><div class="section-heading" style="padding:20px 24px"><div><h2>逐笔核对</h2><p id="import-selected"></p></div><div><button class="btn ghost tiny" id="import-select-all">全选可导入</button><button class="btn ghost tiny" id="import-select-new">仅选新账单</button><button class="btn ghost tiny" id="import-select-none">取消全选</button></div></div><div class="table-scroll"><table><thead><tr><th>选择</th><th>账单 / 原分类</th><th>时间</th><th>账户</th><th class="num">金额</th><th>核对提示</th></tr></thead><tbody id="import-rows"></tbody></table></div><div class="pager"><span id="import-page"></span><button class="btn ghost" id="import-prev">上一页</button><button class="btn ghost" id="import-next">下一页</button></div></section>
+    <div class="import-actions"><button class="btn primary" id="import-commit" disabled>确认导入并同步</button><span class="import-help">保存后进入 NAS 同步队列，手机下次同步后可见。</span></div>
+   </div>
+   <section id="import-result" class="card import-result hide" role="status"><div class="tool-icon"><svg class="icon"><use href="#i-phone"/></svg></div><h2>已进入同步队列</h2><p id="import-result-count"></p><p class="import-help" id="import-result-message"></p><div class="import-actions"><button class="btn ghost" id="import-more">继续导入</button><button class="btn primary" id="import-see">查看 NAS 账单</button></div></section>
+  </section>
+  <section id="view-investments" class="view hide" aria-label="投资持仓">
+   <div class="asset-toolbar"><label class="sr-only" for="investment-account">选择投资账户</label><select id="investment-account"><option value="">全部投资账户</option></select><span class="spacer"></span><button class="btn ghost" id="investments-refresh"><svg class="icon"><use href="#i-refresh"/></svg>刷新已同步数据</button></div>
+   <div class="asset-metrics"><div class="asset-metric card"><small>持仓参考市值</small><strong class="num" id="invest-value">—</strong></div><div class="asset-metric card"><small>剩余持仓成本</small><strong class="num" id="invest-cost">—</strong></div><div class="asset-metric card"><small>持仓盈亏</small><strong class="num" id="invest-gain">—</strong></div><div class="asset-metric card"><small>已记录的已实现收益</small><strong class="num" id="invest-realized">—</strong></div></div>
+   <p class="asset-note">报价日期、来源显示在每只资产下方。手续费计入成本与卖出收益；买卖本金独立于日常收支。期初截图只代表快照时的持仓，快照之前的买卖、分红未还原。</p>
+   <div id="investments-issues"></div><div class="asset-grid" id="holding-cards"></div>
+   <div class="trade-table" id="investment-trades"><div class="section-heading"><div><h2>投资交易记录</h2><p>买入 · 卖出 · 分红 · 拆分 · 期初持仓</p></div></div><div class="table-card card"><div class="table-scroll"><table><thead><tr><th>资产 / 账户</th><th>类型</th><th class="num">份额 / 股数</th><th class="num">成交金额</th><th class="num">手续费</th><th>交易时间</th></tr></thead><tbody id="investment-trade-rows"></tbody></table></div><div class="pager"><span class="count" id="investment-trade-count"></span><button class="btn ghost" id="investment-more">查看更多</button></div></div></div>
+  </section>
+  <dialog id="import-repair-dialog" class="import-editor"><div class="panel-head"><h2 id="import-repair-title">修正错误行</h2><button class="btn ghost tiny" id="import-repair-close" aria-label="关闭修正">关闭</button></div><p class="import-help">仅修改本次预览，原文件保持不变。重新检查金额、时间、收支和重复，所选账单及手工分类会重置。</p><div id="import-repair-fields" class="import-fields"></div><p id="import-repair-hint" role="status" class="import-help"></p><div class="import-actions"><button class="btn primary" id="import-repair-save">校验并重新预览</button></div></dialog>
+  <dialog id="import-format-dialog" class="import-editor"><div class="panel-head"><h2>字段匹配</h2><button class="btn ghost tiny" id="import-format-close">关闭</button></div><p class="import-help">金额、时间仍从原文件读取。AI 只接收表头与前五行的值类型，不接收原单元格。采用后会重置所选账单和分类，请重新核对。</p><details><summary>可选 AI 建议</summary><p class="import-help">使用你自己的服务商，可能产生调用费用。接口配置仅用于本次请求，不保存到 NAS。</p><div class="import-fields"><label>API 接入点<input id="import-ai-url" type="url" placeholder="https://example.com/v1" autocomplete="off"></label><label>模型名<input id="import-ai-model" autocomplete="off"></label><label>API Key<input id="import-ai-key" type="password" autocomplete="off"></label></div><button class="btn ghost" id="import-format-ai">发送表头与字段形状，获取建议</button></details><div class="import-fields" id="import-format-fields"></div><p id="import-format-message" role="status" class="import-help"></p><button class="btn primary" id="import-format-apply">采用匹配并重新预览</button></dialog>
+  <dialog id="import-map-dialog" class="import-editor"><div class="panel-head"><h2>批量映射分类</h2><button class="btn ghost tiny" id="import-map-close" aria-label="关闭分类映射">关闭</button></div><p class="import-help">将本次所选账单的原分类对应到你的现有分类。已存在与已删除账单保持原分类，确认前不会入库。</p><div id="import-map-groups" class="import-fields"></div><div class="import-actions"><button class="btn primary" id="import-map-apply">应用到所选预览</button></div></dialog>
+  <section id="view-tools" class="tools-grid view hide"><div class="tool-card card" id="pair-card"><div class="tool-icon"><svg class="icon"><use href="#i-phone"/></svg></div><h2>连接我的其他手机</h2><p>此配对码可以访问你的个人账本，仅用于本人设备。邀请家人请使用下方家庭邀请码。</p><div class="connect-address"><span>NAS 地址</span><code id="nas-address"></code></div><div class="pair-actions"><output id="pair-code" aria-label="手机配对码" aria-live="polite">— — —</output><button class="btn ghost" id="pair-gen">生成配对码</button></div><div id="pair-hint" role="status">配对码 10 分钟内有效，点击按钮后生成。</div></div><div class="tool-card card"><div class="tool-icon"><svg class="icon"><use href="#i-download"/></svg></div><h2>安心备份</h2><p>每天自动保存当前空间的快照，保留最近 14 份。下载包含当前账本和设备配对状态；个人与家庭空间分别备份。</p><button class="btn primary" id="download-backup"><svg class="icon"><use href="#i-download"/></svg>下载当前空间备份</button><div class="backup-meta"><span id="snapshot-count">正在读取快照…</span></div><div id="backup-list"></div><div id="backup-note" role="status">恢复时使用新的空数据目录，保留原数据。</div></div><div class="server-card card"><div class="server-head"><span class="status-dot"></span>NAS 同步服务</div><div class="server-grid"><div><small>服务版本</small><strong id="server-version">—</strong></div><div><small>同步实体</small><strong id="server-rows">—</strong></div><div><small>配对设备</small><strong id="server-devices">—</strong></div><div><small>同步游标</small><strong id="server-seq">—</strong></div></div><p class="server-caption" id="hstat">同步实体包括账单、分类、账户等，数量与账单笔数不同。</p></div></section>
+ </div>
+</main>
+</div>
+<dialog id="bill-edit-dialog" class="import-editor bill-editor" aria-labelledby="bill-edit-title"><form id="bill-edit-form"><div class="panel-head"><h2 id="bill-edit-title">编辑账单</h2><button type="button" id="bill-edit-close" class="icon-btn" aria-label="关闭账单编辑"><svg class="icon"><use href="#i-close"/></svg></button></div><p class="bill-edit-intro"><strong id="bill-edit-name"></strong> · <span id="bill-edit-kind"></span><br>保存到原账单，手机下次同步后更新。</p><div class="bill-edit-fields"><label class="full">金额<div class="bill-edit-amount"><span aria-hidden="true">¥</span><input id="bill-edit-amount" aria-label="编辑金额" inputmode="decimal" autocomplete="off" maxlength="12" required></div></label><label>分类<select id="bill-edit-category" aria-label="编辑分类"></select></label><label>账户<select id="bill-edit-account" aria-label="编辑账户" required></select></label><label class="full">备注<textarea id="bill-edit-note" aria-label="编辑备注" maxlength="2000" rows="3"></textarea></label></div><p class="bill-edit-status" id="bill-edit-status" role="alert"></p><button type="button" class="btn ghost" id="bill-edit-reload" hidden>重新读取最新账单（替换当前填写）</button><div class="bill-edit-actions"><button type="button" class="btn ghost" id="bill-edit-cancel">取消</button><button type="submit" class="btn primary" id="bill-edit-save">保存并同步</button></div></form></dialog>
+<div class="scrim" id="scrim" aria-hidden="true"></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="d-title" aria-hidden="true" tabindex="-1"><header><h2 id="d-title">账单详情</h2><span class="spacer"></span><button class="icon-btn" id="d-close" aria-label="关闭详情"><svg class="icon"><use href="#i-close"/></svg></button></header><div class="body" id="d-body"></div></aside>
 <script>
 "use strict";
 const $ = (s) => document.querySelector(s);
-const LS = "kapi_panel_token";
+const API_BASE=location.pathname.replace(/\/panel\/$/,"");
+const apiPath=path=>API_BASE+path;
+const LS = "kapi_panel_token"+(API_BASE?":"+API_BASE:"");
+let entryToken="";
+if(API_BASE.startsWith("/family/space/") && location.hash.startsWith("#access=")) {
+  const value=new URLSearchParams(location.hash.slice(1)).get("access")||"";
+  if(/^[A-Za-z0-9_-]{16,256}$/.test(value))entryToken=value;
+  history.replaceState(null,"",location.pathname+location.search);
+}
+const previousToken=localStorage.getItem(LS)||"";
+localStorage.removeItem(LS);
+if(previousToken&&!sessionStorage.getItem(LS))sessionStorage.setItem(LS,previousToken);
+const S = {token:entryToken||sessionStorage.getItem(LS)||"",tab:"list",expenseCategory:"",offset:0,limit:50,total:0,filter:{},rows:[],sel:null,loadId:0,rowRequest:0,returnFocus:null,assets:null,assetOptions:[],investmentAccount:"",tradeLimit:50,scale:localStorage.getItem("kapi.scale")||"sqrt"};
+const svg = (name) => '<svg class="icon" aria-hidden="true"><use href="#i-'+name+'"/></svg>';
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function money(minor){const n=Number(minor||0)/100;return (n<0?"-":"")+"¥"+Math.abs(n).toLocaleString("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});}
+function signed(minor,dir){return (dir==="TRANSFER"?"↔ ":dir==="INCOME"?"+":"-")+money(Math.abs(Number(minor||0)));}
+const p2=n=>String(n).padStart(2,"0");
+function day(ms){const d=new Date(Number(ms));return isNaN(d)?"—":d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate());}
+function stamp(ms){const d=new Date(Number(ms));return isNaN(d)?"—":day(ms)+" "+p2(d.getHours())+":"+p2(d.getMinutes());}
+function monthStart(offset=0){const d=new Date();d.setDate(1);d.setHours(0,0,0,0);d.setMonth(d.getMonth()+offset);return day(d.getTime());}
+function monthEnd(offset=0){const d=new Date();return day(new Date(d.getFullYear(),d.getMonth()+offset+1,0).getTime());}
+const palette={"餐饮":"#C04F38","交通":"#2E8B9E","购物":"#8E55A6","居住":"#3E9A63","娱乐":"#5B74D4","医疗":"#DB8CA4","教育":"#D6A13C","通讯":"#7A6346","日用":"#AFBC74","人情":"#778496","其他":"#4A435C","工资":"#2F6F5E","奖金":"#C9A227","兼职":"#7A6BA8","理财":"#3B6FA8","报销":"#9C7B4A"};
+const customPalette=["#D9644A","#3E8E7E","#C98A2E","#6B7FD7","#B565A7","#4E9AA8","#CE7B4E","#7A9A4B","#9A7BB5","#D08A9B","#6E8B8B","#8C8A7D"];
+function tone(name){if(!name)return "#8C8A7D";for(const k of Object.keys(palette))if(name===k||name.startsWith(k+"/")||name.startsWith(k+" · "))return palette[k];let h=2166136261;for(let i=0;i<name.length;i++)h=Math.imul(h^name.charCodeAt(i),16777619)>>>0;return customPalette[h%customPalette.length];}
+function categoryIcon(cat,merchant=""){const s=cat||"";if(/咖啡|茶饮|奶茶/.test(s))return "cup";if(/api|软件|数码|通讯/i.test(s))return "code";if(/餐饮|吃饭|食品|早餐/.test(s))return "food";if(/购物|服饰|日用/.test(s))return "shopping";if(/交通|出行/.test(s))return "train";if(/居住|房租/.test(s))return "home";if(/医疗|健康/.test(s))return "heart";if(/教育|学习/.test(s))return "book";if(/娱乐|人情|奖金|礼物/.test(s))return "gift";return s?"wallet":"dots";}
+async function api(path,params){const requestToken=S.token;const u=new URL(apiPath(path),location.origin);for(const k in(params||{}))if(params[k]!==""&&params[k]!=null)u.searchParams.set(k,params[k]);const r=await fetch(u,{headers:{"X-Panel-Token":requestToken},cache:"no-store"});if(r.status===401){if(S.token===requestToken)signOut();throw new Error("面板令牌无效，请重新输入。");}if(!r.ok){let msg="服务暂时不可用（"+r.status+"）";try{msg=(await r.json()).message||msg;}catch{}throw new Error(msg);}return r.json();}
+function reportError(e){$("#error-banner").textContent=e.message||"暂时无法连接 NAS，请稍后刷新。";$("#error-banner").classList.remove("hide");$("#connection-status").textContent="连接暂时中断";}
+function run(task){return Promise.resolve().then(task).catch(reportError);}
+function signIn(){$("#gate").classList.remove("hide");$("#app").classList.add("hide");$("#logout").classList.add("hide");$("#mobile-logout").classList.add("hide");$("#tok").value=S.token;$("#page-title").textContent="欢迎回来";$("#page-subtitle").textContent="你的收支，由你掌握";}
+function signOut(){window.NasImport?.reset();window.NasEdit?.reset();closeRow();S.token="";S.expenseCategory="";categoryContext();S.loadId++;sessionStorage.removeItem(LS);$("#tokerr").textContent="";$("#pair-code").textContent="— — —";$("#pair-hint").textContent="配对码 10 分钟内有效，点击按钮后生成。";$("#connection-status").textContent="等待连接";signIn();}
+function setHeading(){const h={list:["账本概览","每一笔收支，清晰可见"],stats:["收支统计","看看钱花在哪里，生活更有方向"],accounts:["账户资产","现金、负债和投资，都在这里"],investments:["投资持仓","看清持仓成本，核对每一次变动"],import:["账单导入","在电脑核对，和手机共用一个账本"],tools:["连接与备份","把账本留在自己的 NAS 上"]}[S.tab];$("#page-title").textContent=h[0];$("#page-subtitle").textContent=h[1];}
+function showApp(){$("#gate").classList.add("hide");$("#app").classList.remove("hide");$("#logout").classList.remove("hide");$("#mobile-logout").classList.remove("hide");setHeading();}
+async function tryEnter(){const typed=$("#tok").value.trim();if(typed)S.token=typed;if(!S.token){signIn();return;}$("#tokerr").textContent="";$("#tokgo").disabled=true;try{await loadAll();sessionStorage.setItem(LS,S.token);showApp();}catch(e){S.token="";sessionStorage.removeItem(LS);signIn();$("#tokerr").textContent=e.message||"暂时无法连接 NAS。";}finally{$("#tokgo").disabled=false;}}
+function readFilter(){S.filter={q:$("#f-q").value.trim(),from:$("#f-from").value,to:$("#f-to").value,direction:$("#f-dir").value,category_id:$("#f-cat").value,ledger_id:$("#f-book").value,include_deleted:$("#f-del").checked?"1":""};S.offset=0;updatePeriod();}
+function updatePeriod(){const f=S.filter;let period="自定义范围",label="期间结余";const same=(offset)=>f.from===monthStart(offset)&&f.to===monthEnd(offset);let selected="";if(same(0)){selected="current";period=new Date().getFullYear()+" 年 "+(new Date().getMonth()+1)+" 月";label="本月结余";}else if(same(-1)){selected="previous";period=f.from.slice(0,4)+" 年 "+Number(f.from.slice(5,7))+" 月";label="上月结余";}else if(!f.from&&!f.to){selected="all";period="全部时间";}$("#period-label").textContent=period;$("#balance-label").textContent=label;$("#date-range").textContent=(f.from||"不限起始")+" — "+(f.to||"不限结束");for(const b of document.querySelectorAll("[data-period]"))b.setAttribute("aria-pressed",String(b.dataset.period===selected));}
+async function loadAll(){const id=++S.loadId,tab=S.tab,params={...S.filter,...(tab==="list"&&S.expenseCategory?{expense_category:S.expenseCategory}:{})};$("#f-go").disabled=true;$("#refresh").disabled=true;try{if(tab==="import"){await window.NasImport.loadCatalog();return;}if(tab==="accounts"||tab==="investments"){const [all,selected]=await Promise.all([api("/v1/panel/assets"),tab==="investments"&&S.investmentAccount?api("/v1/panel/assets",{account_id:S.investmentAccount}):Promise.resolve(null)]);if(id!==S.loadId)return;S.assetOptions=all.accounts||[];if(S.investmentAccount&&!S.assetOptions.some(a=>a.id===S.investmentAccount&&a.kind==="INVESTMENT")){S.investmentAccount="";S.assets=all;}else S.assets=selected||all;if(tab==="accounts")renderAccounts(all);else renderInvestments(S.assets);$("#error-banner").classList.add("hide");$("#connection-status").textContent="NAS 已连接";return;}const [summary,facets,extra,bookFacets]=await Promise.all([api("/v1/panel/summary",params),api("/v1/panel/facets",{dimension:"category"}),tab==="list"?api("/v1/panel/tx",{...params,offset:S.offset,limit:S.limit}):tab==="tools"?api("/v1/panel/backups"):Promise.resolve(null),api("/v1/panel/facets",{dimension:"ledger"})]);if(id!==S.loadId)return;renderSummary(summary);fillCats(facets.items||[]);fillBooks(bookFacets.items||[]);if(tab==="list")renderList(extra);if(tab==="stats")renderStats(summary.stats||{});if(tab==="tools"){renderBackups(extra.items||[]);await window.FamilyPanel?.load();}$("#error-banner").classList.add("hide");$("#connection-status").textContent="NAS 已连接";}finally{if(id===S.loadId){$("#f-go").disabled=false;$("#refresh").disabled=false;}}}
+function renderSummary(d){const st=d.stats||{},h=d.health||{};$("#s-exp").textContent=money(st.expense);$("#s-inc").textContent=money(st.income);$("#s-bal").textContent=money(st.balance);$("#s-bal").classList.toggle("amt-exp",Number(st.balance)<0);$("#s-cnt").textContent=st.count==null?"—":st.count;for(const [id,key] of [["version","server_version"],["rows","rows"],["devices","device_count"],["seq","db_seq"]])$("#server-"+id).textContent=h[key]==null?"—":h[key];}
+function fillBooks(items){const sel=$("#f-book"),keep=sel.value;sel.innerHTML='<option value="">全部账本</option>'+items.map(x=>'<option value="'+esc(x.key)+'">'+esc(x.name||x.key)+"（"+Number(x.count)+"）</option>").join("");sel.value=keep;}
+function fillCats(items){const sel=$("#f-cat"),keep=sel.value;sel.innerHTML='<option value="">全部分类</option>'+items.map(x=>'<option value="'+esc(x.key)+'">'+esc(x.key)+"（"+Number(x.count)+"）</option>").join("");sel.value=keep;if(sel.value!==keep)sel.value="";}
+function renderList(d){S.total=d.total||0;S.rows=d.rows||[];renderRows();const from=S.total===0?0:S.offset+1,to=Math.min(S.offset+S.limit,S.total);$("#cnt").textContent="共 "+S.total+" 笔 · "+from+"–"+to;$("#prev").disabled=S.offset<=0;$("#next").disabled=S.offset+S.limit>=S.total;$("#empty").classList.toggle("hide",S.total!==0);}
+function renderRows(){$("#rows").innerHTML=S.rows.map(t=>{const inc=t.direction==="INCOME",transfer=Boolean(t.to_account_id)||t.direction==="TRANSFER",name=t.merchant||t.note||"未命名账单",cat=transfer?"账户划转":t.category_name||t.category_id,acct=t.account_name||t.account_id,ts=stamp(t.occurred_at),parts=ts.split(" "),color=tone(cat);return '<tr tabindex="0" role="button" aria-label="查看 '+esc(name)+' 的账单详情" data-id="'+esc(t.id)+'"'+(S.sel===t.id?' aria-selected="true"':"")+'><td><div class="merchant-cell"><span class="category-icon" style="--tone:'+color+'">'+svg(categoryIcon(cat,t.merchant))+'</span><div><div class="title">'+esc(name)+(t.deleted?' <span class="pill">已删除</span>':"")+'</div>'+(t.merchant&&t.note?'<div class="sub2">'+esc(t.note)+'</div>':"")+'<div class="sub2 mobile-meta" style="display:none">'+esc([cat,acct,ts].filter(Boolean).join(" · "))+'</div></div></div></td><td class="category-col">'+(cat?'<span class="pill" title="'+esc(t.category_id||"")+'">'+esc(cat)+'</span>':'<span class="muted">未分类</span>')+'</td><td class="account-col sub2" title="'+esc(t.account_id||"")+'">'+esc(acct||"—")+'</td><td class="date-col date-cell">'+esc(parts[0])+'<small>'+esc(parts[1]||"")+'</small></td><td class="num amount '+(transfer?"muted":inc?"amt-inc":"amt-exp")+'">'+signed(t.amount_minor,transfer?"TRANSFER":t.direction)+'</td></tr>';}).join("");}
+function renderStats(st){const cats=(st.by_category||[]).slice().sort((a,b)=>b.minor-a.minor),max=cats.reduce((m,c)=>Math.max(m,Math.abs(c.minor)),0)||1,total=cats.reduce((s,c)=>s+Math.abs(c.minor),0)||1;$("#bycat").innerHTML=cats.length?cats.map(c=>{const v=Math.abs(c.minor),w=S.scale==="sqrt"?Math.sqrt(v/max)*100:v/max*100,share=v/total*100,color=tone(c.key);return '<button type="button" class="bar category-drill" data-category="'+esc(c.key||"未分类")+'" aria-label="查看'+esc(c.key||"未分类")+'净支出明细"><div class="lbl"><span class="cat-dot" style="--tone:'+color+'"></span>'+esc(c.key||"未分类")+'</div><div class="val">'+money(c.minor)+'<small>'+esc(share>0&&share<.1?"<0.1":share.toFixed(1))+'% · '+Number(c.count)+' 笔</small></div><div class="track"><div class="fill" style="width:'+(v>0?Math.max(1.2,w):0).toFixed(1)+'%;background:'+color+'"></div></div></button>';}).join(""):'<div class="empty">这段时间没有支出</div>';$("#scale-toggle").textContent=S.scale==="sqrt"?"刻度：平方根":"刻度：线性";const positive=cats.filter(c=>c.minor>0),sum=positive.reduce((s,c)=>s+c.minor,0);let end=0;const segments=positive.map(c=>{const start=end;end+=c.minor/(sum||1)*100;return tone(c.key)+" "+start.toFixed(4)+"% "+end.toFixed(4)+"%";});$("#donut").style.background=segments.length?"conic-gradient("+segments.join(",")+")":"var(--fill)";$("#donut-total").textContent=money(sum);$("#donut").setAttribute("aria-label",positive.map(c=>(c.key||"未分类")+" "+money(c.minor)).join("，")||"暂无分类支出");$("#chart-note").textContent=cats.some(c=>c.minor<0)?"圆环仅展示净支出为正的分类；条形展示各类净额，退款已抵扣。":"圆环按金额占比展示，条形可切换刻度。";const months=st.by_month||[],mMax=months.reduce((m,c)=>Math.max(m,Math.abs(c.minor)),0)||1;$("#bymonth").innerHTML=months.length?months.map(m=>'<div class="bar"><div class="lbl">'+esc(m.key)+'</div><div class="val '+(m.minor>=0?"amt-inc":"amt-exp")+'">'+(m.minor>=0?"+":"-")+money(Math.abs(m.minor))+'<small>'+Number(m.count)+' 笔</small></div><div class="track"><div class="fill" style="width:'+(Math.abs(m.minor)/mMax*100).toFixed(1)+'%;background:var(--'+(m.minor>=0?"income":"expense")+')"></div></div></div>').join(""):'<div class="empty">这段时间还没有数据</div>';}
+function renderBackups(items){$("#snapshot-count").textContent="已保存 "+items.length+" 份快照 · 最多保留 14 份";$("#backup-list").innerHTML=items.slice(0,3).map(x=>'<div class="snapshot"><span>'+esc(stamp(x.created_at))+'</span><span>'+Math.max(1,Math.round(x.size/1024))+" KB</span></div>").join("");}
+async function openRow(id){$("#d-title").textContent="账单详情";const request=++S.rowRequest,rec=await api("/v1/panel/row",{id});if(request!==S.rowRequest)return;S.sel=id;S.returnFocus=document.querySelector('tr[data-id="'+CSS.escape(id)+'"]')||document.activeElement;const row=S.rows.find(t=>t.id===id)||{},v=rec.values||{},get=k=>{let value=v[k];for(let i=0;i<8&&typeof value==="string";i++){const t=value.trim();if(t==="null")return "";if(!t.startsWith('"')||!t.endsWith('"'))break;try{value=JSON.parse(t);}catch{break;}}return value==null?"":typeof value==="object"?JSON.stringify(value):String(value);},name=get("merchant")||get("note")||"未命名账单",cat=row.category_name||window.NasImport?.refName("categories",get("category_id"))||get("category_id"),acct=row.account_name||window.NasImport?.refName("accounts",get("account_id"))||get("account_id"),dir=get("to_account_id")?"TRANSFER":get("direction"),inc=dir==="INCOME";let html='<div class="detail-hero"><span class="category-icon" style="--tone:'+tone(cat)+'">'+svg(categoryIcon(cat,name))+'</span><h3>'+esc(name)+'</h3><div class="detail-amount num '+(inc?"amt-inc":dir==="TRANSFER"?"muted":"amt-exp")+'">'+signed(get("amount_minor"),dir)+'</div><div class="sub2">'+esc(stamp(get("occurred_at")))+'</div></div><div class="detail-group">';const fields=[["类型",dir==="INCOME"?"收入":dir==="TRANSFER"?"账户划转":"支出"],["分类",cat||"未分类"],["账户",acct||"—"],["备注",get("note")||"—"]];if(get("family_created_name"))fields.push(["记账人",get("family_created_name")]);if(get("refund_of_id"))fields.push(["退款关联",get("refund_of_id")]);if(get("to_account_id"))fields.push(["转入账户",get("to_account_id")]);fields.push(["账本",row.ledger_name||get("ledger_id")||"我的账本"]);for(const [k,value] of fields)html+='<div class="kv"><div class="k">'+k+'</div><div class="v">'+esc(value)+'</div></div>';html+='</div><div class="drawer-note"><button class="btn primary" id="bill-edit-open" disabled>编辑账单</button><p id="bill-edit-hint">正在核对编辑权限…</p></div><details class="technical-details"><summary>查看同步信息</summary><div class="kv"><div class="k">记录 ID</div><div class="v">'+esc(rec.entity_id)+'</div></div><div class="kv"><div class="k">Lamport</div><div class="v">'+esc(rec.lamport)+'</div></div><div class="kv"><div class="k">记录状态</div><div class="v">'+(rec.deleted?"已删除":"正常")+'</div></div>';for(const k of Object.keys(rec.fv||{}).sort()){const f=rec.fv[k];html+='<div class="kv"><div class="k">'+esc(k)+'</div><div class="v">'+esc(f.l)+" · "+esc(f.d)+'</div></div>';}html+='</details>';$("#d-body").innerHTML=html;$("#drawer").classList.add("on");$("#drawer").setAttribute("aria-hidden","false");$("#scrim").classList.add("on");$("#workspace").inert=true;renderRows();$("#d-close").focus();window.NasEdit?.attach(id);}
+function closeRow(){S.rowRequest++;const opened=$("#drawer").classList.contains("on"),selected=S.sel;$("#drawer").classList.remove("on");$("#drawer").setAttribute("aria-hidden","true");$("#scrim").classList.remove("on");$("#workspace").inert=false;S.sel=null;$("#d-title").textContent="账单详情";if(opened){renderRows();const target=selected?document.querySelector('tr[data-id="'+CSS.escape(selected)+'" ]'):S.returnFocus;S.returnFocus=null;if(target&&target.isConnected)target.focus();else $("#refresh").focus();}}
 
-const S = {
-  token: localStorage.getItem(LS) || "",
-  tab: "list",
-  offset: 0,
-  limit: 50,
-  total: 0,
-  filter: {},
-  sel: null,
-  // 构成图的刻度。"sqrt" 是平方根：大小顺序不变，但长尾类别也看得见。
-  // 写成 localStorage 是因为这个选择关乎"怎么读图"，刷新一次就跳回默认很烦。
-  scale: localStorage.getItem("kapi.scale") || "sqrt",
-};
+const accountKinds={CASH:"现金",DEBIT:"银行卡",CREDIT:"信用卡",INVESTMENT:"投资账户",LOAN:"借贷账户",VIRTUAL:"虚拟账户"};
+const tradeKinds={BUY:"买入",SELL:"卖出",DIVIDEND:"现金分红",SPLIT:"份额拆分",OPENING:"期初持仓"};
+function knownMoney(v,currency="CNY"){if(v==null)return "待更新";if(currency==="CNY")return money(v);return esc(currency)+" "+(Number(v)/100).toLocaleString("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});}
+function gainClass(v){return v==null?"muted":v>=0?"amt-inc":"amt-exp";}
+function setAssetNumber(id,value,gain=false){const e=$("#"+id);e.textContent=value==null?"待更新":money(value);if(gain)e.className="num "+gainClass(value);}
+function assetEmpty(title,message,icon="wallet"){return '<div class="asset-empty card">'+svg(icon)+'<h3>'+esc(title)+'</h3><p>'+esc(message)+'</p></div>';}
+function renderAssetIssues(id,items){$("#"+id).innerHTML=items.length?'<div class="asset-issue">'+items.map(esc).join('<br>')+'</div>':"";}
+function renderAccounts(d){const st=d.summary||{};setAssetNumber("asset-net",st.net_minor);setAssetNumber("asset-total",st.assets_minor);setAssetNumber("asset-debt",st.liabilities_minor);$("#asset-known").textContent=(st.included_accounts||0)+" / "+(d.accounts||[]).length;$("#asset-coverage").textContent="已校准且计入净资产的人民币账户参与汇总。投资账户包含现金与持仓参考市值。"+(st.excluded_accounts?"有 "+st.excluded_accounts+" 个账户因未校准、缺少报价、币种或账户设置未计入。":"");renderAssetIssues("accounts-issues",d.issues||[]);const rows=(d.accounts||[]).filter(a=>!a.hidden||$("#show-hidden-accounts").checked);$("#account-cards").innerHTML=rows.length?rows.map(a=>'<section class="account-card card"><div class="asset-card-head"><span class="category-icon" style="--tone:'+tone(a.kind)+'">'+svg("wallet")+'</span><div><h3>'+esc(a.name)+'</h3><p>'+esc(accountKinds[a.kind]||a.kind)+' · '+esc(a.currency)+' · '+esc(a.ledger_name||"我的账本")+'</p></div></div><div class="asset-card-label">'+(a.kind==="INVESTMENT"?"现金 + 持仓参考市值":"账户余额")+'</div><div class="asset-card-value num">'+(a.balance_as_of==null?"尚未校准":knownMoney(a.value_minor,a.currency))+'</div>'+(a.kind==="INVESTMENT"?'<div class="asset-fields"><div><span>可用现金</span><strong class="num">'+(a.balance_as_of==null?"尚未校准":knownMoney(a.cash_minor,a.currency))+'</strong></div><div><span>当前持仓</span><strong>'+a.position_count+' 只</strong></div></div>':"")+'<div class="asset-badges">'+(a.hidden?'<span class="pill">已隐藏</span>':"")+(!a.include_net_assets?'<span class="pill">不计入净资产</span>':"")+'</div><p class="quote-note">'+(a.error?esc(a.error):a.balance_as_of==null?"在手机账户管理中校准现金余额后，这里会更新。":a.value_minor==null?"持仓缺少有效报价，总资产暂时无法估值。":"余额校准于 "+esc(stamp(a.balance_as_of)))+'</p></section>').join(""):assetEmpty("还没有可展示的账户","在手机新增账户并完成 NAS 同步后，账户会显示在这里；隐藏账户可通过上方开关查看。");}
+function renderInvestments(d){const choices=S.assetOptions.filter(a=>a.kind==="INVESTMENT");$("#investment-account").innerHTML='<option value="">全部投资账户</option>'+choices.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.name)+(a.hidden?" · 已隐藏":"")+'</option>').join("");$("#investment-account").value=S.investmentAccount;const st=d.summary||{};setAssetNumber("invest-value",st.value_minor);setAssetNumber("invest-cost",st.cost_minor);setAssetNumber("invest-gain",st.unrealized_minor,true);setAssetNumber("invest-realized",st.realized_minor,true);renderAssetIssues("investments-issues",d.issues||[]);const rows=d.positions||[];$("#holding-cards").innerHTML=rows.length?rows.map((p,i)=>{const closed=p.quantity==="0",q=p.quote||{},missing=p.value_minor==null&&!closed;return '<section class="holding-card card"><div class="asset-card-head"><span class="category-icon" style="--tone:'+(p.symbol.startsWith("FUND:")?"#3E8E7E":"#6B7FD7")+'">'+svg("chart")+'</span><div><h3>'+esc(p.name)+'</h3><p>'+esc(p.symbol)+' · '+esc(p.account_name)+'</p></div></div><div class="asset-card-label">'+(closed?"已清仓":"参考市值")+'</div><div class="asset-card-value num">'+(closed?money(0):knownMoney(p.value_minor))+'</div><div class="asset-fields"><div><span>实际份额 / 股数</span><strong class="num">'+esc(p.quantity)+'</strong></div><div><span>剩余持仓成本</span><strong class="num">'+money(p.cost_minor)+'</strong></div><div><span>持仓盈亏</span><strong class="num '+gainClass(p.unrealized_minor)+'">'+(closed?money(0):knownMoney(p.unrealized_minor))+'</strong></div><div><span>已记录的已实现收益</span><strong class="num '+gainClass(p.realized_minor)+'">'+money(p.realized_minor)+'</strong></div></div>'+(p.average_cost?'<p class="quote-note">平均持仓成本 ¥'+esc(p.average_cost)+' / 份或股</p>':"")+'<p class="quote-note '+(missing||q.error?"warn":"")+'">'+(closed?"当前无持仓，已实现收益仍保留。":missing?"尚无有效报价，市值与持仓盈亏待更新。":esc(q.date)+" · 每份 / 股 "+esc(q.price)+" 元 · "+esc(q.source||"同步报价"))+(q.error&&!missing?'<br>'+esc(q.error)+'，以上沿用最近成功报价。':"")+'</p>'+(p.cost_note?'<p class="quote-note">期初成本依据：'+esc(p.cost_note)+'</p>':"")+'<button class="btn ghost" data-holding="'+i+'">查看持仓与交易</button></section>';}).join(""):assetEmpty("还没有投资持仓",choices.length?"在手机记录买卖或导入持仓截图，再完成 NAS 同步。面板不会自动读取证券账户。":"先在手机创建投资账户，再记录交易并同步到 NAS。","chart");renderInvestmentTrades(d.trades||[]);}
+function renderInvestmentTrades(trades){$("#investment-trades").classList.toggle("hide",!trades.length);$("#investment-trade-rows").innerHTML=trades.slice(0,S.tradeLimit).map(t=>'<tr><td><div class="title">'+esc(t.name)+'</div><div class="sub2">'+esc(t.account_name)+' · '+esc(t.market+":"+t.instrument_code)+'</div></td><td><span class="pill">'+esc(tradeKinds[t.action]||t.action)+'</span></td><td class="num">'+esc(t.quantity)+'</td><td class="num">'+money(t.cash_minor)+'</td><td class="num">'+money(t.fee_minor)+'</td><td class="date-cell">'+esc(stamp(t.occurred_at))+'</td></tr>').join("");$("#investment-trade-count").textContent="共 "+trades.length+" 条 · 显示 "+Math.min(S.tradeLimit,trades.length)+" 条";$("#investment-more").classList.toggle("hide",S.tradeLimit>=trades.length);}
+function openHolding(index){const p=S.assets?.positions?.[index];if(!p)return;S.returnFocus=document.activeElement;const q=p.quote||{},closed=p.quantity==="0",fields=[["投资账户",p.account_name],["资产代码",p.symbol],["实际份额 / 股数",p.quantity],["剩余成本",money(p.cost_minor)],["平均成本",p.average_cost||"—"],["持仓盈亏",closed?money(0):knownMoney(p.unrealized_minor)],["已实现收益",money(p.realized_minor)],["报价日期",q.date||"待更新"],["每份 / 股报价",q.price||"待更新"],["行情来源",q.source||"—"]];let html='<div class="detail-hero"><span class="category-icon" style="--tone:#3E8E7E">'+svg("chart")+'</span><h3>'+esc(p.name)+'</h3><div class="detail-amount num">'+(closed?money(0):knownMoney(p.value_minor))+'</div><div class="sub2">持仓参考市值</div></div><div class="detail-group">'+fields.map(([k,v])=>'<div class="kv"><div class="k">'+esc(k)+'</div><div class="v">'+esc(v)+'</div></div>').join("")+'</div><p class="drawer-note">'+esc(p.cost_note?"期初成本依据："+p.cost_note+"。快照前的买卖和分红未还原。":"采用移动平均成本计算，买入手续费计入成本，卖出手续费从回款中扣除。")+'</p><h3 style="font-size:14px;font-weight:500">这只资产的交易</h3>';const trades=(S.assets.trades||[]).filter(t=>t.account_id===p.account_id&&t.market+":"+t.instrument_code===p.symbol);html+=trades.map(t=>'<div class="asset-detail-trade"><div>'+esc(tradeKinds[t.action])+" · "+esc(t.quantity)+' 份/股<small>'+esc(stamp(t.occurred_at))+'</small></div><div class="num">'+money(t.cash_minor)+'<small>手续费 '+money(t.fee_minor)+'</small></div></div>').join("");$("#d-title").textContent="持仓详情";$("#d-body").innerHTML=html;$("#drawer").classList.add("on");$("#drawer").setAttribute("aria-hidden","false");$("#scrim").classList.add("on");$("#workspace").inert=true;$("#d-close").focus();}
+$("#show-hidden-accounts").addEventListener("change",()=>{if(S.assets)renderAccounts(S.assets);});
+for(const id of ["accounts-refresh","investments-refresh"])$("#"+id).addEventListener("click",()=>run(loadAll));
+$("#investment-account").addEventListener("change",e=>{S.investmentAccount=e.target.value;S.tradeLimit=50;run(loadAll);});
+$("#investment-more").addEventListener("click",()=>{S.tradeLimit+=50;renderInvestmentTrades(S.assets?.trades||[]);});
+$("#holding-cards").addEventListener("click",e=>{const b=e.target.closest("[data-holding]");if(b)openHolding(Number(b.dataset.holding));});
 
-/* ---------- 工具 ---------- */
+function applyTheme(dark,persist=false){document.documentElement.dataset.theme=dark?"dark":"light";if(persist)localStorage.setItem("kapi.theme",dark?"dark":"light");const label=dark?"切换浅色模式":"切换深色模式";$("#theme-toggle").innerHTML=svg(dark?"sun":"moon");$("#theme-toggle").setAttribute("aria-label",label);$("#theme-toggle").title=label;}
+const systemTheme=matchMedia("(prefers-color-scheme: dark)");applyTheme(localStorage.getItem("kapi.theme")?localStorage.getItem("kapi.theme")==="dark":systemTheme.matches);systemTheme.addEventListener("change",e=>{if(!localStorage.getItem("kapi.theme"))applyTheme(e.matches);});$("#theme-toggle").addEventListener("click",()=>applyTheme(document.documentElement.dataset.theme!=="dark",true));
+$("#tokgo").addEventListener("click",tryEnter);$("#tok").addEventListener("keydown",e=>{if(e.key==="Enter")tryEnter();});for(const id of ["logout","mobile-logout"])$("#"+id).addEventListener("click",signOut);$("#d-close").addEventListener("click",closeRow);$("#scrim").addEventListener("click",closeRow);
+document.addEventListener("keydown",e=>{if($("#bill-edit-dialog").open)return;if(!$("#drawer").classList.contains("on"))return;if(e.key==="Escape"){e.preventDefault();closeRow();}if(e.key==="Tab"){const nodes=[...$("#drawer").querySelectorAll("button,summary,a,input,select,[tabindex='0']")].filter(x=>x.getClientRects().length),first=nodes[0],last=nodes[nodes.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
+$("#pair-gen").addEventListener("click",()=>run(async()=>{const b=$("#pair-gen");b.disabled=true;try{const d=await api("/v1/panel/pair_code");$("#pair-code").textContent=d.pair_code.slice(0,3)+" "+d.pair_code.slice(3);$("#pair-hint").textContent="配对码 10 分钟内有效。重新生成后，旧配对码失效。";}finally{b.disabled=false;}}));
+$("#download-backup").addEventListener("click",async()=>{const b=$("#download-backup");b.disabled=true;try{const r=await fetch(apiPath("/v1/panel/backup"),{headers:{"X-Panel-Token":S.token},cache:"no-store"});if(r.status===401){signOut();throw new Error("面板令牌无效，请重新输入。");}if(!r.ok)throw new Error("备份暂时无法下载（"+r.status+"）");const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="guizhang-nas-backup-"+day(Date.now())+".zip";a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);$("#backup-note").textContent="完整备份已下载，包含账本、配对状态与校验文件。";const data=await api("/v1/panel/backups");renderBackups(data.items||[]);}catch(e){$("#backup-note").textContent=e.message;}finally{b.disabled=false;}});
+$("#f-go").addEventListener("click",()=>run(()=>{readFilter();return loadAll();}));$("#f-clear").addEventListener("click",()=>run(()=>{S.expenseCategory="";categoryContext();for(const id of ["q","from","to","dir","cat","book"])$("#f-"+id).value="";$("#f-del").checked=false;readFilter();return loadAll();}));$("#f-q").addEventListener("keydown",e=>{if(e.key==="Enter")run(()=>{readFilter();return loadAll();});});for(const b of document.querySelectorAll("[data-period]"))b.addEventListener("click",()=>run(()=>{const p=b.dataset.period;$("#f-from").value=p==="all"?"":monthStart(p==="previous"?-1:0);$("#f-to").value=p==="all"?"":monthEnd(p==="previous"?-1:0);readFilter();return loadAll();}));
+$("#refresh").addEventListener("click",()=>run(loadAll));$("#prev").addEventListener("click",()=>run(()=>{S.offset=Math.max(0,S.offset-S.limit);return loadAll();}));$("#next").addEventListener("click",()=>run(()=>{if(S.offset+S.limit<S.total){S.offset+=S.limit;return loadAll();}}));$("#scale-toggle").addEventListener("click",()=>run(()=>{S.scale=S.scale==="sqrt"?"linear":"sqrt";localStorage.setItem("kapi.scale",S.scale);return loadAll();}));
+$("#rows").addEventListener("click",e=>{const tr=e.target.closest("tr[data-id]");if(tr)run(()=>openRow(tr.dataset.id));});$("#rows").addEventListener("keydown",e=>{const tr=e.target.closest("tr[data-id]");if(tr&&(e.key==="Enter"||e.key===" ")){e.preventDefault();run(()=>openRow(tr.dataset.id));}});
+for(const b of document.querySelectorAll(".tab"))b.addEventListener("click",()=>{if(!S.token){$("#tok").focus();return;}if(S.tab===b.dataset.tab)return;closeRow();if(b.dataset.tab!=="list")S.expenseCategory="";S.tab=b.dataset.tab;categoryContext();for(const o of document.querySelectorAll(".tab"))o.setAttribute("aria-selected",String(o===b));for(const view of ["list","stats","accounts","investments","import","tools"])$("#view-"+view).classList.toggle("hide",S.tab!==view);$("#ledger-overview").classList.toggle("hide",["tools","accounts","investments","import"].includes(S.tab));setHeading();run(loadAll);});
+function categoryContext(){const name=S.expenseCategory;$("#category-context").classList.toggle("hide",!name);$("#category-context-name").textContent=(name||"")+" · 账单明细";}
+$("#bycat").addEventListener("click",e=>{const button=e.target.closest("button[data-category]");if(!button)return;S.expenseCategory=button.dataset.category;S.offset=0;categoryContext();$('.tab[data-tab="list"]').click();$("#category-back").focus();});
+$("#category-back").addEventListener("click",()=>{$('.tab[data-tab="stats"]').click();});
+document.addEventListener("pointermove",e=>{if(e.pointerType==="touch")return;const glass=e.target.closest(".glass");if(glass){const r=glass.getBoundingClientRect();glass.style.setProperty("--light-x",(e.clientX-r.left)+"px");glass.style.setProperty("--light-y",(e.clientY-r.top)+"px");}},{passive:true});
+document.addEventListener("pointerdown",e=>{const glass=e.target.closest(".glass");if(glass){const r=glass.getBoundingClientRect();glass.style.setProperty("--light-x",(e.clientX-r.left)+"px");glass.style.setProperty("--light-y",(e.clientY-r.top)+"px");glass.classList.add("is-pressed");}},{passive:true});for(const type of ["pointerup","pointercancel"])document.addEventListener(type,()=>{for(const glass of document.querySelectorAll(".glass.is-pressed"))glass.classList.remove("is-pressed");},{passive:true});
+if(API_BASE.startsWith("/family/space/shared/")){
+ document.querySelector(".brand small").textContent="NAS · 家庭共享账本";
+ document.querySelector(".nav-label").textContent="家庭空间";
+}
+$("#nas-address").textContent=location.origin;$("#f-from").value=monthStart();$("#f-to").value=monthEnd();readFilter();if(S.token)tryEnter();else signIn();
 
-// esc 用于所有插值。商户名和备注都是用户自己写进去的原文，里面出现 < 就会
-// 破坏页面结构 —— 这是唯一的渲染路径，不给"这个字段是安全的"留例外。
-function esc(s) {
-  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-function money(minor) {
-  const n = Number(minor || 0) / 100;
-  return "¥" + n.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-function signed(minor, dir) {
-  return (dir === "INCOME" ? "+" : "-") + money(Math.abs(Number(minor || 0)));
-}
-const p2 = (n) => String(n).padStart(2, "0");
-function day(ms) {
-  const d = new Date(Number(ms));
-  if (isNaN(d)) return "—";
-  return d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate());
-}
-function stamp(ms) {
-  const d = new Date(Number(ms));
-  if (isNaN(d)) return "—";
-  return day(ms) + " " + p2(d.getHours()) + ":" + p2(d.getMinutes());
-}
-// 本机时区的月初 / 月末。统计图按"这个月"看，用 UTC 会把 1 号凌晨的消费算进上个月。
-function monthStart(offset) {
-  const d = new Date();
-  d.setDate(1); d.setHours(0, 0, 0, 0);
-  d.setMonth(d.getMonth() + (offset || 0));
-  return day(d.getTime());
-}
-// new Date(y, m + 1, 0) 就是"第 m+1 月的 0 号"，也就是第 m 月的最后一天。
-// 这么写而不是固定填 30 号，是为了 2 月和闰年也对。
-// 注意 monthStart() 返回的是**字符串**，不能拿它再调 getFullYear。
-function monthEnd(offset) {
-  const now = new Date();
-  const last = new Date(now.getFullYear(), now.getMonth() + (offset || 0) + 1, 0);
-  return day(last.getTime());
-}
-
-async function api(path, params) {
-  const u = new URL(path, location.origin);
-  u.searchParams.set("token", S.token);
-  for (const k in (params || {})) {
-    if (params[k] !== "" && params[k] != null) u.searchParams.set(k, params[k]);
-  }
-  const r = await fetch(u, { cache: "no-store" });
-  if (r.status === 401) { signOut(); throw new Error("令牌不对"); }
-  if (!r.ok) {
-    let m = "服务端返回 " + r.status;
-    try { m = (await r.json()).message || m; } catch (e) {}
-    throw new Error(m);
-  }
-  return r.json();
-}
-
-/* ---------- 登录 ---------- */
-function signIn() {
-  $("#gate").classList.remove("hide");
-  $("#app").classList.add("hide");
-  $("#logout").classList.add("hide");
-  $("#tok").value = S.token;
-}
-function signOut() {
-  S.token = "";
-  localStorage.removeItem(LS);
-  signIn();
-  $("#tokerr").textContent = "令牌不对,请从 docker logs 里重新取。";
-}
-function showApp() {
-  $("#gate").classList.add("hide");
-  $("#app").classList.remove("hide");
-  $("#logout").classList.remove("hide");
-}
-async function tryEnter() {
-  // 令牌有两个来源：用户刚在输入框里敲的，和上次存进 localStorage 的。
-  // 这里必须两个都认——早期版本只读输入框，于是**刷新页面后必然白屏**：
-  // 自动登录时输入框是空的，函数直接 return，既不显示登录页也不显示面板。
-  // 首次打开看不出问题，只有按 F5 才会遇到。
-  const typed = $("#tok").value.trim();
-  if (typed) S.token = typed;
-  if (!S.token) { signIn(); return; }
-  $("#tokerr").textContent = "";
-  try {
-    await loadAll();
-    localStorage.setItem(LS, S.token);
-    showApp();
-  } catch (e) {
-    // 失败时必须回到登录页。停在"两个容器都隐藏"的中间态等于白屏，
-    // 用户会以为服务挂了，而不是以为令牌过期了。
-    S.token = "";
-    localStorage.removeItem(LS);
-    signIn();
-    $("#tokerr").textContent = e.message || "连不上服务";
-  }
-}
-
-/* ---------- 读取筛选条件 ---------- */
-function readFilter() {
-  S.filter = {
-    q: $("#f-q").value.trim(),
-    from: $("#f-from").value,
-    to: $("#f-to").value,
-    direction: $("#f-dir").value,
-    category_id: $("#f-cat").value,
-    include_deleted: $("#f-del").checked ? "1" : "",
-  };
-  S.offset = 0;
-}
-
-/* ---------- 加载 ---------- */
-async function loadAll() {
-  await loadSummary();
-  if (S.tab === "list") await loadList(); else await loadStats();
-}
-
-async function loadSummary() {
-  const d = await api("/v1/panel/summary", S.filter);
-  const st = d.stats || {};
-  $("#s-exp").textContent = money(st.expense);
-  $("#s-inc").textContent = money(st.income);
-  $("#s-bal").textContent = money(st.balance);
-  $("#s-cnt").textContent = st.count == null ? "—" : st.count;
-  const h = d.health || {};
-  $("#hstat").textContent =
-    "NAS 面板 · 只读 · 服务端 " + (h.server_version || "?") +
-    " · 共 " + (h.rows == null ? "?" : h.rows) + " 行 · " + (h.device_count == null ? "?" : h.device_count) + " 台设备";
-  fillCats();
-}
-
-async function fillCats() {
-  const sel = $("#f-cat");
-  const keep = sel.value;
-  const d = await api("/v1/panel/facets", { dimension: "category" });
-  const items = d.items || [];
-  // 分类是服务端按"这一列现在有哪些值"算的，和当前筛选无关：否则一旦选中某个
-  // 分类，下拉里就只剩它一个，用户再也换不回去。
-  sel.innerHTML = '<option value="">全部分类</option>' + items.map((x) =>
-    '<option value="' + esc(x.key) + '">' + esc(x.key) + "（" + x.count + "）</option>").join("");
-  sel.value = keep;
-  if (sel.value !== keep) sel.value = "";
-}
-
-async function loadList() {
-  const d = await api("/v1/panel/tx", Object.assign({}, S.filter, {
-    offset: S.offset, limit: S.limit,
-  }));
-  S.total = d.total || 0;
-  renderRows(d.rows || []);
-  const from = S.total === 0 ? 0 : S.offset + 1;
-  const to = Math.min(S.offset + S.limit, S.total);
-  $("#cnt").textContent = "共 " + S.total + " 笔 · 当前 " + from + "-" + to;
-  $("#prev").disabled = S.offset <= 0;
-  $("#next").disabled = S.offset + S.limit >= S.total;
-  $("#empty").classList.toggle("hide", S.total !== 0);
-}
-
-function renderRows(rows) {
-  const tb = $("#rows");
-  tb.innerHTML = rows.map((t) => {
-    const isInc = t.direction === "INCOME";
-    const name = t.merchant || t.note || "（无备注）";
-    const sub = t.merchant && t.note ? esc(t.note) : "";
-    // 显示名优先，id 兜底。服务端解析不了的时候（比如那笔账的分类行还没
-    // 同步过来）会退回到 id —— 难看，但比一个空格子更容易判断发生了什么。
-    // id 放进 title，这样想查原始值的人还查得到。
-    const cat = t.category_name || t.category_id;
-    const acct = t.account_name || t.account_id;
-    return "<tr data-id=\"" + esc(t.id) + "\"" + (S.sel === t.id ? " aria-selected=\"true\"" : "") + ">" +
-      "<td class=\"sub2\">" + esc(stamp(t.occurred_at)) + "</td>" +
-      "<td><div class=\"title\">" + esc(name) + "</div>" +
-        (sub ? "<div class=\"sub2\">" + sub + "</div>" : "") + "</td>" +
-      "<td>" + (cat ? "<span class=\"pill\" title=\"" + esc(t.category_id || "") + "\">" + esc(cat) + "</span>" : "<span class=\"muted\">—</span>") + "</td>" +
-      "<td class=\"sub2\" title=\"" + esc(t.account_id || "") + "\">" + esc(acct || "—") + "</td>" +
-      "<td class=\"num " + (isInc ? "amt-inc" : "amt-exp") + "\">" + signed(t.amount_minor, t.direction) + "</td>" +
-      "</tr>";
-  }).join("");
-}
-
-async function loadStats() {
-  const d = await api("/v1/panel/summary", S.filter);
-  const st = d.stats || {};
-  // 服务端按 key 升序返回（同一份结构还要供 by_month 按时间序用，那里不能重排）。
-  // 构成图要的是"谁花得多"，所以在浏览器这边按金额降序再画一次。
-  const cats = (st.by_category || []).slice().sort((a, b) => b.minor - a.minor);
-  const max = cats.reduce((m, c) => Math.max(m, Math.abs(c.minor)), 0) || 1;
-  // 总额用来算占比。条形长度表达不了精确数值（尤其开了平方根刻度），
-  // 所以百分比必须和金额一起摆在旁边，否则图就成了"看着像、其实不是"。
-  const total = cats.reduce((s, c) => s + Math.abs(c.minor), 0) || 1;
-  $("#bycat").innerHTML = cats.length ? cats.map((c) => {
-    const v = Math.abs(c.minor);
-    const pct = v / max * 100;
-    // 平方根刻度：保持大小顺序，同时把长尾从"贴左边看不见"拉回来。
-    // 一次房租就能吃掉 81% 的时候，线性刻度下剩下六类全是 1px 的线。
-    const w = S.scale === "sqrt" ? Math.sqrt(v / max) * 100 : pct;
-    // 非零值至少给 1.2% 宽度，否则"有这一笔"和"没这一笔"看起来一样。
-    const width = v > 0 ? Math.max(1.2, w) : 0;
-    const share = (v / total * 100);
-    return "<div class=\"bar\"><div class=\"lbl\" title=\"" + esc(c.key) + "\">" + esc(c.key) + "</div>" +
-      "<div class=\"track\"><div class=\"fill\" style=\"width:" + width.toFixed(1) + "%\"></div></div>" +
-      "<div class=\"val\">" + money(c.minor) +
-      "<small>" + (share >= 9.95 ? share.toFixed(0) : share.toFixed(1)) + "% · " + c.count + " 笔</small></div></div>";
-  }).join("")
-    : '<div class="empty">这段时间没有支出</div>';
-  // 按钮写的是**当前**档位，不是"点了会变成什么"——后者每次都要点一下才知道，
-  // 而这个选择直接决定条形长度能不能横向比较。
-  $("#scale-toggle").textContent = S.scale === "sqrt" ? "刻度：平方根" : "刻度：线性";
-
-  const ms = st.by_month || [];
-  const mMax = ms.reduce((m, c) => Math.max(m, Math.abs(c.minor)), 0) || 1;
-  $("#bymonth").innerHTML = ms.length ? ms.map((m) => {
-    const v = m.minor;
-    return "<div class=\"bar\"><div class=\"lbl\">" + esc(m.key) + "</div>" +
-      "<div class=\"track\"><div class=\"fill\" style=\"width:" + (Math.abs(v) / mMax * 100).toFixed(1) + "%;background:" +
-      (v >= 0 ? "var(--income)" : "var(--expense)") + "\"></div></div>" +
-      "<div class=\"val\">" + (v >= 0 ? "+" : "-") + money(Math.abs(v)) + "<small>" + m.count + " 笔</small></div></div>";
-  }).join("") : '<div class="empty">还没有数据</div>';
-}
-
-/* ---------- 详情 ---------- */
-async function openRow(id) {
-  S.sel = id;
-  let rec;
-  try { rec = await api("/v1/panel/row", { id }); }
-  catch (e) { alert(e.message); return; }
-  const v = rec.values || {};
-  const text = (k) => {
-    const raw = v[k];
-    if (raw == null) return "—";
-    // values 里存的是原始 JSON 片段：字符串带引号，数字不带。这里只做展示用的
-    // 解包，解析不出来就原样显示，不做任何"猜测性"转换。
-    try {
-      const p = JSON.parse(raw);
-      return typeof p === "object" ? raw : String(p);
-    } catch (e) { return String(raw); }
-  };
-  const labels = {
-    amount_minor: "金额(分)", direction: "方向", account_id: "账户",
-    to_account_id: "转入账户", category_id: "分类", occurred_at: "发生时间",
-    note: "备注", merchant: "商户",
-  };
-  let html = "";
-  for (const k in labels) {
-    if (v[k] == null) continue;
-    let val = text(k);
-    if (k === "occurred_at") val = stamp(val) + "（" + val + "）";
-    if (k === "amount_minor") val = money(val) + "（" + val + "）";
-    html += "<div class=\"kv\"><div class=\"k\">" + labels[k] + "</div><div class=\"v\">" + esc(val) + "</div></div>";
-  }
-  html += "<div class=\"kv\"><div class=\"k\">行 ID</div><div class=\"v\">" + esc(rec.entity_id) + "</div></div>";
-  html += "<div class=\"kv\"><div class=\"k\">Lamport</div><div class=\"v\">" + esc(rec.lamport) + "</div></div>";
-  html += "<div class=\"kv\"><div class=\"k\">状态</div><div class=\"v\">" + (rec.deleted ? "已删除（墓碑）" : "正常") + "</div></div>";
-
-  html += "<h3 class=\"sec\">字段版本戳</h3>";
-  html += "<div class=\"sub2\" style=\"margin-bottom:6px\">每个字段最后由哪台设备、哪一次写入决定。" +
-          "两台设备改同一行时,这里能看出谁赢了。</div>";
-  const fv = rec.fv || {};
-  const keys = Object.keys(fv).sort();
-  html += keys.length ? keys.map((k) =>
-    "<div class=\"kv\"><div class=\"k\">" + esc(labels[k] || k) + "</div><div class=\"v\">" +
-    esc(fv[k].l) + " · " + esc(fv[k].d) + "</div></div>").join("")
-    : '<div class="sub2">无</div>';
-
-  $("#d-title").textContent = text("merchant") || text("note") || "账单详情";
-  $("#d-sub").textContent = stamp(text("occurred_at"));
-  $("#d-body").innerHTML = html;
-  $("#drawer").classList.add("on");
-  $("#scrim").classList.add("on");
-  loadList();
-}
-function closeRow() {
-  $("#drawer").classList.remove("on");
-  $("#scrim").classList.remove("on");
-  S.sel = null;
-  loadList();
-}
-
-/* ---------- 事件 ---------- */
-$("#tokgo").addEventListener("click", tryEnter);
-$("#tok").addEventListener("keydown", (e) => { if (e.key === "Enter") tryEnter(); });
-$("#logout").addEventListener("click", signOut);
-$("#d-close").addEventListener("click", closeRow);
-$("#scrim").addEventListener("click", closeRow);
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeRow(); });
-
-// 配对码：点按钮才轮换（每次调用都会生成新码并作废上一个，
-// 自动轮换会把别人刚生成的码悄悄弄失效）。
-async function rotatePairCode() {
-  const d = await api("/v1/panel/pair_code");
-  $("#pair-code").textContent = d.pair_code.slice(0, 3) + " " + d.pair_code.slice(3);
-  $("#pair-hint").textContent = "10 分钟内有效。在 App「设置 → NAS 同步 → 连接 NAS」里填本机地址（端口 8787）和这个码。";
-}
-$("#pair-gen").addEventListener("click", () => {
-  rotatePairCode().catch((e) => { $("#pair-hint").textContent = e.message; });
-});
-
-$("#f-go").addEventListener("click", () => { readFilter(); loadAll(); });
-$("#f-clear").addEventListener("click", () => {
-  $("#f-q").value = ""; $("#f-from").value = ""; $("#f-to").value = "";
-  $("#f-dir").value = ""; $("#f-cat").value = ""; $("#f-del").checked = false;
-  readFilter(); loadAll();
-});
-$("#f-q").addEventListener("keydown", (e) => { if (e.key === "Enter") { readFilter(); loadAll(); } });
-
-$("#prev").addEventListener("click", () => {
-  S.offset = Math.max(0, S.offset - S.limit); loadList();
-});
-$("#scale-toggle").addEventListener("click", () => {
-  S.scale = S.scale === "sqrt" ? "linear" : "sqrt";
-  localStorage.setItem("kapi.scale", S.scale);
-  loadStats();
-});
-$("#next").addEventListener("click", () => {
-  if (S.offset + S.limit < S.total) { S.offset += S.limit; loadList(); }
-});
-$("#rows").addEventListener("click", (e) => {
-  const tr = e.target.closest("tr[data-id]");
-  if (tr) openRow(tr.dataset.id);
-});
-for (const b of document.querySelectorAll(".tab")) {
-  b.addEventListener("click", () => {
-    S.tab = b.dataset.tab;
-    for (const o of document.querySelectorAll(".tab")) o.setAttribute("aria-selected", String(o === b));
-    $("#view-list").classList.toggle("hide", S.tab !== "list");
-    $("#view-stats").classList.toggle("hide", S.tab !== "stats");
-    loadAll();
-  });
-}
-
-/* ---------- 启动 ---------- */
-// 默认看本月：这是"我这个月花了多少"这个问题最常见的答案，不该让人先去想
-// 要不要设时间范围。空着日期框就等于不限时间，那是另一回事。
-//
-// 结束日期必须是**月末**而不是月初：服务端的 to 是"次日零点"的开区间上限，
-// 填 9/1 等于只查 9 月 1 号一天，面板开出来是空的——而用户会以为账丢了。
-$("#f-from").value = monthStart(0);
-$("#f-to").value = monthEnd(0);
-readFilter();
-if (S.token) tryEnter(); else signIn();
 </script>
+<script src="edit.js?v=0.5.3"></script>
+<script src="family.js?v=0.5.0"></script>
+<script src="import.js?v=0.5.0"></script>
 </body>
 </html>

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"strconv"
 
 	"kapi/sync/internal/merge"
@@ -33,6 +34,11 @@ func New(st *store.Store) *Server {
 	s.mux.HandleFunc("/v1/changes", s.auth(s.handleChanges))
 	s.mux.HandleFunc("/v1/push", s.auth(s.handlePush))
 	s.mux.HandleFunc("/v1/row", s.auth(s.handleRow))
+	s.mux.HandleFunc("/v1/backup", s.auth(s.handleBackup))
+	s.mux.HandleFunc("/v1/backups", s.auth(s.handleBackups))
+	s.mux.HandleFunc("/v1/shortcuts/catalog", s.auth(s.handleShortcutCatalog))
+	s.mux.HandleFunc("/v1/shortcuts/preview", s.auth(s.handleShortcutPreview))
+	s.mux.HandleFunc("/v1/shortcuts/commit", s.auth(s.handleShortcutCommit))
 	return s
 }
 
@@ -90,13 +96,8 @@ func bearer(r *http.Request) string {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	h := s.st.HealthInfo()
-	// The pairing code is only exposed to a caller that already proved it is
-	// on the LAN and asking for it explicitly, never to an arbitrary scanner.
-	if r.URL.Query().Get("pair_code") == "1" {
-		if code, err := s.st.PairCode(); err == nil {
-			h.PairCode = code
-		}
-	}
+	// Health is public connectivity metadata, never a source of pairing credentials.
+	// Pairing codes are available only through authenticated device/panel endpoints.
 	writeJSON(w, http.StatusOK, h)
 }
 
@@ -189,6 +190,8 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request, d *store.Dev
 		switch {
 		case errors.Is(err, store.ErrEmptyPush):
 			writeErr(w, http.StatusBadRequest, "empty_push", "changes 不能为空")
+		case errors.Is(err, store.ErrWriteForbidden):
+			writeErr(w, http.StatusForbidden, "family_permission", "只能修改或删除自己记录的家庭账单")
 		default:
 			writeErr(w, http.StatusInternalServerError, "push_failed", err.Error())
 		}
@@ -239,4 +242,27 @@ func writeErr(w http.ResponseWriter, code int, kind, msg string) {
 func methodNotAllowed(w http.ResponseWriter, allow string) {
 	w.Header().Set("Allow", allow)
 	writeErr(w, http.StatusMethodNotAllowed, "method_not_allowed", "只支持 "+allow)
+}
+
+func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request, _ *store.Device) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, "GET")
+		return
+	}
+	path, err := s.st.CreateBackup(true)
+	if err != nil {
+		writeErr(w, 500, "backup_failed", err.Error())
+		return
+	}
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filepath.Base(path)+"\"")
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeFile(w, r, path)
+}
+func (s *Server) handleBackups(w http.ResponseWriter, r *http.Request, _ *store.Device) {
+	items, err := s.st.Backups()
+	if err != nil {
+		writeErr(w, 500, "backup_failed", err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"items": items})
 }

@@ -1,0 +1,7 @@
+JExcelAPI (jxl) 2.6.12
+Copyright (C) 2002 Andrew Khan
+License: GNU Lesser General Public License 2.1 or later
+Unmodified library used only to read value-only Excel BIFF workbooks.
+Project: https://jexcelapi.sourceforge.net/
+Corresponding source: https://repo.maven.apache.org/maven2/net/sourceforge/jexcelapi/jxl/2.6.12/jxl-2.6.12-sources.jar
+License text: LGPL-2.1.txt

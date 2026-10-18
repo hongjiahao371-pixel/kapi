@@ -1,0 +1,262 @@
+{
+  "kapi-android/core/src/main/kotlin/kapi/core/llm/ScreenshotBillParser.kt": {
+    "path": "src/main/kotlin/kapi/core/llm/ScreenshotBillParser.kt",
+    "sha256": "95146825e4c2e50252ab94ce03a50a158655f57e2804637cae6be061a2368906"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/llm/VisionApi.kt": {
+    "path": "src/main/kotlin/kapi/core/llm/VisionApi.kt",
+    "sha256": "c6ddc16c0293a0e0e85705832e5a95dfc9769926a571f76bab7446b34ea931a7"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/llm/LocalTextParser.kt": {
+    "path": "src/main/kotlin/kapi/core/llm/LocalTextParser.kt",
+    "sha256": "e2f8da32ca7f70260af07476ca09141d19b82d21108bbbf3226ee5f9dbe65846"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/llm/OcrNameConsensus.kt": {
+    "path": "src/main/kotlin/kapi/core/llm/OcrNameConsensus.kt",
+    "sha256": "0b8d6e98983df447befba3b14540726ca8b0b567f4f182b02fc8f75d98d8b167"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/llm/Money.kt": {
+    "path": "src/main/kotlin/kapi/core/llm/Money.kt",
+    "sha256": "de27904b8e72fea6ff6e0e4a2828c059aa446037c04008cdca891707d1737e0c"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/llm/TransactionExtractor.kt": {
+    "path": "src/main/kotlin/kapi/core/llm/TransactionExtractor.kt",
+    "sha256": "0d3e74b6cd53334e839036e7b60198bcb8057e7a0cb71f4b0ab414b033e324d3"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/llm/LlmConfig.kt": {
+    "path": "src/main/kotlin/kapi/core/llm/LlmConfig.kt",
+    "sha256": "a28a146e38ff2007c2309e223b77ff0bf362625b521ef84aaddc65531d0ab668"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/investment/HoldingScreenshotParser.kt": {
+    "path": "src/main/kotlin/kapi/core/investment/HoldingScreenshotParser.kt",
+    "sha256": "6dcbac0da5b589c11f2e852f9acd93e6853d5e105591ddd7242aa35099ba3bc7"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/investment/Portfolio.kt": {
+    "path": "src/main/kotlin/kapi/core/investment/Portfolio.kt",
+    "sha256": "9f91f8d82b53dcbe93927a0dfc97914e741c6cd60cd29bddc61b66ea6c63bc72"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/investment/PublicQuoteParser.kt": {
+    "path": "src/main/kotlin/kapi/core/investment/PublicQuoteParser.kt",
+    "sha256": "690893c59cbcd1dab315bdda54bb44d27eef429e0809b533b3c55e5ef534ebff"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/investment/HoldingVision.kt": {
+    "path": "src/main/kotlin/kapi/core/investment/HoldingVision.kt",
+    "sha256": "41e36aa06c43f93925597a4d0aec5df2f726a114ca1631c4c3ac4e6cd70ddf2a"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/investment/FundNameMatcher.kt": {
+    "path": "src/main/kotlin/kapi/core/investment/FundNameMatcher.kt",
+    "sha256": "5a4c01ed01654b95dcc0ae344bd7f3141c38ebbde02b5396bce45420cc386315"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/pro/ProLicense.kt": {
+    "path": "src/main/kotlin/kapi/core/pro/ProLicense.kt",
+    "sha256": "2d3f29dd7927f0264f8e1f00df4373678ea4332329d76fdda192b7cd0cec47f1"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/PaymentShape.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/PaymentShape.kt",
+    "sha256": "29e2fd9d7750091eaad9432ce885a581ae4d8de17d4e0be83bb10039b818a74f"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/ReceiptSession.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/ReceiptSession.kt",
+    "sha256": "d05581a397deb3c559a330c399099c8fa3971a04e2995e9efcd41519709fe54c"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/CommerceOrder.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/CommerceOrder.kt",
+    "sha256": "9f4f999eefd9cd3edc76db5a0b9befa409294ecd96b04a2ba1324bb3d53c0b82"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/MerchantName.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/MerchantName.kt",
+    "sha256": "f3ab08b4256019347300fadd70209f5e0283c86c1934b7ddc52dc3e80f64c542"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/SubWallet.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/SubWallet.kt",
+    "sha256": "8bc3b557619afe80962f5c3ba2d8eeada2ddda0f926f6db131a0f9b8d0fd543c"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/MeituanOrder.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/MeituanOrder.kt",
+    "sha256": "59ffdfe23ef15948a15558d327e8d25c22b04901837140af5d01a86cfb2a0894"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/WechatCompletionFields.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/WechatCompletionFields.kt",
+    "sha256": "96d7edf8799c22e25853643454691b0d7df27c6f22561ce6110630eabc3a59b4"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/PaymentForegroundSession.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/PaymentForegroundSession.kt",
+    "sha256": "1bba1ec9b2a0cd7d979a5e8290cb1dea44887a881c7c77662b2d8e4a67245891"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/PinduoduoOrder.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/PinduoduoOrder.kt",
+    "sha256": "c98c46da9db829f014b202a32b58e34c023cf2ae49cc5b79c9354d2f206e0bb7"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/ImportCategoryHints.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/ImportCategoryHints.kt",
+    "sha256": "218f00d865b6034b1aa1464278410d79ca2d8e3cbef4ba96a902a65a1afb7014"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/ScreenFields.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/ScreenFields.kt",
+    "sha256": "98154b8f70cd238333c4033d35141e604da5ebcb2c79e48d4ca1a7e71cf2e81c"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/PaymentPageIdentity.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/PaymentPageIdentity.kt",
+    "sha256": "be3898b9bdd3c65e8d16a51d546d6b1bbdd24057480c30a706ce433e080fe5b2"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/PaymentGate.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/PaymentGate.kt",
+    "sha256": "2c69edbcda1a7dbf874060069201b8900c90a906cf0fb92dfa96596f435a1cf3"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/AutoBook.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/AutoBook.kt",
+    "sha256": "0763656e879eb63d73a016259da9b1ca13869da11bafcc796e57df65b679cee2"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/WechatPaymentResult.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/WechatPaymentResult.kt",
+    "sha256": "6a72979ab70ee61afec4d726f34f8a09760a63afedde25bf7ae675a0508d850b"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/NoteComposer.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/NoteComposer.kt",
+    "sha256": "a361c22756296fbd60d6d536466e332ad58ff557fa4b156179b05443ac238976"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/CategoryRules.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/CategoryRules.kt",
+    "sha256": "9dd6bd15434f27087e42ba189c04f54a60ef16115628e6d24bdfa9be45679a7b"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/AlipayPaymentResult.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/AlipayPaymentResult.kt",
+    "sha256": "84b0fd8721985fcd6437003773efd7f9434b635bcd37e23feabfb1564a493ecf"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/WalletPaymentCompletion.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/WalletPaymentCompletion.kt",
+    "sha256": "9ebd2fb8dce3598ef0572b61288bb3f31f65dcce9f7af135fa18265cc39f661f"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/CheckoutFlow.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/CheckoutFlow.kt",
+    "sha256": "fb50fc1ec3cad7a711a4d991231cb3f2d5763c827496b17bc810f9fce69ad0a8"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/WechatMerchantPaymentResult.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/WechatMerchantPaymentResult.kt",
+    "sha256": "5333dec5f59ca08b268efdd8048989fc77ceabc78bc913397d22bec2aca7e620"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/TransactionTime.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/TransactionTime.kt",
+    "sha256": "18d7bcd6973e4c61de21c355babb58aebd7be53557e4dbae6999fef548ca1d7e"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/PaymentId.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/PaymentId.kt",
+    "sha256": "00ba3284f98db964af0e20eac5f6e58001610cd693f1acb8c0b1bbd8141254f6"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/CategoryIntelligence.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/CategoryIntelligence.kt",
+    "sha256": "07e6f259402ef8525addfb8551b99d7cfb715a8a0e4a264aa2b0826755b817e1"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/CommercePaymentLink.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/CommercePaymentLink.kt",
+    "sha256": "4c21436a959c72da9c2ad0627f3d2611ac384092a04e5e1e01cb95f2c293fa38"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/OwnAccount.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/OwnAccount.kt",
+    "sha256": "aace592b2491d8e969d1e1fd68d39246a883777ab3f88d14e542bf0e8d4692b2"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/PeerPaymentReceipt.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/PeerPaymentReceipt.kt",
+    "sha256": "34fa360d4567f67465de037edcef20725803fa68762293da1eff7fd286ec8c61"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/MerchantLearning.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/MerchantLearning.kt",
+    "sha256": "3d6c742fd2210556484a39960ec10090d5ebf516cb49549b7bd4ef3b6ed2011d"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/WalletOcrPolicy.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/WalletOcrPolicy.kt",
+    "sha256": "0ac69da7a6689d14bac7eb2c3791e4ef76bd6684df7b92648ba67f1452122a0d"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/PaymentLink.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/PaymentLink.kt",
+    "sha256": "938aac830e4a15da359e70f2776cac4ab3ecfe1aee4e5e6c62f0d96e5114980a"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/auto/WechatQrCounterparty.kt": {
+    "path": "src/main/kotlin/kapi/core/auto/WechatQrCounterparty.kt",
+    "sha256": "c17174822039ee6189c36e16adad22846c5c8064ccc2762941ea819f868062bf"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/io/BillFileReader.kt": {
+    "path": "src/main/kotlin/kapi/core/io/BillFileReader.kt",
+    "sha256": "4ab2877a463fff949a32c877d9b5503f296760d501b93dd828b327c90aa85a54"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/io/LedgerTransfer.kt": {
+    "path": "src/main/kotlin/kapi/core/io/LedgerTransfer.kt",
+    "sha256": "b4de66a314132cb48f1a119c2ebbc233ca0b57166ed1037fcf3c2fdd086cbc39"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/io/ImportDuplicateMatcher.kt": {
+    "path": "src/main/kotlin/kapi/core/io/ImportDuplicateMatcher.kt",
+    "sha256": "13217231bddf20956f4f672dc993a79042d471fef5fcc6830de84759ff45072a"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/io/BillWorkbookAdapter.kt": {
+    "path": "src/main/kotlin/kapi/core/io/BillWorkbookAdapter.kt",
+    "sha256": "29c068f42a786ace5bf06ab0e5daf7edc90885e5a6c0ee67aa4a0a81b25b640b"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/io/SmartBillParser.kt": {
+    "path": "src/main/kotlin/kapi/core/io/SmartBillParser.kt",
+    "sha256": "d60718dcd71bf77ee50c5a1777e1811aceb78c5dd51602a65cd9c69b153c9e29"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/io/BankTableSchema.kt": {
+    "path": "src/main/kotlin/kapi/core/io/BankTableSchema.kt",
+    "sha256": "36e86dfc7ec720db3bbd359fd4829b520beedaef27235084bbf6d2376a33854c"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/io/ImportProfiles.kt": {
+    "path": "src/main/kotlin/kapi/core/io/ImportProfiles.kt",
+    "sha256": "f44ac1aa25ff658e5d971cc39748fcf52b09ecc12635ad51a71a0bd1ed7dfae6"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/io/BankPdfTable.kt": {
+    "path": "src/main/kotlin/kapi/core/io/BankPdfTable.kt",
+    "sha256": "6e7a6dfb2921f0ce4c65ef8bcd378ec7bfc21b4f03875a9f8a750003f4603e46"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/io/ImportIntelligence.kt": {
+    "path": "src/main/kotlin/kapi/core/io/ImportIntelligence.kt",
+    "sha256": "9540415efb72f57cf4a65579f8da7482050c3b87f6d6061b194d0a8fbae5d6de"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/io/NasImportMain.kt": {
+    "path": "src/main/kotlin/kapi/core/io/NasImportMain.kt",
+    "sha256": "c59ae015abd45a0a58f6ad7357a07e3cab723656e069b6f4916d50c067d26e61"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/io/ImportFieldAI.kt": {
+    "path": "src/main/kotlin/kapi/core/io/ImportFieldAI.kt",
+    "sha256": "62cd3dacec81a14e7827b992cfb3edef052423e54e537cb5ea99627de256fece"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/io/AiImportAnalysis.kt": {
+    "path": "src/main/kotlin/kapi/core/io/AiImportAnalysis.kt",
+    "sha256": "f5202e82972d8c2b0d7c0cab6a2313536b8b08cba7ec22050b2e53c12512a314"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/io/BankBillParser.kt": {
+    "path": "src/main/kotlin/kapi/core/io/BankBillParser.kt",
+    "sha256": "dfe74005cb14ecdf5ad08edb95a267866468997e941315c34b9d5a7ce23b6682"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/io/ImportReview.kt": {
+    "path": "src/main/kotlin/kapi/core/io/ImportReview.kt",
+    "sha256": "4804e7514e9ba193c624730d9094268e602735873411f15f881d070be6a94dd5"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/finance/ReminderSchedule.kt": {
+    "path": "src/main/kotlin/kapi/core/finance/ReminderSchedule.kt",
+    "sha256": "e0a3dce75e65ccb290dd18b5b5757edd4b8e1b4a3b4bc73db5382d9be08f1e4f"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/finance/Analytics.kt": {
+    "path": "src/main/kotlin/kapi/core/finance/Analytics.kt",
+    "sha256": "85e2168cbff76ab13029e41958dd9e097936e147b0e3545328347912e244eca9"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/finance/Finance.kt": {
+    "path": "src/main/kotlin/kapi/core/finance/Finance.kt",
+    "sha256": "32937b03509567a6f925c122bf9c418e9715f3a59a6cda6a31ede3bac3960619"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/sync/SyncNamespace.kt": {
+    "path": "src/main/kotlin/kapi/core/sync/SyncNamespace.kt",
+    "sha256": "9e0794ae901d33c0377971ab582d735e4ed758d639e7e9b95343ab5ddee14236"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/sync/Model.kt": {
+    "path": "src/main/kotlin/kapi/core/sync/Model.kt",
+    "sha256": "b053015af97e68e1c7954913684a6537621824e2cf68af57870e0f2db37b2c41"
+  },
+  "kapi-android/core/src/main/kotlin/kapi/core/sync/LocalMerge.kt": {
+    "path": "src/main/kotlin/kapi/core/sync/LocalMerge.kt",
+    "sha256": "b01e4202877e0a01c85eda1b3ec899339ec32b122bc0c32ca981c7fc5b50b59a"
+  },
+  "kapi-android/nas-import/src/main/kotlin/kapi/nasimport/Main.kt": {
+    "path": "src/main/kotlin/kapi/nasimport/Main.kt",
+    "sha256": "ec9870adfdbcb6c6f5923c5cb73d5eff9646c807792024dffdf10369a1fd5f7a"
+  }
+}

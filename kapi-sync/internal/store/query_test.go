@@ -252,9 +252,9 @@ func TestSignedMinor(t *testing.T) {
 	if got := (store.TxView{AmountMinor: 100, Direction: store.DirIncome}).SignedMinor(); got != 100 {
 		t.Errorf("income sign = %d", got)
 	}
-	// 未知方向按支出处理，和客户端一致；否则一笔方向写坏的记录会让余额虚高
-	if got := (store.TxView{AmountMinor: 100, Direction: "???"}).SignedMinor(); got != -100 {
-		t.Errorf("unknown sign = %d, want -100", got)
+	// 未知方向和内部划转不计入收支；与 Android 保持一致。
+	if got := (store.TxView{AmountMinor: 100, Direction: "???"}).SignedMinor(); got != 0 {
+		t.Errorf("unknown sign = %d, want 0", got)
 	}
 }
 

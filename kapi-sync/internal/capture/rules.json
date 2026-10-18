@@ -1,0 +1,1353 @@
+{
+  "expense": [
+    {
+      "major": "其他",
+      "minor": "软件服务",
+      "keywords": [
+        "腾讯文档",
+        "腾讯会议",
+        "WPS",
+        "Microsoft 365",
+        "Office 365",
+        "ChatGPT",
+        "Claude",
+        "MiniMax",
+        "TokenPlanMax",
+        "TokenPlan",
+        "OpenAI",
+        "Cursor",
+        "Notion",
+        "软件订阅",
+        "软件会员",
+        "软件服务",
+        "云存储",
+        "云服务器",
+        "云主机",
+        "域名续费",
+        "云盘",
+        "网盘",
+        "iCloud",
+        "API费用",
+        "API充值",
+        "API调用",
+        "API 费用",
+        "API 充值",
+        "API 调用",
+        "接口调用费",
+        "模型调用费",
+        "Token充值"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "娱乐",
+      "minor": "会员",
+      "keywords": [
+        "爱奇艺",
+        "腾讯视频",
+        "优酷",
+        "芒果TV",
+        "Netflix",
+        "Spotify",
+        "网易云音乐",
+        "QQ音乐",
+        "Apple Music",
+        "Apple TV",
+        "哔哩哔哩大会员",
+        "视频会员",
+        "音乐会员",
+        "影视会员"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "宠物",
+      "minor": "宠物用品",
+      "keywords": [
+        "猫玩具",
+        "宠物玩具",
+        "狗玩具"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "日用",
+      "minor": "个护",
+      "keywords": [
+        "洗发水",
+        "沐浴露"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "餐饮",
+      "minor": "早餐",
+      "keywords": [
+        "包子",
+        "馒头",
+        "油条",
+        "豆浆",
+        "稀饭",
+        "粥铺",
+        "粥店",
+        "早点",
+        "早餐",
+        "早茶",
+        "烧麦",
+        "煎饼",
+        "油煎",
+        "肠粉",
+        "豆浆店"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "餐饮",
+      "minor": "火锅",
+      "keywords": [
+        "火锅",
+        "串串",
+        "冒菜",
+        "麻辣烫",
+        "呷哺",
+        "海底捞"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "餐饮",
+      "minor": "烘焙",
+      "keywords": [
+        "烘焙",
+        "蛋糕",
+        "面包",
+        "点心",
+        "饼屋",
+        "饼店",
+        "糕点",
+        "酥包",
+        "嘉华",
+        "鲍师傅",
+        "泸溪河",
+        "好利来",
+        "味多美",
+        "桃李"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "餐饮",
+      "minor": "零食",
+      "keywords": [
+        "零食",
+        "膨化",
+        "薯片",
+        "辣条",
+        "饼干",
+        "糖果",
+        "巧克力",
+        "坚果",
+        "炒货",
+        "果冻",
+        "蜜饯",
+        "话梅",
+        "果干",
+        "鸭脖",
+        "卤味",
+        "雪糕",
+        "冰淇淋",
+        "口香糖"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "餐饮",
+      "minor": "水果",
+      "keywords": [
+        "水果",
+        "水果店",
+        "果汇",
+        "果切",
+        "鲜果",
+        "果业",
+        "果园"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "餐饮",
+      "minor": "咖啡茶饮",
+      "keywords": [
+        "咖啡",
+        "星巴克",
+        "瑞幸",
+        "库迪",
+        "manner",
+        "MANNER",
+        "奶茶",
+        "喜茶",
+        "奈雪",
+        "蜜雪",
+        "茶百道",
+        "古茗",
+        "沪上阿姨",
+        "茶铺",
+        "茶楼",
+        "书亦",
+        "益禾堂",
+        "茶颜",
+        "霸王茶姬",
+        "茶饮",
+        "咖啡店",
+        "luckin",
+        "Luckin",
+        "coffee"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "餐饮",
+      "minor": "酒水",
+      "keywords": [
+        "酒吧",
+        "酒馆",
+        "清吧",
+        "精酿",
+        "啤酒",
+        "夜宵店",
+        "大排档"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "餐饮",
+      "minor": "外卖",
+      "keywords": [
+        "外卖"
+      ],
+      "merchant_only": true,
+      "raw_only": false
+    },
+    {
+      "major": "餐饮",
+      "minor": "正餐",
+      "keywords": [
+        "餐厅",
+        "饭店",
+        "酒楼",
+        "饭馆",
+        "面馆",
+        "米粉",
+        "米线",
+        "螺蛳粉",
+        "餐饮店",
+        "餐饮部",
+        "美食店",
+        "小吃店",
+        "快餐",
+        "简餐",
+        "盖饭",
+        "炒饭",
+        "炒面",
+        "饺子",
+        "馄饨",
+        "食堂",
+        "菜馆",
+        "食府",
+        "小吃",
+        "烧烤",
+        "烤肉",
+        "自助餐",
+        "料理",
+        "日料",
+        "韩料",
+        "泰国菜",
+        "西餐",
+        "披萨",
+        "汉堡",
+        "麻辣香锅",
+        "干锅",
+        "寿司",
+        "刺身",
+        "麦当劳",
+        "肯德基",
+        "汉堡王",
+        "必胜客",
+        "德克士",
+        "塔斯汀",
+        "鸡公煲",
+        "黄焖鸡",
+        "酸菜鱼",
+        "烤鱼",
+        "牛蛙",
+        "卤味",
+        "熟食",
+        "新疆菜",
+        "大盘鸡",
+        "烤羊排",
+        "拌面"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "居住",
+      "minor": "水电燃气",
+      "keywords": [
+        "燃气",
+        "水费",
+        "电费",
+        "自来水",
+        "国家电网",
+        "供电局",
+        "热力费"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "交通",
+      "minor": "加油",
+      "keywords": [
+        "加油",
+        "中石化",
+        "中石油",
+        "壳牌",
+        "加油站",
+        "石油"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "交通",
+      "minor": "打车",
+      "keywords": [
+        "打车",
+        "滴滴",
+        "出租车",
+        "网约车",
+        "曹操出行",
+        "T3出行",
+        "花小猪",
+        "高德打车"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "交通",
+      "minor": "公共交通",
+      "keywords": [
+        "地铁",
+        "公交",
+        "乘车码",
+        "一卡通",
+        "公交卡",
+        "轨道交通",
+        "有轨电车"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "交通",
+      "minor": "火车",
+      "keywords": [
+        "12306",
+        "火车票",
+        "铁路"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "交通",
+      "minor": "飞机",
+      "keywords": [
+        "机票",
+        "航空",
+        "机场",
+        "携程",
+        "去哪儿",
+        "飞猪",
+        "南航",
+        "国航",
+        "东航"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "交通",
+      "minor": "停车",
+      "keywords": [
+        "停车",
+        "车位",
+        "车库",
+        "泊车"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "交通",
+      "minor": "车辆保养",
+      "keywords": [
+        "洗车",
+        "4S店",
+        "轮胎",
+        "机油",
+        "车险",
+        "年检"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "交通",
+      "minor": "过路费",
+      "keywords": [
+        "高速",
+        "ETC",
+        "过路费",
+        "通行费"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "交通",
+      "minor": "共享单车",
+      "keywords": [
+        "共享单车",
+        "共享电单车",
+        "美团电单车",
+        "美团单车",
+        "哈啰单车",
+        "电单车骑行"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "旅行",
+      "minor": "酒店住宿",
+      "keywords": [
+        "酒店",
+        "民宿",
+        "客栈",
+        "青旅",
+        "度假",
+        "公寓式酒店"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "旅行",
+      "minor": "景点门票",
+      "keywords": [
+        "旅游",
+        "景点",
+        "景区",
+        "度假区",
+        "门票代订"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "育儿",
+      "minor": "奶粉尿布",
+      "keywords": [
+        "奶粉",
+        "尿不湿",
+        "纸尿裤",
+        "拉拉裤",
+        "奶瓶",
+        "辅食"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "育儿",
+      "minor": "玩具绘本",
+      "keywords": [
+        "玩具",
+        "积木",
+        "乐高",
+        "绘本",
+        "布书",
+        "摇铃"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "育儿",
+      "minor": "幼教学费",
+      "keywords": [
+        "幼儿园",
+        "早教",
+        "托育",
+        "幼小衔接",
+        "亲子园"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "育儿",
+      "minor": "亲子游玩",
+      "keywords": [
+        "亲子",
+        "游乐园",
+        "儿童乐园",
+        "遛娃"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "育儿",
+      "minor": "儿童医疗",
+      "keywords": [
+        "儿科",
+        "儿童医院",
+        "儿保"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "育儿",
+      "minor": null,
+      "keywords": [
+        "童装",
+        "安全座椅",
+        "儿童",
+        "宝宝",
+        "婴儿"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "购物",
+      "minor": "数码",
+      "keywords": [
+        "小米之家",
+        "华为商城",
+        "苹果官方",
+        "数码",
+        "电脑城",
+        "电子产品",
+        "消费电子",
+        "耳机",
+        "蓝牙耳机",
+        "音箱",
+        "充电宝",
+        "数据线",
+        "充电线",
+        "移动电源",
+        "Type-C转换",
+        "Type-C转",
+        "USB转接头",
+        "转换USB",
+        "扩展坞",
+        "平板",
+        "笔记本电脑",
+        "台式机",
+        "显卡",
+        "硬盘",
+        "U盘",
+        "路由器",
+        "打印机",
+        "3D打印",
+        "相机",
+        "摄像头",
+        "TP-LINK",
+        "TL-IPC",
+        "开发板",
+        "ESP32",
+        "微单",
+        "单反",
+        "键盘",
+        "鼠标",
+        "显示器",
+        "智能手表",
+        "手环"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "购物",
+      "minor": "服饰",
+      "keywords": [
+        "优衣库",
+        "UNIQLO",
+        "ZARA",
+        "H&M",
+        "耐克",
+        "NIKE",
+        "阿迪达斯",
+        "李宁",
+        "安踏",
+        "太平鸟",
+        "森马",
+        "海澜之家",
+        "波司登",
+        "ONLY",
+        "以纯",
+        "美特斯邦威",
+        "服饰",
+        "服装",
+        "衣服",
+        "鞋店",
+        "箱包",
+        "短袖",
+        "T恤",
+        "t恤",
+        "衬衫",
+        "裤子",
+        "外套",
+        "羽绒服",
+        "连衣裙",
+        "卫衣",
+        "毛衣",
+        "西装",
+        "牛仔裤",
+        "运动鞋",
+        "球鞋",
+        "帽子",
+        "围巾",
+        "内衣",
+        "内裤",
+        "內裤",
+        "内褲",
+        "內褲",
+        "文胸",
+        "睡衣",
+        "袜子"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "购物",
+      "minor": "家电",
+      "keywords": [
+        "冰箱",
+        "洗衣机",
+        "空调",
+        "电视",
+        "微波炉",
+        "烤箱",
+        "电饭煲",
+        "电水壶",
+        "加湿器",
+        "吸尘器",
+        "扫地机器人"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "购物",
+      "minor": "美妆",
+      "keywords": [
+        "化妆品",
+        "口红",
+        "面霜",
+        "护肤",
+        "香水",
+        "洗发",
+        "珀莱雅",
+        "欧莱雅",
+        "兰蔻",
+        "雅诗兰黛",
+        "薇诺娜",
+        "花西子",
+        "完美日记",
+        "彩妆",
+        "美容院",
+        "精华",
+        "精华液",
+        "面膜",
+        "水乳",
+        "洗面奶",
+        "防晒",
+        "粉底液",
+        "眼影"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "购物",
+      "minor": "母婴",
+      "keywords": [
+        "孕婴",
+        "母婴",
+        "孕妇",
+        "待产",
+        "月子中心"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "购物",
+      "minor": "烟酒",
+      "keywords": [
+        "香烟",
+        "烟草",
+        "烟酒",
+        "白酒",
+        "红酒",
+        "洋酒",
+        "黄酒"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "购物",
+      "minor": "图书",
+      "keywords": [
+        "图书",
+        "书店",
+        "当当",
+        "新华书店",
+        " kindle",
+        " Kindle"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "购物",
+      "minor": "家居",
+      "keywords": [
+        "家具",
+        "沙发",
+        "床垫",
+        "收纳",
+        "宜家",
+        "林氏木业",
+        "全友",
+        "顾家",
+        "家居"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "宠物",
+      "minor": "口粮",
+      "keywords": [
+        "猫粮",
+        "狗粮",
+        "猫砂",
+        "主粮",
+        "冻干",
+        "宠物粮"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "宠物",
+      "minor": "宠物用品",
+      "keywords": [
+        "宠物用品",
+        "猫窝",
+        "狗窝",
+        "猫爬架",
+        "猫玩具",
+        "宠物玩具",
+        "猫笼",
+        "牵引绳"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "宠物",
+      "minor": "宠物医疗",
+      "keywords": [
+        "宠物医院",
+        "驱虫",
+        "绝育"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "宠物",
+      "minor": "宠物服务",
+      "keywords": [
+        "宠物服务",
+        "宠物美容",
+        "宠物寄养",
+        "宠物训练",
+        "洗猫",
+        "洗狗",
+        "猫洗澡",
+        "狗洗澡",
+        "猫咪洗护",
+        "宠物洗护"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "宠物",
+      "minor": null,
+      "keywords": [
+        "宠物",
+        "宠物店",
+        "猫咖",
+        "狗咖",
+        "小佩",
+        "petkit",
+        "PETKIT",
+        "波奇",
+        "麦富迪"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "居住",
+      "minor": "房租",
+      "keywords": [
+        "房租",
+        "租金",
+        "房东",
+        "中介费",
+        "押金"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "居住",
+      "minor": "物业",
+      "keywords": [
+        "物业",
+        "物业费",
+        "取暖费",
+        "暖气费"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "居住",
+      "minor": "宽带",
+      "keywords": [
+        "宽带",
+        "网费",
+        "固话"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "通讯",
+      "minor": "话费",
+      "keywords": [
+        "话费",
+        "流量包",
+        "充值中心"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "通讯",
+      "minor": "快递",
+      "keywords": [
+        "快递",
+        "运费",
+        "寄件",
+        "裹裹",
+        "顺丰",
+        "圆通",
+        "中通",
+        "申通",
+        "菜鸟",
+        "京东物流",
+        "邮政"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "日用",
+      "minor": null,
+      "keywords": [
+        "日用百货"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "日用",
+      "minor": "超市",
+      "keywords": [
+        "超市",
+        "沃尔玛",
+        "家乐福",
+        "永辉",
+        "盒马",
+        "大润发",
+        "山姆",
+        "华润万家",
+        "苏果"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "日用",
+      "minor": "便利店",
+      "keywords": [
+        "便利店",
+        "711",
+        "7-11",
+        "全家",
+        "罗森",
+        "美宜佳",
+        "十足"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "日用",
+      "minor": "个护",
+      "keywords": [
+        "牙膏",
+        "洗发水",
+        "沐浴露",
+        "纸巾",
+        "理发",
+        "美容美发",
+        "美甲",
+        "剪发"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "日用",
+      "minor": "清洁",
+      "keywords": [
+        "洗洁精",
+        "洗衣液",
+        "拖把",
+        "抹布",
+        "消毒液"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "娱乐",
+      "minor": "电影",
+      "keywords": [
+        "电影",
+        "影院",
+        "影城",
+        "猫眼",
+        "淘票票",
+        "万达影城",
+        "CGV",
+        "UME"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "娱乐",
+      "minor": "游戏",
+      "keywords": [
+        "游戏",
+        "Steam",
+        "steam",
+        "腾讯游戏",
+        "网易游戏",
+        "点券"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "娱乐",
+      "minor": "演出",
+      "keywords": [
+        "演出",
+        "演唱会",
+        "话剧",
+        "音乐会",
+        "大麦",
+        "门票",
+        "livehouse"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "娱乐",
+      "minor": "运动健身",
+      "keywords": [
+        "健身",
+        "篮球",
+        "羽毛球",
+        "瑜伽",
+        "游泳",
+        "Keep",
+        "乐刻",
+        "超级猩猩"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "娱乐",
+      "minor": "桌游",
+      "keywords": [
+        "棋牌",
+        "麻将",
+        "桌游",
+        "剧本杀",
+        "密室"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "娱乐",
+      "minor": "潮玩",
+      "keywords": [
+        "泡泡玛特",
+        "POPMART",
+        "POP MART",
+        "LABUBU",
+        "收藏公仔",
+        "手办"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "医疗",
+      "minor": "药品",
+      "keywords": [
+        "药店",
+        "药房",
+        "大药房",
+        "医药",
+        "买药",
+        "同仁堂",
+        "益丰",
+        "大参林",
+        "老百姓大药房"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "医疗",
+      "minor": "口腔",
+      "keywords": [
+        "牙科",
+        "口腔",
+        "洗牙",
+        "正畸",
+        "镶牙",
+        "补牙"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "医疗",
+      "minor": "保健",
+      "keywords": [
+        "保健品",
+        "维生素",
+        "蛋白粉",
+        "益生菌"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "医疗",
+      "minor": "保险",
+      "keywords": [
+        "保险",
+        "保费",
+        "保单",
+        "投保",
+        "健康险"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "医疗",
+      "minor": null,
+      "keywords": [
+        "医院",
+        "门诊",
+        "挂号",
+        "急诊",
+        "住院",
+        "体检",
+        "诊所",
+        "输液"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "教育",
+      "minor": "培训",
+      "keywords": [
+        "培训",
+        "课程",
+        "网课",
+        "补课",
+        "学而思",
+        "新东方",
+        "猿辅导",
+        "作业帮",
+        " tuition"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "教育",
+      "minor": "学费",
+      "keywords": [
+        "学费",
+        "学校",
+        "大学",
+        "研究生",
+        "培训费"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "教育",
+      "minor": "书籍文具",
+      "keywords": [
+        "文具",
+        "笔记本",
+        "笔袋",
+        "书包",
+        "打印",
+        "复印"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "教育",
+      "minor": "考试",
+      "keywords": [
+        "报名费",
+        "考试费",
+        "四六级",
+        "教资",
+        "CPA",
+        "证书"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "人情",
+      "minor": "红包",
+      "keywords": [
+        "红包",
+        "压岁钱",
+        "份子钱"
+      ],
+      "merchant_only": true,
+      "raw_only": false
+    },
+    {
+      "major": "人情",
+      "minor": "礼物",
+      "keywords": [
+        "鲜花",
+        "礼品",
+        "礼物",
+        "送礼"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "购物",
+      "minor": "二手",
+      "keywords": [
+        "闲鱼"
+      ],
+      "merchant_only": false,
+      "raw_only": true
+    },
+    {
+      "major": "购物",
+      "minor": null,
+      "keywords": [
+        "淘宝",
+        "天猫",
+        "拼多多",
+        "小红书",
+        "京东",
+        "苏宁",
+        "国美"
+      ],
+      "merchant_only": false,
+      "raw_only": true
+    },
+    {
+      "major": "其他",
+      "minor": "罚款",
+      "keywords": [
+        "罚款",
+        "违章",
+        "滞纳金"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "其他",
+      "minor": "手续费",
+      "keywords": [
+        "手续费",
+        "服务费",
+        "年费",
+        "利息",
+        "违约金"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    }
+  ],
+  "income": [
+    {
+      "major": "工资",
+      "minor": null,
+      "keywords": [
+        "工资",
+        "薪资",
+        "薪水",
+        "月薪",
+        "代发"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "奖金",
+      "minor": null,
+      "keywords": [
+        "奖金",
+        "年终奖",
+        "绩效",
+        "提成",
+        "补贴"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "兼职",
+      "minor": null,
+      "keywords": [
+        "兼职",
+        "劳务",
+        "外快",
+        "稿费"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "理财",
+      "minor": null,
+      "keywords": [
+        "理财",
+        "利息",
+        "收益",
+        "基金",
+        "余额宝",
+        "零钱通",
+        "分红",
+        "赎回",
+        "理财通"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "退款",
+      "minor": null,
+      "keywords": [
+        "退款",
+        "退货",
+        "退票"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "报销",
+      "minor": null,
+      "keywords": [
+        "报销",
+        "赔付",
+        "理赔"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    },
+    {
+      "major": "红包",
+      "minor": null,
+      "keywords": [
+        "红包",
+        "转账收款",
+        "收款",
+        "已收款"
+      ],
+      "merchant_only": false,
+      "raw_only": false
+    }
+  ],
+  "source_sha256": "ef07a349b9ba629557e1bf5d88026126b9a19398d7b657a512b7737e895de542"
+}

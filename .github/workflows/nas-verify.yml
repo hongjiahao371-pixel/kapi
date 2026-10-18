@@ -1,0 +1,44 @@
+name: NAS source verification
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: kapi-sync/go.mod
+          cache: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.8.0'
+      - name: Build standalone reader
+        working-directory: kapi-sync/import-worker
+        run: gradle --no-daemon -Pkotlin.compiler.execution.strategy=in-process jar
+      - name: Test synchronization, import, permissions and TLS
+        working-directory: kapi-sync
+        env:
+          KAPI_IMPORT_JAR: ${{ github.workspace }}/kapi-sync/import-worker/build/libs/guizhang-import.jar
+        run: |
+          go test -race ./...
+          go vet ./...
+      - name: Build complete NAS image
+        run: docker build --build-arg VERSION=0.5.4 -t kapi-sync:0.5.4 kapi-sync
+      - name: Verify empty installation and missing authentication
+        run: |
+          docker run -d --name nas-ci -p 127.0.0.1:18787:8787 kapi-sync:0.5.4
+          trap 'docker rm -f nas-ci >/dev/null' EXIT
+          for n in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18787/v1/health > /tmp/health.json; then break; fi
+            sleep 1
+          done
+          python3 -c 'import json; j=json.load(open("/tmp/health.json")); assert j["ok"] and j["server_version"]=="0.5.4" and j["rows"]==0'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18787/v1/changes)" = 401

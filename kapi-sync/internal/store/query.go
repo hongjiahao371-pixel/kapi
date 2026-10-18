@@ -57,10 +57,13 @@ const (
 // TxView is one transaction shaped for display.
 type TxView struct {
 	ID          string `json:"id"`
+	LedgerID    string `json:"ledger_id"`
+	LedgerName  string `json:"ledger_name,omitempty"`
 	AmountMinor int64  `json:"amount_minor"`
 	Direction   string `json:"direction"`
 	AccountID   string `json:"account_id"`
 	ToAccountID string `json:"to_account_id,omitempty"`
+	RefundOfID  string `json:"refund_of_id,omitempty"`
 	CategoryID  string `json:"category_id,omitempty"`
 	// CategoryName and AccountName are the *display* names, resolved against
 	// the synced category/account tables. They are additive on purpose: the
@@ -83,6 +86,9 @@ type TxView struct {
 // income positive. Doing the sign here rather than in JavaScript means the
 // monthly totals on the server and the ones in the browser cannot disagree.
 func (t TxView) SignedMinor() int64 {
+	if t.ToAccountID != "" || (t.Direction != DirExpense && t.Direction != DirIncome) {
+		return 0
+	}
 	if t.Direction == DirIncome {
 		return t.AmountMinor
 	}
@@ -96,7 +102,11 @@ type TxQuery struct {
 	Keyword    string
 	Direction  string
 	CategoryID string
-	AccountID  string
+	// ExpenseCategory selects the displayed net-expense bucket, including refunds
+	// attributed to the original purchase. Empty means no statistical drill-down.
+	ExpenseCategory string
+	LedgerID        string
+	AccountID       string
 	// IncludeDeleted shows tombstoned rows. Off by default: a deleted row is
 	// a row the user asked to forget, and a ledger that still lists it looks
 	// broken. The panel exposes a toggle because "I deleted it by accident" is
@@ -146,6 +156,7 @@ func (s *Store) ListTx(q TxQuery) TxPage {
 
 	catNames := s.refNamesLocked(EntityCategory)
 	acctNames := s.refNamesLocked(EntityAccount)
+	ledgerNames := s.ledgerNamesLocked()
 
 	out := make([]TxView, 0, q.Limit)
 	for _, r := range s.rows {
@@ -156,17 +167,24 @@ func (s *Store) ListTx(q TxQuery) TxPage {
 		if r.Entity != TxnEntity {
 			continue
 		}
-		if r.Deleted && !q.IncludeDeleted {
+		if r.Deleted && (!q.IncludeDeleted || q.ExpenseCategory != "") {
 			continue
 		}
 		v := readRecord(r)
 		if !q.match(v) {
 			continue
 		}
+		if q.ExpenseCategory != "" {
+			cat, _, ok := s.expenseCategoryLocked(v)
+			if !ok || expenseCategoryName(catNames, cat) != q.ExpenseCategory {
+				continue
+			}
+		}
 		// 名字按行补，id 原样留着。match() 已经在**原始 id** 上筛过了，
 		// 这里换成显示名不会影响筛选——否则用户选了"交通"却筛不出账。
 		v.CategoryName = resolveName(catNames, v.CategoryID)
 		v.AccountName = resolveName(acctNames, v.AccountID)
+		v.LedgerName = resolveName(ledgerNames, v.LedgerID)
 		out = append(out, v)
 	}
 
@@ -197,6 +215,9 @@ func (s *Store) ListTx(q TxQuery) TxPage {
 }
 
 func (q TxQuery) match(t TxView) bool {
+	if q.LedgerID != "" && t.LedgerID != q.LedgerID {
+		return false
+	}
 	if q.From > 0 && t.OccurredAt < q.From {
 		return false
 	}
@@ -286,25 +307,34 @@ func (s *Store) Stats(q TxQuery) Stats {
 		if !q.match(t) {
 			continue
 		}
+		categoryID, contribution, categoryExpense := s.expenseCategoryLocked(t)
+		if q.ExpenseCategory != "" && (!categoryExpense || expenseCategoryName(catNames, categoryID) != q.ExpenseCategory) {
+			continue
+		}
 		st.Count++
 		signed := t.SignedMinor()
-		if signed >= 0 {
-			st.Income += signed
-		} else {
-			st.Expense += -signed
-			if t.CategoryID != "" {
-				// 按显示名聚合，不是按 id。同一个分类被两台手机用不同 id 建出来时，
-				// 按 id 聚合会算成两行——"交通 ¥300"和"交通 ¥200"，
-				// 而用户只想知道交通一共花了多少。
-				name := resolveName(catNames, t.CategoryID)
-				b := byCat[name]
-				if b == nil {
-					b = &Sum{Key: name}
-					byCat[name] = b
-				}
-				b.Minor += -signed
-				b.Count++
+		var original TxView
+		isRefund := false
+		if t.RefundOfID != "" && t.Direction == DirIncome && t.ToAccountID == "" {
+			if rec, ok := s.rows[key(TxnEntity, t.RefundOfID)]; ok && !rec.Deleted {
+				original = readRecord(rec)
+				isRefund = original.Direction == DirExpense && original.ToAccountID == ""
 			}
+		}
+		if isRefund {
+			st.Expense -= t.AmountMinor
+		} else if signed > 0 {
+			st.Income += signed
+		} else if signed < 0 {
+			st.Expense -= signed
+		}
+		if categoryExpense {
+			name := expenseCategoryName(catNames, categoryID)
+			if byCat[name] == nil {
+				byCat[name] = &Sum{Key: name}
+			}
+			byCat[name].Minor += contribution
+			byCat[name].Count++
 		}
 		// Month key in the server's local zone. The phone writes epoch millis
 		// with no zone attached, so "which month" is genuinely undefined until
@@ -330,6 +360,30 @@ func (s *Store) Stats(q TxQuery) Stats {
 	return st
 }
 
+func expenseCategoryName(names map[string]string, id string) string {
+	if id == "" {
+		return "未分类"
+	}
+	return resolveName(names, id)
+}
+
+// Shared by statistics and drill-down so a refund with another/no category still
+// appears in exactly the bucket whose net expense it reduced. Caller holds mu.
+func (s *Store) expenseCategoryLocked(t TxView) (string, int64, bool) {
+	if t.RefundOfID != "" && t.Direction == DirIncome && t.ToAccountID == "" {
+		if r, ok := s.rows[key(TxnEntity, t.RefundOfID)]; ok && !r.Deleted {
+			original := readRecord(r)
+			if original.Direction == DirExpense && original.ToAccountID == "" {
+				return original.CategoryID, -t.AmountMinor, true
+			}
+		}
+	}
+	if t.SignedMinor() < 0 {
+		return t.CategoryID, t.AmountMinor, true
+	}
+	return "", 0, false
+}
+
 func sortedSums(m map[string]*Sum) []Sum {
 	out := make([]Sum, 0, len(m))
 	for _, v := range m {
@@ -346,6 +400,7 @@ func sortedSums(m map[string]*Sum) []Sum {
 
 // Facet is one distinct value of a filterable dimension.
 type Facet struct {
+	Name  string `json:"name,omitempty"`
 	Key   string `json:"key"`
 	Count int    `json:"count"`
 }
@@ -371,6 +426,8 @@ func (s *Store) Facets(dimension string) []Facet {
 		t := readRecord(r)
 		var key string
 		switch dimension {
+		case "ledger":
+			key = t.LedgerID
 		case "category":
 			key = resolveName(catNames, t.CategoryID)
 		case "account":
@@ -386,7 +443,11 @@ func (s *Store) Facets(dimension string) []Facet {
 	}
 	out := make([]Facet, 0, len(counts))
 	for k, v := range counts {
-		out = append(out, Facet{Key: k, Count: v})
+		f := Facet{Key: k, Count: v}
+		if dimension == "ledger" {
+			f.Name = resolveName(s.ledgerNamesLocked(), k)
+		}
+		out = append(out, f)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Count != out[j].Count {
@@ -446,12 +507,18 @@ func resolveName(names map[string]string, id string) string {
 }
 
 func readRecord(r *merge.Record) TxView {
+	ledger := jsonStr(r.Values["ledger_id"])
+	if ledger == "" {
+		ledger = "L1"
+	}
 	return TxView{
+		LedgerID:    ledger,
 		ID:          r.EntityID,
 		AmountMinor: jsonInt(r.Values["amount_minor"]),
 		Direction:   jsonStr(r.Values["direction"]),
 		AccountID:   jsonStr(r.Values["account_id"]),
 		ToAccountID: jsonStr(r.Values["to_account_id"]),
+		RefundOfID:  jsonStr(r.Values["refund_of_id"]),
 		CategoryID:  jsonStr(r.Values["category_id"]),
 		OccurredAt:  jsonInt(r.Values["occurred_at"]),
 		Note:        jsonStr(r.Values["note"]),
@@ -473,6 +540,9 @@ func readRecord(r *merge.Record) TxView {
 // 引号，单测全绿；换成真客户端推上来的数据才暴露。所以循环上限写死 3 层
 // （再多层就是另一个 bug 了），并且遇到不再是 JSON 字符串就停。
 func jsonStr(raw json.RawMessage) string {
+	if string(raw) == "null" || string(raw) == "\"null\"" {
+		return ""
+	}
 	s := string(raw)
 	for i := 0; i < 3; i++ {
 		var out string
@@ -516,4 +586,21 @@ func monthKey(ms int64) string {
 	}
 	t := time.UnixMilli(ms).Local()
 	return t.Format("2006-01")
+}
+
+// Ledger config payloads are JSON strings in the generic sync document protocol.
+func (s *Store) ledgerNamesLocked() map[string]string {
+	names := map[string]string{"L1": "我的账本"}
+	for _, row := range s.rows {
+		if row.Entity != "ledger" || row.Deleted {
+			continue
+		}
+		var payload struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal([]byte(jsonStr(row.Values["payload"])), &payload) == nil && payload.Name != "" {
+			names[row.EntityID] = payload.Name
+		}
+	}
+	return names
 }

@@ -1,4 +1,4 @@
-// Command kapi-sync is the self-hosted sync server for the kapi ledger app.
+// Command kapi-sync is the self-hosted sync server for the 归账 ledger app.
 //
 // It is designed to be run on a NAS with zero configuration:
 //
@@ -25,26 +25,46 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 
 	"kapi/sync/internal/api"
+	"kapi/sync/internal/family"
 	"kapi/sync/internal/panel"
+	"kapi/sync/internal/quotes"
+	"kapi/sync/internal/security"
+	"kapi/sync/internal/shortcutweb"
 	"kapi/sync/internal/store"
+	"path/filepath"
 )
 
 func main() {
 	var (
-		addr       = flag.String("addr", envOr("KAPI_ADDR", "0.0.0.0:8787"), "listen address")
-		dataDir    = flag.String("data", envOr("KAPI_DATA", "/data"), "data directory")
-		panelToken = flag.String("panel-token", os.Getenv("KAPI_PANEL_TOKEN"), "web panel token (generated if empty)")
-		ver        = flag.Bool("version", false, "print version and exit")
+		addr        = flag.String("addr", envOr("KAPI_ADDR", "0.0.0.0:8787"), "listen address")
+		dataDir     = flag.String("data", envOr("KAPI_DATA", "/data"), "data directory")
+		tlsAddr     = flag.String("tls-addr", os.Getenv("KAPI_TLS_ADDR"), "optional HTTPS listener, e.g. 0.0.0.0:8789")
+		tlsCert     = flag.String("tls-cert", os.Getenv("KAPI_TLS_CERT"), "HTTPS certificate chain PEM")
+		tlsKey      = flag.String("tls-key", os.Getenv("KAPI_TLS_KEY"), "HTTPS private key PEM")
+		panelToken  = flag.String("panel-token", os.Getenv("KAPI_PANEL_TOKEN"), "web panel token (generated if empty)")
+		restorePath = flag.String("restore-backup", "", "restore ZIP into an empty data directory and exit")
+		ver         = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Parse()
+	if zone, err := time.LoadLocation(envOr("TZ", "Asia/Shanghai")); err == nil {
+		time.Local = zone
+	}
 
 	if *ver {
 		fmt.Println("kapi-sync", store.Version)
 		return
 	}
 
+	if *restorePath != "" {
+		if err := store.RestoreBackup(*restorePath, *dataDir); err != nil {
+			log.Fatal(err)
+		}
+		log.Print("完整备份已恢复，请正常启动服务")
+		return
+	}
 	st, err := store.Open(*dataDir)
 	if err != nil {
 		log.Fatalf("无法打开数据目录 %s: %v", *dataDir, err)
@@ -58,13 +78,56 @@ func main() {
 
 	// 面板挂在同一个端口上，路由和 /v1 共用一个 mux。令牌为空时生成一个，
 	// 打进启动横幅——默认是"不告诉你就打不开"，而不是"局域网里谁都能翻账本"。
-	ph, effectiveToken := panel.New(st, *panelToken)
+	resolvedToken, err := security.ResolvePanelToken(*dataDir, *panelToken)
+	if err != nil {
+		log.Fatal("面板凭据无法加载: ", err)
+	}
+	ph, effectiveToken := panel.New(st, resolvedToken)
 	apiSrv := api.New(st)
+	quoteSvc, quoteErr := quotes.New(filepath.Join(*dataDir, "quotes.json"), os.Getenv("KAPI_QUOTE_PROVIDER"), os.Getenv("KAPI_QUOTE_TOKEN"))
+	if quoteErr != nil {
+		log.Fatal(quoteErr)
+	}
+	familyHub, familyErr := family.Open(st, *dataDir, effectiveToken, func(space *store.Store) http.Handler {
+		scoped := api.New(space)
+		scoped.EnableQuotes(quoteSvc)
+		return scoped
+	})
+	if familyErr != nil {
+		log.Fatalf("家庭空间无法加载: %v", familyErr)
+	}
+	defer familyHub.Close()
+	familyHub.EnableQuotes(quoteSvc)
+	apiSrv.Mount(familyHub.Register)
+	apiSrv.EnableQuotes(quoteSvc)
+	ph.EnableQuotes(quoteSvc)
+	quoteCtx, stopQuotes := context.WithCancel(context.Background())
+	defer stopQuotes()
+	go quoteSvc.Run(quoteCtx)
 	apiSrv.Mount(ph.Register)
+	apiSrv.Mount(shortcutweb.Register)
 
+	guard := security.NewGuard()
+	guard.HSTS = os.Getenv("KAPI_HSTS") == "1"
+	handler := guard.Wrap(logging(apiSrv))
+	var tlsServer *http.Server
+	var tlsListener net.Listener
+	if *tlsAddr != "" {
+		config, e := security.TLSConfig(*tlsCert, *tlsKey)
+		if e != nil {
+			log.Fatal("HTTPS 配置无效: ", e)
+		}
+		tlsListener, e = net.Listen("tcp", *tlsAddr)
+		if e != nil {
+			log.Fatal("HTTPS 端口无法监听: ", e)
+		}
+		tlsServer = &http.Server{Addr: *tlsAddr, Handler: handler, TLSConfig: config, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 60 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second}
+	} else if *tlsCert != "" || *tlsKey != "" {
+		log.Fatal("证书已配置但缺少 KAPI_TLS_ADDR")
+	}
 	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           logging(apiSrv),
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -77,6 +140,40 @@ func main() {
 	}
 
 	printBanner(*addr, *dataDir, code, effectiveToken, st.HealthInfo())
+	if tlsServer != nil {
+		log.Printf("  HTTPS 已启用 %s（证书校验由客户端执行；HTTP 兼容入口仍保留）", *tlsAddr)
+		go func() {
+			if e := tlsServer.ServeTLS(tlsListener, "", ""); e != nil && !errors.Is(e, http.ErrServerClosed) {
+				log.Printf("HTTPS 服务中止: %v", e)
+				syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
+			}
+		}()
+	}
+	if _, err := st.CreateBackup(false); err != nil {
+		log.Printf("自动备份失败: %v", err)
+	}
+	if err := familyHub.CreateBackups(); err != nil {
+		log.Printf("家庭空间自动备份失败: %v", err)
+	}
+	backupStop := make(chan struct{})
+	defer close(backupStop)
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if _, err := st.CreateBackup(false); err != nil {
+					log.Printf("自动备份失败: %v", err)
+				}
+				if err := familyHub.CreateBackups(); err != nil {
+					log.Printf("家庭空间自动备份失败: %v", err)
+				}
+			case <-backupStop:
+				return
+			}
+		}
+	}()
 
 	go func() {
 		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -91,6 +188,11 @@ func main() {
 	log.Println("正在关闭,刷盘…")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	if tlsServer != nil {
+		if err := tlsServer.Shutdown(ctx); err != nil {
+			log.Printf("HTTPS 关闭超时: %v", err)
+		}
+	}
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Printf("关闭超时: %v", err)
 	}
@@ -111,7 +213,7 @@ func printBanner(addr, dataDir, code, panelToken string, h store.Health) {
 	if _, p, err := net.SplitHostPort(addr); err == nil {
 		port = p
 	}
-	log.Printf("kapi-sync %s", store.Version)
+	log.Printf("归账 NAS 同步服务 %s", store.Version)
 	log.Printf("  数据目录   %s", dataDir)
 	log.Printf("  监听地址   %s", addr)
 	// 容器里只看得到容器自己的网卡。compose 默认网桥是 172.16.0.0/12，
@@ -135,8 +237,8 @@ func printBanner(addr, dataDir, code, panelToken string, h store.Health) {
 	if len(bridge) > 0 {
 		log.Printf("  (容器网段 %s 是 docker 网桥,填了连不上)", strings.Join(bridge, ", "))
 	}
-	log.Printf("  配对码     %s  (10 分钟内有效)", code)
-	log.Printf("  面板令牌   %s", panelToken)
+	log.Print("  配对码     请登录面板获取（10 分钟内有效）")
+	log.Print("  面板令牌   从 KAPI_PANEL_TOKEN 或数据目录 panel-token 文件读取，日志不输出凭据")
 	log.Printf("  面板地址   http://<上面那个局域网地址>:%s/panel/", port)
 	log.Printf("  当前状态   %s", b)
 	log.Printf("在 App「设置 → 同步 → 添加服务器」中填入局域网地址和配对码。")

@@ -1,0 +1,14 @@
+*
+!Dockerfile
+!go.mod
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+!import-worker/
+!import-worker/**
+import-worker/.gradle/
+import-worker/.kotlin/
+import-worker/build/
+**/.DS_Store
+**/._*

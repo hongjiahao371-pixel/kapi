@@ -1,44 +1,26 @@
 # syntax=docker/dockerfile:1
+FROM --platform=$BUILDPLATFORM gradle:9.8.0-jdk17 AS import-build
+WORKDIR /work
+COPY import-worker/ ./
+RUN gradle --no-daemon -Pkotlin.compiler.execution.strategy=in-process jar
 
-# ---- build ------------------------------------------------------------------
-FROM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS go-build
 WORKDIR /src
-
-# No third-party dependencies on purpose, so there is nothing to download and
-# no go.sum to drift.
+RUN apk add --no-cache ca-certificates
 COPY go.mod ./
-COPY cmd ./cmd
-COPY internal ./internal
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+ARG VERSION=0.5.4
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X kapi/sync/internal/store.Version=${VERSION}" -o /out/kapi-sync ./cmd/kapi-sync
 
-ARG VERSION=0.1.0
-# CGO off so the result is a static binary that runs on scratch.
-# -trimpath keeps build paths out of the binary; -s -w strip debug info, which
-# matters because the image is pushed to people's NAS over home upload.
-ENV LDFLAGS="-s -w -X kapi/sync/internal/store.Version=${VERSION}"
-
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o /out/kapi-sync ./cmd/kapi-sync
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="$LDFLAGS" -o /out-arm64/kapi-sync ./cmd/kapi-sync
-
-# ---- runtime ----------------------------------------------------------------
-FROM scratch AS runtime
-COPY --from=build /out/kapi-sync /kapi-sync
+FROM eclipse-temurin:17-jre-alpine@sha256:3c472129dc75a8d1d7a3f2df5b2093a8077e4493deff046754d4764d0371de63
+COPY --from=go-build /out/kapi-sync /kapi-sync
+COPY --from=go-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=import-build /work/build/libs/guizhang-import.jar /opt/guizhang/guizhang-import.jar
+COPY import-worker/licenses/ /opt/guizhang/licenses/
 VOLUME ["/data"]
-EXPOSE 8787
-ENV KAPI_DATA=/data KAPI_ADDR=0.0.0.0:8787
-
-# Runs as root deliberately, despite the usual advice.
-#
-# This image is `scratch`: no shell, no package manager, no coreutils, one
-# static binary. The blast radius of root here is exactly "whatever this one
-# program does with /data".
-#
-# The alternative — USER 65534 — requires the operator to chown the host
-# directory before first start, because the volume mount is created root-owned
-# by Docker. That turns `docker run` into a two-step-plus-a-prerequisite
-# install, and "zero-config startup on the NAS" is a hard requirement of this
-# product, not a nicety. One requirement wins.
-#
-# To harden it instead: create the dir as the user you want and pass
-#   --user 65534:65534
-# after `chown -R 65534:65534 /path/to/data`.
+EXPOSE 8787 8789
+ENV KAPI_DATA=/data KAPI_ADDR=0.0.0.0:8787 KAPI_IMPORT_JAR=/opt/guizhang/guizhang-import.jar
 ENTRYPOINT ["/kapi-sync"]

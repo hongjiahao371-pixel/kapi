@@ -50,3 +50,17 @@ tools/m2/
 *.keystore
 *.p12
 *.pem
+
+# Private deployment, screenshots and signing material
+outputs/
+**/.go-cache/
+**/.go-tmp/
+**/.kotlin/
+**/data/
+**/tls/
+*.key
+*.crt
+*.hap
+*.ipa
+*.p7b
+*.cer
