@@ -56,8 +56,8 @@ outputs/
 **/.go-cache/
 **/.go-tmp/
 **/.kotlin/
-**/data/
-**/tls/
+kapi-sync/data/
+kapi-sync/tls/
 *.key
 *.crt
 *.hap
