@@ -31,14 +31,14 @@ jobs:
           go test -race ./...
           go vet ./...
       - name: Build complete NAS image
-        run: docker build --build-arg VERSION=0.5.4 -t kapi-sync:0.5.4 kapi-sync
+        run: docker build --build-arg VERSION=0.5.5 --build-arg SOURCE_REVISION=${{ github.sha }} -t kapi-sync:0.5.5 kapi-sync
       - name: Verify empty installation and missing authentication
         run: |
-          docker run -d --name nas-ci -p 127.0.0.1:18787:8787 kapi-sync:0.5.4
+          docker run -d --name nas-ci -p 127.0.0.1:18787:8787 kapi-sync:0.5.5
           trap 'docker rm -f nas-ci >/dev/null' EXIT
           for n in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:18787/v1/health > /tmp/health.json; then break; fi
             sleep 1
           done
-          python3 -c 'import json; j=json.load(open("/tmp/health.json")); assert j["ok"] and j["server_version"]=="0.5.4" and j["rows"]==0'
+          python3 -c 'import json; j=json.load(open("/tmp/health.json")); assert j["ok"] and j["server_version"]=="0.5.5" and j["rows"]==0'
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18787/v1/changes)" = 401

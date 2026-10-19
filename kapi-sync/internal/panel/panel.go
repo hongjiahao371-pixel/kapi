@@ -216,6 +216,7 @@ func (h *Handler) query(r *http.Request) store.TxQuery {
 		Direction:       r.URL.Query().Get("direction"),
 		CategoryID:      r.URL.Query().Get("category_id"),
 		ExpenseCategory: r.URL.Query().Get("expense_category"),
+		IncomeCategory:  r.URL.Query().Get("income_category"),
 		LedgerID:        r.URL.Query().Get("ledger_id"),
 		AccountID:       r.URL.Query().Get("account_id"),
 		IncludeDeleted:  r.URL.Query().Get("include_deleted") == "1",

@@ -1,15 +1,15 @@
-# 归账 NAS 0.5.4 部署
+# 归账 NAS 0.5.5 部署
 
 ## 从 Docker Hub 直接部署
 
-公开镜像：[jvsheng/guizhang](https://hub.docker.com/r/jvsheng/guizhang)。当前支持 `linux/amd64`（x86-64 NAS），版本标签 `0.5.4`；`latest` 当前指向同一镜像。部署建议固定版本标签。
+公开镜像：[jvsheng/guizhang](https://hub.docker.com/r/jvsheng/guizhang)。当前支持 `linux/amd64`（x86-64 NAS），版本标签 `0.5.5`；`latest` 当前指向同一镜像。部署建议固定版本标签。
 
 新部署可复制 `deploy/docker-compose.yml` 到一个独立部署目录，或保存下面的最小配置为 `docker-compose.yml`：
 
 ```yaml
 services:
   kapi-sync:
-    image: jvsheng/guizhang:0.5.4
+    image: jvsheng/guizhang:0.5.5
     container_name: kapi-sync
     restart: unless-stopped
     ports:
@@ -34,12 +34,12 @@ docker compose up -d
 GitHub Release 同时提供 linux/amd64 镜像压缩包及 SHA256SUMS。校验后执行：
 
 ```sh
-docker load -i guizhang-nas-0.5.4-linux-amd64.docker.tar.gz
+docker load -i guizhang-nas-0.5.5-linux-amd64.docker.tar.gz
 ```
 
-离线镜像标签是 `kapi-sync:0.5.4`。将最小配置的 image 改为该标签，或使用完整 Compose 时在 `.env` 中设置 `KAPI_IMAGE=kapi-sync:0.5.4`，然后 `docker compose up -d --pull never`。离线不执行 `docker compose pull`。
+离线镜像标签是 `kapi-sync:0.5.5`。将最小配置的 image 改为该标签，或使用完整 Compose 时在 `.env` 中设置 `KAPI_IMAGE=kapi-sync:0.5.5`，然后 `docker compose up -d --pull never`。离线不执行 `docker compose pull`。
 
-镜像不含账本、手机配对令牌、面板令牌或 TLS 私钥。Docker Hub 版本在原镜像基础上增加项目授权文件和 OCI 来源标签，原有应用与依赖层保持不变，因此与离线压缩包的镜像摘要不同；两种交付各自核验摘要，不应直接比较压缩包 SHA-256 与注册表 manifest digest。
+镜像不含账本、手机配对令牌、面板令牌或 TLS 私钥。本版离线包与 Docker Hub 镜像使用同一配置和应用内容，离线包额外带有 `kapi-sync:0.5.5` 标签供原部署使用。压缩包 SHA-256 与注册表 manifest digest 是不同对象的校验值，不应直接比较。
 
 ## HTTPS
 
@@ -69,4 +69,4 @@ HTTP 8787 暂时保留旧设备兼容，尚未迁移设备仍是明文。双端�
 
 ## 从源码构建
 
-仓库根目录：`docker build -t kapi-sync:0.5.4 kapi-sync`。运行时将 Compose 的 image 改为本地标签，或在 `.env` 中设置 `KAPI_IMAGE=kapi-sync:0.5.4`。依赖官方 Go、Gradle/JDK 与 Temurin 基础镜像；读取器仅在导入时启动，不常驻运行。独立构建入口包含源文件摘要与第三方许可。当前发布的现成镜像只验收 linux/amd64；不要将可交叉编译等同于 ARM NAS 真机验收。
+仓库根目录：`docker build -t kapi-sync:0.5.5 kapi-sync`。运行时将 Compose 的 image 改为本地标签，或在 `.env` 中设置 `KAPI_IMAGE=kapi-sync:0.5.5`。依赖官方 Go、Gradle/JDK 与 Temurin 基础镜像；读取器仅在导入时启动，不常驻运行。独立构建入口包含源文件摘要与第三方许可。当前发布的现成镜像只验收 linux/amd64；不要将可交叉编译等同于 ARM NAS 真机验收。

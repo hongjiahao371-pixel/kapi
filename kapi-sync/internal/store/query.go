@@ -105,8 +105,11 @@ type TxQuery struct {
 	// ExpenseCategory selects the displayed net-expense bucket, including refunds
 	// attributed to the original purchase. Empty means no statistical drill-down.
 	ExpenseCategory string
-	LedgerID        string
-	AccountID       string
+	// IncomeCategory selects an ordinary-income bucket, excluding linked refunds
+	// and internal transfers, using the same population as Stats.Income.
+	IncomeCategory string
+	LedgerID       string
+	AccountID      string
 	// IncludeDeleted shows tombstoned rows. Off by default: a deleted row is
 	// a row the user asked to forget, and a ledger that still lists it looks
 	// broken. The panel exposes a toggle because "I deleted it by accident" is
@@ -167,7 +170,7 @@ func (s *Store) ListTx(q TxQuery) TxPage {
 		if r.Entity != TxnEntity {
 			continue
 		}
-		if r.Deleted && (!q.IncludeDeleted || q.ExpenseCategory != "") {
+		if r.Deleted && (!q.IncludeDeleted || q.ExpenseCategory != "" || q.IncomeCategory != "") {
 			continue
 		}
 		v := readRecord(r)
@@ -177,6 +180,12 @@ func (s *Store) ListTx(q TxQuery) TxPage {
 		if q.ExpenseCategory != "" {
 			cat, _, ok := s.expenseCategoryLocked(v)
 			if !ok || expenseCategoryName(catNames, cat) != q.ExpenseCategory {
+				continue
+			}
+		}
+		if q.IncomeCategory != "" {
+			cat, ok := s.incomeCategoryLocked(v)
+			if !ok || expenseCategoryName(catNames, cat) != q.IncomeCategory {
 				continue
 			}
 		}
@@ -280,6 +289,9 @@ type Stats struct {
 	// ByCategory is expenses only. Mixing income into a category breakdown
 	// makes "餐饮 ¥300" ambiguous when someone refunds a meal.
 	ByCategory []Sum `json:"by_category"`
+	// ByIncomeCategory reconciles to Income; valid purchase refunds belong to
+	// ByCategory instead, and internal transfers never contribute to either.
+	ByIncomeCategory []Sum `json:"by_income_category"`
 	// ByMonth is the last 24 buckets that have any data, oldest first.
 	ByMonth []Sum `json:"by_month"`
 }
@@ -292,6 +304,7 @@ func (s *Store) Stats(q TxQuery) Stats {
 
 	var st Stats
 	byCat := map[string]*Sum{}
+	byIncomeCat := map[string]*Sum{}
 	byMonth := map[string]*Sum{}
 	// 分类名在这里解析一次，而不是每行都去查表。
 	catNames := s.refNamesLocked(EntityCategory)
@@ -311,6 +324,10 @@ func (s *Store) Stats(q TxQuery) Stats {
 		if q.ExpenseCategory != "" && (!categoryExpense || expenseCategoryName(catNames, categoryID) != q.ExpenseCategory) {
 			continue
 		}
+		incomeCategoryID, categoryIncome := s.incomeCategoryLocked(t)
+		if q.IncomeCategory != "" && (!categoryIncome || expenseCategoryName(catNames, incomeCategoryID) != q.IncomeCategory) {
+			continue
+		}
 		st.Count++
 		signed := t.SignedMinor()
 		var original TxView
@@ -325,6 +342,12 @@ func (s *Store) Stats(q TxQuery) Stats {
 			st.Expense -= t.AmountMinor
 		} else if signed > 0 {
 			st.Income += signed
+			name := expenseCategoryName(catNames, incomeCategoryID)
+			if byIncomeCat[name] == nil {
+				byIncomeCat[name] = &Sum{Key: name}
+			}
+			byIncomeCat[name].Minor += signed
+			byIncomeCat[name].Count++
 		} else if signed < 0 {
 			st.Expense -= signed
 		}
@@ -353,6 +376,7 @@ func (s *Store) Stats(q TxQuery) Stats {
 	st.Balance = st.Income - st.Expense
 
 	st.ByCategory = sortedSums(byCat)
+	st.ByIncomeCategory = sortedSums(byIncomeCat)
 	st.ByMonth = sortedSums(byMonth)
 	if len(st.ByMonth) > 24 {
 		st.ByMonth = st.ByMonth[len(st.ByMonth)-24:]
@@ -382,6 +406,18 @@ func (s *Store) expenseCategoryLocked(t TxView) (string, int64, bool) {
 		return t.CategoryID, t.AmountMinor, true
 	}
 	return "", 0, false
+}
+
+// Caller holds mu. Use the expense/refund rule so summary and drill-down can
+// never disagree about whether an incoming transaction is an actual income.
+func (s *Store) incomeCategoryLocked(t TxView) (string, bool) {
+	if t.SignedMinor() <= 0 {
+		return "", false
+	}
+	if _, _, refund := s.expenseCategoryLocked(t); refund {
+		return "", false
+	}
+	return t.CategoryID, true
 }
 
 func sortedSums(m map[string]*Sum) []Sum {

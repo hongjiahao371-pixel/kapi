@@ -1,6 +1,6 @@
 services:
   guizhang:
-    image: jvsheng/guizhang:0.5.4
+    image: jvsheng/guizhang:0.5.5
     container_name: guizhang
     restart: unless-stopped
     ports:

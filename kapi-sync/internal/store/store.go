@@ -582,4 +582,4 @@ func (s *Store) HealthInfo() Health {
 }
 
 // Version is stamped at build time.
-var Version = "0.5.4"
+var Version = "0.5.5"

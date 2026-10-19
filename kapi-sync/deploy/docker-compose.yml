@@ -9,7 +9,7 @@
 
 services:
   kapi-sync:
-    image: "${KAPI_IMAGE:-jvsheng/guizhang:0.5.4}"
+    image: "${KAPI_IMAGE:-jvsheng/guizhang:0.5.5}"
     container_name: kapi-sync
     restart: unless-stopped
     ports:
