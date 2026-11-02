@@ -24,7 +24,8 @@
     status.textContent=value.source+" · 支付暂未开放";
     orderBox.hidden=!value.order_restore_available;
     const catalog=value.catalogue;if(!catalog)return;
-    price.textContent=catalog.product.price_label+" · 永久 Pro";
+    price.textContent=catalog.pricing?.summary||catalog.product.price_label+" · 永久 Pro";
+    if(catalog.pricing) purchase.textContent="三档方案 · 暂未开放付款";
     features.replaceChildren();
     for(const [label,ids] of [["免费功能",Object.keys(value.free)],["Docker 本端 Pro",catalog.platforms.nas]]){
       const group=document.createElement("div"),title=document.createElement("h3"),list=document.createElement("ul");title.textContent=label;

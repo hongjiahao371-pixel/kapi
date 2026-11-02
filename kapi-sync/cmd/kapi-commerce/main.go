@@ -12,6 +12,7 @@ import (
 	"errors"
 	"flag"
 	"kapi/sync/internal/commerce"
+	"kapi/sync/internal/pro"
 	"log"
 	"net/http"
 	"os"
@@ -111,6 +112,9 @@ func config() (commerce.Config, error) {
 		dir = "./commerce-data"
 	}
 	cfg := commerce.Config{Dir: dir, Enabled: os.Getenv("COMMERCE_PAYMENTS_ENABLED") == "true"}
+	if cfg.Enabled && !pro.PricingCheckoutReady {
+		return cfg, errors.New("new pricing is a closed preview; term, renewal and recovery acceptance is required before collecting payments")
+	}
 	if !cfg.Enabled && os.Getenv("COMMERCE_SIGNING_KEY_FILE") == "" {
 		return cfg, nil
 	}
