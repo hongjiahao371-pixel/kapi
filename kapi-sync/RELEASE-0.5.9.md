@@ -13,3 +13,5 @@
 新镜像使用 GHCR 发布；Docker Hub 的 0.5.5 不会被冒充成新版本。以当前 GitHub Release 的验收结果为准。CI 容器验收不等同于已更新用户的 NAS。
 
 本镜像打包 Android 0.1.172。0.5.8 是先前验证候选，未部署到用户 NAS；以本次实际容器检查和离线校验结果为准。
+
+验收记录：https://github.com/hongjiahao371-pixel/kapi/actions/runs/41390887031 。公开镜像全部层已完成匿名下载和 SHA-256 校验。真实用户 NAS 未升级；真实付款与退款保持待验收。

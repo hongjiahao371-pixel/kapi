@@ -9,7 +9,7 @@
 
 部署带 APK 的镜像后，从 NAS 的 `/android/` 或“连接与备份 → 下载安卓 App”直接下载；也可使用上面的 GitHub 入口。下载不需要账本令牌，账本和管理接口仍需原有鉴权。
 
-镜像标签为 `ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.9`，同时提供验证过的离线镜像；匿名拉取还需公开镜像权限并实际核对，请以 GitHub Release 和对应 Actions 的结果为准。Docker Hub 现有 `jvsheng/guizhang:0.5.5` 保留。升级前备份，并保留 data、tls、原环境变量和家庭身份。
+镜像标签为 `ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.9`，已完成公开匿名层下载与哈希核验，无需登录；部署资料见 NAS Release，离线导出位于对应 Actions 产物。Docker Hub 现有 `jvsheng/guizhang:0.5.5` 保留。升级前备份，并保留 data、tls、原环境变量和家庭身份。
 
 此仓库公开 NAS 与订单服务源码、配置和已签名安卓二进制。保留的早期手机客户端源码不对应最新 APK；iOS、鸿蒙不属于本次独立分发验收。
 
