@@ -24,6 +24,11 @@ func afdianFixture(t *testing.T) (*Afdian, *Service, OrderView, *[]afdianOrder) 
 	}
 	rows := []afdianOrder{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") != "GuizhangCommerce/1.0" || r.Header.Get("Accept") != "application/json" {
+			t.Error("API client identification missing")
+			w.WriteHeader(403)
+			return
+		}
 		var body struct {
 			User   string `json:"user_id"`
 			Params string `json:"params"`
@@ -191,5 +196,34 @@ func TestAfdianConfigurationAndUnsupportedPlatformsFailClosed(t *testing.T) {
 		if _, e := p.Prepare(context.Background(), Order{ID: strings.Repeat("a", 32), Platform: platform, AmountMinor: 2990, Currency: "CNY"}); e == nil {
 			t.Fatal("unsupported purchase platform", platform)
 		}
+	}
+}
+
+func TestAfdianConnectionCheckIsReadOnlyAndRejectsAuthenticationFailure(t *testing.T) {
+	p, s, o, rows := afdianFixture(t)
+	*rows = []afdianOrder{paidAfdian(p, o.ID)}
+	before, err := os.ReadFile(s.file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count, err := p.CheckConnection(context.Background())
+	if err != nil || count != 1 {
+		t.Fatal("authenticated query failed", count, err)
+	}
+	after, err := os.ReadFile(s.file)
+	if err != nil || string(before) != string(after) {
+		t.Fatal("read-only check changed order store", err)
+	}
+	got, _ := s.Get(o.ID, owner)
+	if got.State != "CREATED" {
+		t.Fatal("connection check granted rights")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ec":400005,"em":"sensitive diagnostic must not escape","data":{"list":[]}}`))
+	}))
+	defer server.Close()
+	p.apiURL, p.client = server.URL, server.Client()
+	if count, err := p.CheckConnection(context.Background()); err != ErrInvalid || count != 0 {
+		t.Fatal("failed authentication accepted", count, err)
 	}
 }

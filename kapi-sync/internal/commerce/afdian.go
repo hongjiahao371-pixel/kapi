@@ -32,6 +32,20 @@ func NewAfdian(c AfdianConfig) (*Afdian, error) {
 	return &Afdian{cfg: c, apiURL: "https://afdian.com/api/open/query-order", client: fixedClient(), now: time.Now}, nil
 }
 func (a *Afdian) Name() string { return "afdian" }
+
+// CheckConnection uses the same signed order query as purchase verification.
+// It never creates an order, grants rights, or exposes customer/order details.
+// A successful check does not establish that checkout or refunds work.
+func (a *Afdian) CheckConnection(ctx context.Context) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+	rows, err := a.query(ctx, map[string]int{"page": 1})
+	if err != nil {
+		return 0, err
+	}
+	return len(rows), nil
+}
+
 func (a *Afdian) Prepare(_ context.Context, o Order) (Checkout, error) {
 	if o.Platform != "android" || o.AmountMinor != 2990 || o.Currency != "CNY" || !validAtom(o.ID, 32, 32) {
 		return Checkout{}, ErrInvalid
@@ -76,6 +90,10 @@ func (a *Afdian) query(ctx context.Context, params any) ([]afdianOrder, error) {
 		return nil, ErrInvalid
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	// Identify our API client explicitly. The default Go agent was rejected
+	// with HTTP 403 by the live endpoint before reaching signature validation.
+	req.Header.Set("User-Agent", "GuizhangCommerce/1.0")
 	res, err := a.client.Do(req)
 	if err != nil {
 		return nil, ErrInvalid

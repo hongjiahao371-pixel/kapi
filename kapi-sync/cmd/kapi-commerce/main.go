@@ -7,6 +7,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"flag"
@@ -179,6 +180,7 @@ func config() (commerce.Config, error) {
 	return cfg, nil
 }
 func run() error {
+	checkAfdian := flag.Bool("check-afdian", false, "read-only creator API check; emits counts only and never opens the order store")
 	refundOrder := flag.String("record-afdian-refund-order", "", "record a platform refund already verified by the operator; does not transfer money")
 	refundReference := flag.String("refund-reference", "", "unique actual platform refund reference")
 	refundAmount := flag.Int64("refund-minor", 0, "actual refunded amount in CNY fen")
@@ -187,6 +189,26 @@ func run() error {
 	cfg, e := config()
 	if e != nil {
 		return e
+	}
+	if *checkAfdian {
+		if *refundOrder != "" || *refundReference != "" || *refundAmount != 0 {
+			return errors.New("connection check cannot be combined with refund recording")
+		}
+		for _, provider := range cfg.Providers {
+			if p, ok := provider.(*commerce.Afdian); ok {
+				count, err := p.CheckConnection(context.Background())
+				if err != nil {
+					return errors.New("Afdian read-only order query failed; no order or entitlement was changed")
+				}
+				return json.NewEncoder(os.Stdout).Encode(struct {
+					Authenticated     bool `json:"authenticated"`
+					OrdersOnFirstPage int  `json:"orders_on_first_page"`
+					PaymentsEnabled   bool `json:"payments_enabled"`
+					OrderStoreOpened  bool `json:"order_store_opened"`
+				}{true, count, cfg.Enabled, false})
+			}
+		}
+		return errors.New("Afdian provider is not configured")
 	}
 	s, e := commerce.New(cfg)
 	if e != nil {
