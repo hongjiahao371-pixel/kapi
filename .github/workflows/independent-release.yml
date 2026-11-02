@@ -5,7 +5,7 @@ on:
       android_tag:
         description: Publisher-signed Android release attachment
         required: true
-        default: android-v0.1.170
+        default: android-v0.1.171
 permissions:
   contents: read
   packages: write
@@ -56,13 +56,27 @@ jobs:
           curl -fsS http://127.0.0.1:18787/android/apk -o /tmp/downloaded.apk
           python3 -c 'import json,hashlib; j=json.load(open("kapi-sync/android-release/release.json"))["payload"]; assert hashlib.sha256(open("/tmp/downloaded.apk","rb").read()).hexdigest()==j["sha256"]'
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18787/v1/changes)" = 401
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18787/v1/panel/transactions)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18787/v1/panel/tx)" = 401
           curl -fsS -H 'Range: bytes=0-31' http://127.0.0.1:18787/android/apk -o /tmp/apk-range
           test "$(wc -c < /tmp/apk-range)" = 32
           docker restart nas-ci
           sleep 2
           curl -fsS http://127.0.0.1:18787/v1/health > /tmp/restart.json
           python3 -c 'import json; assert json.load(open("/tmp/restart.json"))["rows"]==0'
+      - name: Export a deployable offline image
+        run: |
+          docker save ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.8 | gzip -1 > guizhang-nas-0.5.8-linux-amd64.tar.gz
+          sha256sum guizhang-nas-0.5.8-linux-amd64.tar.gz > NAS-SHA256SUMS
+          docker inspect ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.8 --format '{{json .Id}}' > image-id.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: guizhang-nas-0.5.8
+          retention-days: 3
+          compression-level: 0
+          path: |
+            guizhang-nas-0.5.8-linux-amd64.tar.gz
+            NAS-SHA256SUMS
+            image-id.json
       - name: Publish tested immutable version tag
         env:
           REGISTRY_TOKEN: ${{ github.token }}
