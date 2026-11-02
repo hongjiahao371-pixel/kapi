@@ -10,13 +10,13 @@ RUN apk add --no-cache ca-certificates
 COPY go.mod ./
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
-ARG VERSION=0.5.8
+ARG VERSION=0.5.9
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X kapi/sync/internal/store.Version=${VERSION}" -o /out/kapi-sync ./cmd/kapi-sync
 
 FROM eclipse-temurin:17-jre-alpine@sha256:3c472129dc75a8d1d7a3f2df5b2093a8077e4493deff046754d4764d0371de63
-ARG VERSION=0.5.8
+ARG VERSION=0.5.9
 ARG SOURCE_REVISION=unknown
 LABEL org.opencontainers.image.title="归账 NAS" \
       org.opencontainers.image.version="${VERSION}" \

@@ -1,15 +1,15 @@
 # 归账
 
-安卓可以独立安装，NAS 是可选项。当前独立分发准备版为 **Android 0.1.171**，NAS 下载支持为 **0.5.8**；购买功能保持关闭，内测已有权益保留。
+安卓可以独立安装，NAS 是可选项。当前独立分发准备版为 **Android 0.1.172**，NAS 下载支持为 **0.5.9**；购买功能保持关闭，内测已有权益保留。
 
-- [安卓 APK 下载与校验文件](https://github.com/hongjiahao371-pixel/kapi/releases/tag/android-v0.1.171)
+- [安卓 APK 下载与校验文件](https://github.com/hongjiahao371-pixel/kapi/releases/tag/android-v0.1.172)
 - [下载、旧内测迁移与爱发电接入说明](kapi-sync/INDEPENDENT-ANDROID.md)
 - [NAS 安装、HTTPS、家庭账本与备份](kapi-sync/DEPLOYMENT.md)
-- [NAS 0.5.8 变更与验收边界](kapi-sync/RELEASE-0.5.8.md)
+- [NAS 0.5.9 变更与验收边界](kapi-sync/RELEASE-0.5.9.md)
 
 部署带 APK 的镜像后，从 NAS 的 `/android/` 或“连接与备份 → 下载安卓 App”直接下载；也可使用上面的 GitHub 入口。下载不需要账本令牌，账本和管理接口仍需原有鉴权。
 
-镜像标签为 `ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.8`，同时提供验证过的离线镜像；匿名拉取还需公开镜像权限并实际核对，请以 GitHub Release 和对应 Actions 的结果为准。Docker Hub 现有 `jvsheng/guizhang:0.5.5` 保留。升级前备份，并保留 data、tls、原环境变量和家庭身份。
+镜像标签为 `ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.9`，同时提供验证过的离线镜像；匿名拉取还需公开镜像权限并实际核对，请以 GitHub Release 和对应 Actions 的结果为准。Docker Hub 现有 `jvsheng/guizhang:0.5.5` 保留。升级前备份，并保留 data、tls、原环境变量和家庭身份。
 
 此仓库公开 NAS 与订单服务源码、配置和已签名安卓二进制。保留的早期手机客户端源码不对应最新 APK；iOS、鸿蒙不属于本次独立分发验收。
 

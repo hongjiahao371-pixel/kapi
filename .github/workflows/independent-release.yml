@@ -5,7 +5,7 @@ on:
       android_tag:
         description: Publisher-signed Android release attachment
         required: true
-        default: android-v0.1.171
+        default: android-v0.1.172
 permissions:
   contents: read
   packages: write
@@ -40,17 +40,17 @@ jobs:
           gh release download "$ANDROID_TAG" -R "$GITHUB_REPOSITORY" -D kapi-sync/android-release -p '*.apk' -p release.json -p SHA256SUMS
           (cd kapi-sync/android-release && sha256sum -c SHA256SUMS)
       - name: Build complete NAS image
-        run: docker build --build-arg VERSION=0.5.8 --build-arg SOURCE_REVISION=${{ github.sha }} -t ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.8 kapi-sync
+        run: docker build --build-arg VERSION=0.5.9 --build-arg SOURCE_REVISION=${{ github.sha }} -t ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.9 kapi-sync
       - name: Verify container download, authentication and empty-install restart
         run: |
           mkdir -p /tmp/guizhang-acceptance
-          docker run -d --name nas-ci -p 127.0.0.1:18787:8787 -v /tmp/guizhang-acceptance:/data ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.8
+          docker run -d --name nas-ci -p 127.0.0.1:18787:8787 -v /tmp/guizhang-acceptance:/data ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.9
           trap 'docker rm -f nas-ci >/dev/null' EXIT
           for n in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:18787/v1/health > /tmp/health.json; then break; fi
             sleep 1
           done
-          python3 -c 'import json; j=json.load(open("/tmp/health.json")); assert j["ok"] and j["server_version"]=="0.5.8" and j["rows"]==0'
+          python3 -c 'import json; j=json.load(open("/tmp/health.json")); assert j["ok"] and j["server_version"]=="0.5.9" and j["rows"]==0'
           curl -fsS http://127.0.0.1:18787/v1/android/release > /tmp/android.json
           python3 -c 'import json; j=json.load(open("/tmp/android.json")); assert j["available"] is True; print(j)'
           curl -fsS http://127.0.0.1:18787/android/apk -o /tmp/downloaded.apk
@@ -65,16 +65,16 @@ jobs:
           python3 -c 'import json; assert json.load(open("/tmp/restart.json"))["rows"]==0'
       - name: Export a deployable offline image
         run: |
-          docker save ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.8 | gzip -1 > guizhang-nas-0.5.8-linux-amd64.tar.gz
-          sha256sum guizhang-nas-0.5.8-linux-amd64.tar.gz > NAS-SHA256SUMS
-          docker inspect ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.8 --format '{{json .Id}}' > image-id.json
+          docker save ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.9 | gzip -1 > guizhang-nas-0.5.9-linux-amd64.tar.gz
+          sha256sum guizhang-nas-0.5.9-linux-amd64.tar.gz > NAS-SHA256SUMS
+          docker inspect ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.9 --format '{{json .Id}}' > image-id.json
       - uses: actions/upload-artifact@v4
         with:
-          name: guizhang-nas-0.5.8
+          name: guizhang-nas-0.5.9
           retention-days: 3
           compression-level: 0
           path: |
-            guizhang-nas-0.5.8-linux-amd64.tar.gz
+            guizhang-nas-0.5.9-linux-amd64.tar.gz
             NAS-SHA256SUMS
             image-id.json
       - name: Publish tested immutable version tag
@@ -82,4 +82,11 @@ jobs:
           REGISTRY_TOKEN: ${{ github.token }}
         run: |
           printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          docker push ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.8
+          image=ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.9
+          if docker manifest inspect "$image" > /tmp/remote-manifest.json 2>/dev/null; then
+            remote=$(python3 -c 'import json; print(json.load(open("/tmp/remote-manifest.json")).get("config",{}).get("digest",""))')
+            local=$(docker inspect "$image" --format '{{.Id}}')
+            test "$remote" = "$local" || { echo 'Existing immutable image tag differs; publish a new version instead.'; exit 1; }
+          else
+            docker push "$image"
+          fi
