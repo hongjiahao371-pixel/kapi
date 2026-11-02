@@ -51,6 +51,42 @@ func editRequest(t *testing.T, s *store.Store) store.TransactionEdit {
 	}
 	return store.TransactionEdit{ID: "original", Revision: v.Revision, RequestID: "request-0000000001", AmountMinor: 12345, AccountID: "A2", CategoryID: "travel", Note: "新备注"}
 }
+func TestForeignConversionSurvivesMemoEditAndClearsOnNewCnyAmount(t *testing.T) {
+	s := editSeed(t, t.TempDir())
+	defer s.Close()
+	fx := `{"currency":"USD","originalAmount":"10.00","rateToCny":"10","baseAmountMinor":10000,"rateDate":"2026-10-23","source":"fixture","kind":"REFERENCE"}`
+	change := merge.Change{ChangeID: "fx-proof", Entity: "txn", EntityID: "original", Op: merge.OpUpsert, Lamport: 30, Origin: "dev_test", Data: map[string]json.RawMessage{"currency_conversion_json": merge.V(fx)}, FV: merge.FieldVersions{"currency_conversion_json": {L: 30, D: "dev_test"}}}
+	if _, err := s.Push("dev_test", []merge.Change{change}); err != nil {
+		t.Fatal(err)
+	}
+	request := editRequest(t, s)
+	request.AmountMinor = 10000
+	saved, err := s.EditTransaction("", request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	if err = json.Unmarshal(saved.Record.Values["currency_conversion_json"], &got); err != nil || got != fx {
+		t.Fatal("original currency lost on memo/category edit", err)
+	}
+	next := editRequest(t, s)
+	next.RequestID = "fx-edit-second-request"
+	next.AmountMinor = 12345
+	changed, err := s.EditTransaction("", next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(changed.Record.Values["currency_conversion_json"]) != "null" {
+		t.Fatal("stale conversion retained")
+	}
+	replay, err := s.EditTransaction("", next)
+	if err != nil || !replay.Replayed {
+		t.Fatal("retry", err)
+	}
+	if s.ListTx(store.TxQuery{}).Total != 1 {
+		t.Fatal("duplicate transaction")
+	}
+}
 func TestPanelEditPreservesIdentityAndFieldVersionsAcrossRetryAndRestart(t *testing.T) {
 	dir := t.TempDir()
 	s := editSeed(t, dir)

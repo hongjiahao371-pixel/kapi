@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"kapi/sync/internal/merge"
+	"kapi/sync/internal/pro"
 )
 
 // PairCodeTTL is how long a pairing code stays valid.
@@ -116,6 +117,7 @@ type Health struct {
 
 // Store is safe for concurrent use.
 type Store struct {
+	Pro *pro.Manager // Local entitlements never enter journal rows or the sync outbox.
 	mu  sync.RWMutex
 	dir string
 
@@ -151,6 +153,11 @@ func key(entity, entityID string) string { return entity + "\x00" + entityID }
 
 // Open loads (or creates) a store rooted at dir.
 func Open(dir string) (*Store, error) {
+	_, existingLogErr := os.Stat(filepath.Join(dir, "log.jsonl"))
+	hadLocalData := existingLogErr == nil
+	if existingLogErr != nil && !errors.Is(existingLogErr, os.ErrNotExist) {
+		return nil, existingLogErr
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
@@ -163,6 +170,11 @@ func Open(dir string) (*Store, error) {
 		now:            time.Now,
 		importMappings: map[string]map[string]string{},
 	}
+	entitlements, entErr := pro.Open(dir, hadLocalData)
+	if entErr != nil {
+		return nil, entErr
+	}
+	s.Pro = entitlements
 	if err := s.replay(); err != nil {
 		return nil, err
 	}
@@ -582,4 +594,4 @@ func (s *Store) HealthInfo() Health {
 }
 
 // Version is stamped at build time.
-var Version = "0.5.5"
+var Version = "0.5.8"

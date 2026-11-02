@@ -1,12 +1,17 @@
 # 归账
 
-本轮更新先发布 **NAS / Docker 0.5.5**。Android 安装包由内测组织者单独分发，iOS 与鸿蒙尚不在本次 GitHub 发布的验收范围内。仓库仍保留早期客户端源码，不能把它们当成本轮手机安装包对应版本。
+安卓可以独立安装，NAS 是可选项。当前独立分发准备版为 **Android 0.1.170**，NAS 下载支持为 **0.5.8**；购买功能保持关闭，内测已有权益保留。
 
-- [NAS 功能与接口](kapi-sync/README.md)
-- [安装、HTTPS、家庭账本与备份](kapi-sync/DEPLOYMENT.md)
-- [Docker 0.5.5 发布说明](kapi-sync/RELEASE-0.5.5.md)
+- [安卓 APK 下载与校验文件](https://github.com/hongjiahao371-pixel/kapi/releases/tag/android-v0.1.170)
+- [下载、旧内测迁移与爱发电接入说明](kapi-sync/INDEPENDENT-ANDROID.md)
+- [NAS 安装、HTTPS、家庭账本与备份](kapi-sync/DEPLOYMENT.md)
+- [NAS 0.5.8 变更与验收边界](kapi-sync/RELEASE-0.5.8.md)
 
-Docker Hub 公开镜像为 [`jvsheng/guizhang:0.5.5`](https://hub.docker.com/r/jvsheng/guizhang)，无需登录即可拉取。离线镜像与校验文件也位于 GitHub Releases。请先备份已有数据，按指南升级；源码、镜像和示例配置不含任何人的账本或可用令牌。
+部署带 APK 的镜像后，从 NAS 的 `/android/` 或“连接与备份 → 下载安卓 App”直接下载；也可使用上面的 GitHub 入口。下载不需要账本令牌，账本和管理接口仍需原有鉴权。
+
+新增镜像发布到 `ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.8`，请以 GitHub Release 和对应 Actions 的实际通过结果为准。Docker Hub 现有 `jvsheng/guizhang:0.5.5` 保留。升级前备份，并保留 data、tls、原环境变量和家庭身份。
+
+此仓库公开 NAS 与订单服务源码、配置和已签名安卓二进制。保留的早期手机客户端源码不对应最新 APK；iOS、鸿蒙不属于本次独立分发验收。
 
 ## 授权与商业使用
 

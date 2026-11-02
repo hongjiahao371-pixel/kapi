@@ -52,14 +52,14 @@ func (s *Store) CreateBackup(force bool) (string, error) {
 		return "", err
 	}
 	content := map[string][]byte{}
-	for _, name := range []string{"log.jsonl", "meta.json"} {
+	for _, name := range []string{"log.jsonl", "meta.json", "entitlements.json"} {
 		b, err := os.ReadFile(filepath.Join(s.dir, name))
 		if err != nil {
 			return "", err
 		}
 		content[name] = b
 	}
-	manifest := backupManifest{Format: "kapi-nas-backup", Version: 1, Seq: s.seq, SHA256: map[string]string{}}
+	manifest := backupManifest{Format: "kapi-nas-backup", Version: 2, Seq: s.seq, SHA256: map[string]string{}}
 	for name, b := range content {
 		manifest.SHA256[name] = digest(b)
 	}
@@ -71,7 +71,7 @@ func (s *Store) CreateBackup(force bool) (string, error) {
 		return "", err
 	}
 	zw := zip.NewWriter(file)
-	for _, name := range []string{"manifest.json", "log.jsonl", "meta.json"} {
+	for _, name := range []string{"manifest.json", "log.jsonl", "meta.json", "entitlements.json"} {
 		w, e := zw.Create(name)
 		if e != nil {
 			err = e
@@ -137,7 +137,7 @@ func RestoreBackup(archivePath, dataDir string) error {
 	defer zr.Close()
 	content := map[string][]byte{}
 	for _, file := range zr.File {
-		if file.Name != "log.jsonl" && file.Name != "meta.json" && file.Name != "manifest.json" {
+		if file.Name != "log.jsonl" && file.Name != "meta.json" && file.Name != "manifest.json" && file.Name != "entitlements.json" {
 			return fmt.Errorf("备份包含不允许的路径")
 		}
 		if _, ok := content[file.Name]; ok {
@@ -160,17 +160,26 @@ func RestoreBackup(archivePath, dataDir string) error {
 		}
 		content[file.Name] = b
 	}
-	if len(content) != 3 {
+	if len(content) != 3 && len(content) != 4 {
 		return fmt.Errorf("备份文件不完整")
 	}
 	var manifest backupManifest
 	if err = json.Unmarshal(content["manifest.json"], &manifest); err != nil {
 		return err
 	}
-	if manifest.Format != "kapi-nas-backup" || manifest.Version != 1 {
+	if manifest.Format != "kapi-nas-backup" || (manifest.Version != 1 && manifest.Version != 2) {
 		return fmt.Errorf("不支持的备份格式")
 	}
-	for _, name := range []string{"log.jsonl", "meta.json"} {
+	names := []string{"log.jsonl", "meta.json"}
+	if manifest.Version == 2 {
+		if len(content["entitlements.json"]) == 0 {
+			return fmt.Errorf("备份缺少权益状态")
+		}
+		names = append(names, "entitlements.json")
+	} else if len(content) != 3 {
+		return fmt.Errorf("旧版备份包含未知文件")
+	}
+	for _, name := range names {
 		if !strings.EqualFold(manifest.SHA256[name], digest(content[name])) {
 			return fmt.Errorf("备份校验失败: %s", name)
 		}
@@ -184,7 +193,7 @@ func RestoreBackup(archivePath, dataDir string) error {
 		return err
 	}
 	defer os.RemoveAll(temp)
-	for _, name := range []string{"log.jsonl", "meta.json"} {
+	for _, name := range names {
 		if err = os.WriteFile(filepath.Join(temp, name), content[name], 0600); err != nil {
 			return err
 		}

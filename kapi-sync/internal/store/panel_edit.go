@@ -179,6 +179,10 @@ func (s *Store) EditTransaction(actor string, e TransactionEdit) (*TransactionEd
 	data := map[string]json.RawMessage{}
 	if e.AmountMinor != v.AmountMinor {
 		data["amount_minor"] = merge.V(e.AmountMinor)
+		// A manually changed CNY amount must not retain a stale frozen conversion.
+		if v.CurrencyConversionJSON != "" {
+			data["currency_conversion_json"] = merge.V(nil)
+		}
 	}
 	if e.AccountID != v.AccountID {
 		data["account_id"] = merge.V(e.AccountID)

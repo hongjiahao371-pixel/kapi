@@ -1,0 +1,22 @@
+# Publisher-only service. Customer NAS deployments must not mount these keys.
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+RUN apk add --no-cache ca-certificates
+WORKDIR /src
+COPY go.mod ./
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/kapi-commerce ./cmd/kapi-commerce
+RUN mkdir /out/data && chmod 700 /out/data
+
+FROM scratch
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=build /out/kapi-commerce /kapi-commerce
+COPY --from=build --chown=65532:65532 /out/data/ /data/
+USER 65532:65532
+WORKDIR /data
+VOLUME ["/data"]
+EXPOSE 8790
+ENV COMMERCE_LISTEN=0.0.0.0:8790 COMMERCE_DATA_DIR=/data COMMERCE_PAYMENTS_ENABLED=false
+ENTRYPOINT ["/kapi-commerce"]

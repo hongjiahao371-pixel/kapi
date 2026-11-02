@@ -14,3 +14,6 @@ import-worker/build/
 **/._*
 !LICENSE
 !NOTICE
+
+!android-release/
+!android-release/**

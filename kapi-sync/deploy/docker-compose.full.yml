@@ -1,6 +1,6 @@
 services:
   guizhang:
-    image: jvsheng/guizhang:0.5.5
+    image: ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.8
     container_name: guizhang
     restart: unless-stopped
     ports:

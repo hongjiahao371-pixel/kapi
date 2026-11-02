@@ -13,11 +13,16 @@ import (
 	"kapi/sync/internal/store"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
 func TestSamePersonalAndFamilyAuthOverVerifiedHTTPSAndLegacyHTTP(t *testing.T) {
 	dir := t.TempDir()
+	if e := os.WriteFile(filepath.Join(dir, "log.jsonl"), nil, 0600); e != nil {
+		t.Fatal(e)
+	} // pre-boundary installation
 	st, e := store.Open(dir)
 	if e != nil {
 		t.Fatal(e)

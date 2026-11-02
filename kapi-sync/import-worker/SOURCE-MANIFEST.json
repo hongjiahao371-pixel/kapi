@@ -117,7 +117,7 @@
   },
   "kapi-android/core/src/main/kotlin/kapi/core/auto/CategoryRules.kt": {
     "path": "src/main/kotlin/kapi/core/auto/CategoryRules.kt",
-    "sha256": "9dd6bd15434f27087e42ba189c04f54a60ef16115628e6d24bdfa9be45679a7b"
+    "sha256": "2d480694a6ab38e2e8371ec1965d19aa5493b14b2739d08083b17f6836d1342c"
   },
   "kapi-android/core/src/main/kotlin/kapi/core/auto/AlipayPaymentResult.kt": {
     "path": "src/main/kotlin/kapi/core/auto/AlipayPaymentResult.kt",

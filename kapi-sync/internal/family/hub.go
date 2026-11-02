@@ -261,7 +261,7 @@ func (h *Hub) status(w http.ResponseWriter, r *http.Request) {
 		members = append(members, m)
 	}
 	sort.Slice(members, func(i, j int) bool { return members[i].ID < members[j].ID })
-	reply(w, 200, map[string]any{"enabled": h.state.Enabled, "members": members, "shared_id": h.state.SharedID, "protocol": "family-spaces-v1", "allow_member_edits": false})
+	reply(w, 200, map[string]any{"enabled": h.state.Enabled, "members": members, "shared_id": h.state.SharedID, "protocol": "family-spaces-v1", "allow_member_edits": false, "pro": h.root.Pro.Status()})
 }
 func (h *Hub) enable(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
@@ -282,6 +282,10 @@ func (h *Hub) enable(w http.ResponseWriter, r *http.Request) {
 	defer h.mu.Unlock()
 	if h.state.Enabled {
 		reply(w, 200, map[string]bool{"enabled": true})
+		return
+	}
+	if !h.root.Pro.Allows("family_create") {
+		reply(w, 403, map[string]string{"error": "pro_required", "message": "创建家庭账本需要 Pro；加入和使用已有家庭账本免费，支付暂未开放"})
 		return
 	}
 	id, e := randomID()

@@ -27,6 +27,7 @@ import (
 	"time"
 	_ "time/tzdata"
 
+	"kapi/sync/internal/androiddist"
 	"kapi/sync/internal/api"
 	"kapi/sync/internal/family"
 	"kapi/sync/internal/panel"
@@ -106,6 +107,7 @@ func main() {
 	go quoteSvc.Run(quoteCtx)
 	apiSrv.Mount(ph.Register)
 	apiSrv.Mount(shortcutweb.Register)
+	apiSrv.Mount(androiddist.New(envOr("KAPI_ANDROID_RELEASE_DIR", "/opt/guizhang/android")).Register)
 
 	guard := security.NewGuard()
 	guard.HSTS = os.Getenv("KAPI_HSTS") == "1"

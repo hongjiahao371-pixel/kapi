@@ -1,0 +1,14 @@
+# Optional publisher override; never merge this into the customer ledger compose.
+# Copy commerce.android.env.example to .env.commerce, fill private values, and use:
+# docker compose --env-file deploy/.env.commerce -f deploy/docker-compose.commerce.yml -f deploy/docker-compose.commerce-live.yml up -d --build
+services:
+  commerce:
+    env_file:
+      - .env.commerce
+    environment:
+      COMMERCE_PAYMENTS_ENABLED: ${COMMERCE_PAYMENTS_ENABLED:-false}
+    volumes:
+      - type: bind
+        source: ${COMMERCE_KEYS_DIR:?Set the private publisher key directory}
+        target: /run/keys
+        read_only: true

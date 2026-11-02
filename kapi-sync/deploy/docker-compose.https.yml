@@ -1,7 +1,7 @@
 services:
   kapi-sync:
     ports:
-      - "${KAPI_TLS_BIND:-127.0.0.1}:8789:8789"
+      - "${KAPI_TLS_BIND:-192.168.5.10}:8789:8789"
     volumes:
       - ./tls/server.crt:/run/guizhang-tls/server.crt:ro
       - ./tls/server.key:/run/guizhang-tls/server.key:ro

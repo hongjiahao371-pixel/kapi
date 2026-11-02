@@ -1,0 +1,23 @@
+# For the official publisher only. This is NOT the customer NAS compose.
+# Build from source: docker compose -f deploy/docker-compose.commerce.yml up -d --build
+services:
+  commerce:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.commerce
+    image: guizhang-commerce:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${COMMERCE_PORT:-8790}:8790"
+    environment:
+      COMMERCE_LISTEN: 0.0.0.0:8790
+      COMMERCE_DATA_DIR: /data
+      COMMERCE_PAYMENTS_ENABLED: "false"
+    volumes:
+      - commerce_orders:/data
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+volumes:
+  commerce_orders:

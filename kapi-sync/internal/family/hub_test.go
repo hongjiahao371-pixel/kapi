@@ -28,6 +28,9 @@ type fixture struct {
 func setup(t *testing.T) *fixture {
 	t.Helper()
 	dir := t.TempDir()
+	if e := os.WriteFile(filepath.Join(dir, "log.jsonl"), nil, 0600); e != nil {
+		t.Fatal(e)
+	} // pre-boundary internal install
 	root, e := store.Open(dir)
 	if e != nil {
 		t.Fatal(e)

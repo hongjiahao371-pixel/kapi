@@ -14,6 +14,7 @@
     try{
       const state=await request("/v1/family/status"),actions=$("#family-actions"),roster=$("#family-roster");actions.replaceChildren();roster.replaceChildren();
       $("#family-state").textContent=state.enabled?"家庭已启用 · "+"成员平等 · 仅记账人本人可修改、删除或恢复账单":"尚未创建家庭账本";
+      if(!state.enabled && !state.pro?.enabled){$("#family-state").textContent="创建家庭账本需要 Pro；加入和使用已有家庭账本免费。请在下方归账 Pro 激活已有权益，支付暂未开放。";return;}
       if(!state.enabled){actions.append(button("创建家庭账本",async()=>{await request("/v1/family/enable",{allow_member_edits:false});await load();},true));return;}
       actions.append(button("打开家庭账本",()=>{
         const path="/family/space/shared/"+encodeURIComponent(state.shared_id)+"/panel/";

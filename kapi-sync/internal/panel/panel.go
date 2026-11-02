@@ -32,6 +32,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -41,15 +42,17 @@ import (
 	"kapi/sync/internal/store"
 )
 
-//go:embed web/index.html web/import.js web/family.js web/edit.js
+//go:embed web/index.html web/import.js web/family.js web/edit.js web/pro.js
 var assets embed.FS
 
 // Handler serves the panel shell and its JSON endpoints.
 type Handler struct {
-	st      *store.Store
-	token   string
-	quotes  *quotes.Service
-	imports *importService
+	st             *store.Store
+	token          string
+	quotes         *quotes.Service
+	imports        *importService
+	commerceURL    string
+	commerceClient *http.Client
 }
 
 func (h *Handler) EnableQuotes(s *quotes.Service) { h.quotes = s }
@@ -60,7 +63,9 @@ func New(st *store.Store, token string) (*Handler, string) {
 	if token == "" {
 		token = randomToken()
 	}
-	return &Handler{st: st, token: token, imports: newImportService(st)}, token
+	h := &Handler{st: st, token: token, imports: newImportService(st)}
+	h.configureCommerce(os.Getenv("KAPI_COMMERCE_BASE_URL"))
+	return h, token
 }
 
 func randomToken() string {
@@ -124,6 +129,20 @@ func (h *Handler) Register(mux *http.ServeMux) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		_, _ = w.Write(b)
 	})
+	mux.HandleFunc("/panel/pro.js", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			w.WriteHeader(405)
+			return
+		}
+		b, _ := assets.ReadFile("web/pro.js")
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(b)
+	})
+	mux.HandleFunc("/v1/panel/pro", h.auth(h.proStatus))
+	mux.HandleFunc("/v1/panel/pro/activate", h.auth(h.proActivate))
+	mux.HandleFunc("/v1/panel/pro/order/activate", h.auth(h.proOrderActivate))
+	mux.HandleFunc("/v1/panel/reports/annual", h.auth(h.annualReport))
 	mux.HandleFunc("/v1/panel/summary", h.auth(h.summary))
 	mux.HandleFunc("/v1/panel/backup", h.auth(h.backup))
 	mux.HandleFunc("/v1/panel/backups", h.auth(h.backups))

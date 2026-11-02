@@ -64,3 +64,10 @@ kapi-sync/tls/
 *.ipa
 *.p7b
 *.cer
+
+# Private/reproducible deployment build context
+kapi-sync/deploy/*.jar
+kapi-sync/deploy/import-licenses/
+kapi-sync/android-release/*.apk
+kapi-sync/android-release/release.json
+kapi-sync/android-release/SHA256SUMS

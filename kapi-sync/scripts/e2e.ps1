@@ -14,6 +14,7 @@ $tmp    = Join-Path ([System.IO.Path]::GetTempPath()) ("kapi-e2e-" + [guid]::New
 $data   = Join-Path $tmp 'data'
 $port   = 18787
 $base   = "http://127.0.0.1:$port"
+$panelToken = [guid]::NewGuid().ToString("N")
 
 New-Item -ItemType Directory -Force -Path $data | Out-Null
 $pass = 0; $fail = 0
@@ -22,7 +23,7 @@ function Check($name, $cond, $detail = '') {
   else       { Write-Host "  FAIL  $name  $detail" -ForegroundColor Red; $script:fail++ }
 }
 function Start-Server {
-  $p = Start-Process -FilePath $bin -ArgumentList @('-addr', "127.0.0.1:$port", '-data', $data) `
+  $p = Start-Process -FilePath $bin -ArgumentList @('-addr', "127.0.0.1:$port", '-data', $data, '-panel-token', $panelToken) `
        -RedirectStandardOutput (Join-Path $tmp 'out.log') -RedirectStandardError (Join-Path $tmp 'err.log') `
        -PassThru -WindowStyle Hidden
   for ($i = 0; $i -lt 60; $i++) {
@@ -59,7 +60,7 @@ $health = Invoke-RestMethod "$base/v1/health"
 Check "health ok" $health.ok
 Check "初始 seq = 0" ($health.db_seq -eq 0) "got $($health.db_seq)"
 
-$code = (Invoke-RestMethod "$base/v1/health?pair_code=1").pair_code
+$code = (Invoke-RestMethod "$base/v1/panel/pair_code" -Headers @{ "X-Panel-Token" = $panelToken }).pair_code
 Check "配对码是 6 位数字" ($code -match '^\d{6}$') "got '$code'"
 
 Write-Host "`n== 2. 鉴权 ==" -ForegroundColor Cyan
@@ -96,7 +97,7 @@ Check "cursor 没有前进" ($push2.cursor -eq 2) "got $($push2.cursor)"
 Check "重复项报为 applied" ($push2.applied -contains 'p1')
 
 Write-Host "`n== 6. 第二台设备(平板)改金额 ==" -ForegroundColor Cyan
-$code2 = (Invoke-RestMethod "$base/v1/health?pair_code=1").pair_code
+$code2 = (Invoke-RestMethod "$base/v1/panel/pair_code" -Headers @{ "X-Panel-Token" = $panelToken }).pair_code
 $pair2 = Api '/v1/pair' @{ pair_code = $code2; device_name = 'Tablet' } $null
 $tok2 = $pair2.token
 $push3 = Api '/v1/push' @{ device_id = $pair2.device_id; changes = @(

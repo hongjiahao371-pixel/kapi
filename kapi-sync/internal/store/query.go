@@ -56,15 +56,16 @@ const (
 
 // TxView is one transaction shaped for display.
 type TxView struct {
-	ID          string `json:"id"`
-	LedgerID    string `json:"ledger_id"`
-	LedgerName  string `json:"ledger_name,omitempty"`
-	AmountMinor int64  `json:"amount_minor"`
-	Direction   string `json:"direction"`
-	AccountID   string `json:"account_id"`
-	ToAccountID string `json:"to_account_id,omitempty"`
-	RefundOfID  string `json:"refund_of_id,omitempty"`
-	CategoryID  string `json:"category_id,omitempty"`
+	ID                     string `json:"id"`
+	LedgerID               string `json:"ledger_id"`
+	LedgerName             string `json:"ledger_name,omitempty"`
+	AmountMinor            int64  `json:"amount_minor"`
+	CurrencyConversionJSON string `json:"currency_conversion_json,omitempty"`
+	Direction              string `json:"direction"`
+	AccountID              string `json:"account_id"`
+	ToAccountID            string `json:"to_account_id,omitempty"`
+	RefundOfID             string `json:"refund_of_id,omitempty"`
+	CategoryID             string `json:"category_id,omitempty"`
 	// CategoryName and AccountName are the *display* names, resolved against
 	// the synced category/account tables. They are additive on purpose: the
 	// raw ids stay in the payload so the panel can still show something (and
@@ -301,6 +302,21 @@ type Stats struct {
 func (s *Store) Stats(q TxQuery) Stats {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return s.statsLocked(q)
+}
+
+// All report periods use one read snapshot and the same refund/transfer rules.
+func (s *Store) StatsBatch(queries []TxQuery) []Stats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]Stats, len(queries))
+	for i, q := range queries {
+		out[i] = s.statsLocked(q)
+	}
+	return out
+}
+
+func (s *Store) statsLocked(q TxQuery) Stats {
 
 	var st Stats
 	byCat := map[string]*Sum{}
@@ -548,19 +564,20 @@ func readRecord(r *merge.Record) TxView {
 		ledger = "L1"
 	}
 	return TxView{
-		LedgerID:    ledger,
-		ID:          r.EntityID,
-		AmountMinor: jsonInt(r.Values["amount_minor"]),
-		Direction:   jsonStr(r.Values["direction"]),
-		AccountID:   jsonStr(r.Values["account_id"]),
-		ToAccountID: jsonStr(r.Values["to_account_id"]),
-		RefundOfID:  jsonStr(r.Values["refund_of_id"]),
-		CategoryID:  jsonStr(r.Values["category_id"]),
-		OccurredAt:  jsonInt(r.Values["occurred_at"]),
-		Note:        jsonStr(r.Values["note"]),
-		Merchant:    jsonStr(r.Values["merchant"]),
-		Deleted:     r.Deleted,
-		Lamport:     r.Lamport,
+		LedgerID:               ledger,
+		ID:                     r.EntityID,
+		AmountMinor:            jsonInt(r.Values["amount_minor"]),
+		CurrencyConversionJSON: jsonStr(r.Values["currency_conversion_json"]),
+		Direction:              jsonStr(r.Values["direction"]),
+		AccountID:              jsonStr(r.Values["account_id"]),
+		ToAccountID:            jsonStr(r.Values["to_account_id"]),
+		RefundOfID:             jsonStr(r.Values["refund_of_id"]),
+		CategoryID:             jsonStr(r.Values["category_id"]),
+		OccurredAt:             jsonInt(r.Values["occurred_at"]),
+		Note:                   jsonStr(r.Values["note"]),
+		Merchant:               jsonStr(r.Values["merchant"]),
+		Deleted:                r.Deleted,
+		Lamport:                r.Lamport,
 	}
 }
 

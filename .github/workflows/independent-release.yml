@@ -1,0 +1,71 @@
+name: Android download and NAS container acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      android_tag:
+        description: Publisher-signed Android release attachment
+        required: true
+        default: android-v0.1.170
+permissions:
+  contents: read
+  packages: write
+jobs:
+  verify-and-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: kapi-sync/go.mod
+          cache: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.8.0'
+      - name: Build matching import reader and run race checks
+        run: |
+          (cd kapi-sync/import-worker && gradle --no-daemon -Pkotlin.compiler.execution.strategy=in-process jar)
+          export KAPI_IMPORT_JAR="$GITHUB_WORKSPACE/kapi-sync/import-worker/build/libs/guizhang-import.jar"
+          (cd kapi-sync && go test -race ./... && go vet ./...)
+      - name: Fetch only public release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANDROID_TAG: ${{ inputs.android_tag }}
+        run: |
+          [[ "$ANDROID_TAG" =~ ^android-v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          gh release download "$ANDROID_TAG" -R "$GITHUB_REPOSITORY" -D kapi-sync/android-release -p '*.apk' -p release.json -p SHA256SUMS
+          (cd kapi-sync/android-release && sha256sum -c SHA256SUMS)
+      - name: Build complete NAS image
+        run: docker build --build-arg VERSION=0.5.8 --build-arg SOURCE_REVISION=${{ github.sha }} -t ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.8 kapi-sync
+      - name: Verify container download, authentication and empty-install restart
+        run: |
+          mkdir -p /tmp/guizhang-acceptance
+          docker run -d --name nas-ci -p 127.0.0.1:18787:8787 -v /tmp/guizhang-acceptance:/data ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.8
+          trap 'docker rm -f nas-ci >/dev/null' EXIT
+          for n in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18787/v1/health > /tmp/health.json; then break; fi
+            sleep 1
+          done
+          python3 -c 'import json; j=json.load(open("/tmp/health.json")); assert j["ok"] and j["server_version"]=="0.5.8" and j["rows"]==0'
+          curl -fsS http://127.0.0.1:18787/v1/android/release > /tmp/android.json
+          python3 -c 'import json; j=json.load(open("/tmp/android.json")); assert j["available"] is True; print(j)'
+          curl -fsS http://127.0.0.1:18787/android/apk -o /tmp/downloaded.apk
+          python3 -c 'import json,hashlib; j=json.load(open("kapi-sync/android-release/release.json"))["payload"]; assert hashlib.sha256(open("/tmp/downloaded.apk","rb").read()).hexdigest()==j["sha256"]'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18787/v1/changes)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18787/v1/panel/transactions)" = 401
+          curl -fsS -H 'Range: bytes=0-31' http://127.0.0.1:18787/android/apk -o /tmp/apk-range
+          test "$(wc -c < /tmp/apk-range)" = 32
+          docker restart nas-ci
+          sleep 2
+          curl -fsS http://127.0.0.1:18787/v1/health > /tmp/restart.json
+          python3 -c 'import json; assert json.load(open("/tmp/restart.json"))["rows"]==0'
+      - name: Publish tested immutable version tag
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.8

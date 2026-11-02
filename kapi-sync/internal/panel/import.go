@@ -317,7 +317,7 @@ func (h *Handler) importCommit(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, status, map[string]string{"message": err.Error()})
 		return
 	}
-	if result.Added > 0 && options.RememberMappings {
+	if result.Added > 0 && options.RememberMappings && h.st.Pro.Allows("import_templates") {
 		if e := h.st.RememberImportFormat(p.LedgerID, p.Parsed.FormatKey, p.Parsed.Mapping); e != nil {
 			result.MappingWarning += "账单已保存，但字段匹配未记住"
 		}

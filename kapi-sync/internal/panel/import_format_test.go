@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"kapi/sync/internal/pro"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -60,6 +61,7 @@ func TestFormatMappingNeedsReviewRevisionAndNeverWrites(t *testing.T) {
 		t.Skip("real core required")
 	}
 	st, _, mux := importFixture(t)
+	st.Pro, _ = pro.Open(t.TempDir(), true) // Existing internal Pro install: this test verifies premium template reuse.
 	reviewSeed(t, st)
 	p := importUpload(t, mux, []byte("发生日,流向,发生额,附言\n2026-10-10,支出,12.35,秘密商户"))
 	before := st.HealthInfo()

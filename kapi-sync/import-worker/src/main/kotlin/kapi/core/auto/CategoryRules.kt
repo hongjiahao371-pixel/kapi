@@ -530,8 +530,9 @@ object CategoryRules {
 
     private fun matchesKeyword(text: String, keyword: String): Boolean {
         if (!text.contains(keyword, ignoreCase = true)) return false
-        // 英文品牌不能咬住另一个英文单词（Keep ≠ Keeper，WPS ≠ WPSomething）。
-        if (keyword.all { it.code < 128 } && keyword.any { it.isLetter() }) {
+        // ASCII 品牌必须完整匹配：Keep ≠ Keeper，长编号中的 711 也不是便利店。
+        // 中文门店后缀仍允许，如「711便利店」「7-11万达店」。
+        if (keyword.all { it.code < 128 } && keyword.any { it.isLetterOrDigit() }) {
             return Regex("(?<![A-Za-z0-9])${Regex.escape(keyword)}(?![A-Za-z0-9])",
                 RegexOption.IGNORE_CASE).containsMatchIn(text)
         }
