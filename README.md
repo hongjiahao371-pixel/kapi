@@ -1,9 +1,9 @@
 # 归账
 
-安卓可以独立安装，NAS 是可选项。当前安卓正式版为 **0.1.183**，Pro 可从 App 内购买。NAS 下载支持为 **0.5.9**。
+安卓可以独立安装，NAS 是可选项。当前安卓正式版为 **0.1.184**，Pro 可从 App 内购买。NAS 下载支持为 **0.5.9**。
 
-- [直接下载 Android 0.1.183 正式 APK](https://github.com/hongjiahao371-pixel/kapi/releases/download/android-v0.1.183/guizhang-android-0.1.183.apk)
-- [0.1.183 发布说明与 SHA-256 校验文件](https://github.com/hongjiahao371-pixel/kapi/releases/tag/android-v0.1.183)
+- [直接下载 Android 0.1.184 正式 APK](https://github.com/hongjiahao371-pixel/kapi/releases/download/android-v0.1.184/guizhang-android-0.1.184.apk)
+- [0.1.184 发布说明与 SHA-256 校验文件](https://github.com/hongjiahao371-pixel/kapi/releases/tag/android-v0.1.184)
 - [下载、旧内测迁移与爱发电接入说明](kapi-sync/INDEPENDENT-ANDROID.md)
 - [NAS 安装、HTTPS、家庭账本与备份](kapi-sync/DEPLOYMENT.md)
 - [NAS 0.5.9 变更与验收边界](kapi-sync/RELEASE-0.5.9.md)
