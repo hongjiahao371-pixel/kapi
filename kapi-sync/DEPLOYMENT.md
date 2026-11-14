@@ -1,15 +1,15 @@
 # 归账 NAS 0.5.10 部署
 
-## 从 Docker Hub 直接部署
+## 拉取镜像部署
 
-公开镜像：[jvsheng/guizhang](https://hub.docker.com/r/jvsheng/guizhang)。当前支持 `linux/amd64`（x86-64 NAS），新部署和升级使用 `0.5.10`，镜像内置归账 Android 0.1.184。
+公开镜像托管于 [GitHub Container Registry](https://github.com/hongjiahao371-pixel/kapi/pkgs/container/kapi-nas)。当前支持 `linux/amd64`（x86-64 NAS），新部署和升级使用 `0.5.10`，镜像内置归账 Android 0.1.184。
 
 新部署可复制 `deploy/docker-compose.yml` 到一个独立部署目录，或保存下面的最小配置为 `docker-compose.yml`：
 
 ```yaml
 services:
   kapi-sync:
-    image: jvsheng/guizhang:0.5.10
+    image: ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.10
     container_name: kapi-sync
     restart: unless-stopped
     ports:
