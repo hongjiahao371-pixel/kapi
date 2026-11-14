@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -111,8 +112,28 @@ func config() (commerce.Config, error) {
 	if dir == "" {
 		dir = "./commerce-data"
 	}
-	cfg := commerce.Config{Dir: dir, Enabled: os.Getenv("COMMERCE_PAYMENTS_ENABLED") == "true"}
-	if cfg.Enabled && !pro.PricingCheckoutReady {
+	cfg := commerce.Config{Dir: dir, Enabled: os.Getenv("COMMERCE_PAYMENTS_ENABLED") == "true", AcceptanceOwnerHash: os.Getenv("COMMERCE_ACCEPTANCE_OWNER_HASH")}
+	if cfg.AcceptanceOwnerHash != "" && !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(cfg.AcceptanceOwnerHash) {
+		return cfg, errors.New("invalid acceptance buyer hash")
+	}
+	if value := strings.TrimSpace(os.Getenv("COMMERCE_PUBLIC_OFFERS")); value != "" {
+		for _, id := range strings.Split(value, ",") {
+			id = strings.TrimSpace(id)
+			if offer, ok := pro.PurchaseOffer(id); !ok || offer.ID == pro.ProductID {
+				return cfg, errors.New("unknown or legacy public offer")
+			}
+			for _, prior := range cfg.PublicOffers {
+				if prior == id {
+					return cfg, errors.New("duplicate public offer")
+				}
+			}
+			cfg.PublicOffers = append(cfg.PublicOffers, id)
+		}
+		if cfg.AcceptanceOwnerHash != "" {
+			return cfg, errors.New("public offers and acceptance buyer are mutually exclusive")
+		}
+	}
+	if cfg.Enabled && !pro.PricingCheckoutReady && cfg.AcceptanceOwnerHash == "" && len(cfg.PublicOffers) == 0 {
 		return cfg, errors.New("new pricing is a closed preview; term, renewal and recovery acceptance is required before collecting payments")
 	}
 	if !cfg.Enabled && os.Getenv("COMMERCE_SIGNING_KEY_FILE") == "" {
@@ -174,11 +195,35 @@ func config() (commerce.Config, error) {
 				return cfg, errors.New("invalid Afdian product type")
 			}
 		}
-		provider, err := commerce.NewAfdian(commerce.AfdianConfig{UserID: os.Getenv("AFDIAN_USER_ID"), Token: strings.TrimSpace(string(token)), PlanID: os.Getenv("AFDIAN_PLAN_ID"), SKUID: os.Getenv("AFDIAN_SKU_ID"), ProductType: productType, PermanentPlanConfirmed: os.Getenv("AFDIAN_PERMANENT_PLAN_CONFIRMED") == "true"})
+		bindings := map[string]commerce.AfdianOffer{}
+		for _, offer := range pro.ProductCatalogue().Pricing.Offers {
+			suffix := "LIFETIME"
+			if offer.DurationDays == 31 {
+				suffix = "MONTHLY"
+			}
+			if offer.DurationDays == 365 {
+				suffix = "YEARLY"
+			}
+			plan, sku := os.Getenv("AFDIAN_"+suffix+"_PLAN_ID"), os.Getenv("AFDIAN_"+suffix+"_SKU_ID")
+			if plan != "" || sku != "" {
+				bindings[offer.ID] = commerce.AfdianOffer{PlanID: plan, SKUID: sku}
+			}
+		}
+		provider, err := commerce.NewAfdian(commerce.AfdianConfig{Offers: bindings, UserID: os.Getenv("AFDIAN_USER_ID"), Token: strings.TrimSpace(string(token)), PlanID: os.Getenv("AFDIAN_PLAN_ID"), SKUID: os.Getenv("AFDIAN_SKU_ID"), ProductType: productType, PermanentPlanConfirmed: os.Getenv("AFDIAN_PERMANENT_PLAN_CONFIRMED") == "true"})
 		if err != nil {
 			return cfg, err
 		}
+		if cfg.Enabled && len(cfg.PublicOffers) == 0 && len(bindings) != 3 {
+			return cfg, errors.New("all three independent Afdian plans must be configured")
+		}
+		for _, id := range cfg.PublicOffers {
+			if _, bound := bindings[id]; !bound {
+				return cfg, errors.New("public offer is missing its Afdian plan or SKU")
+			}
+		}
 		cfg.Providers = append(cfg.Providers, provider)
+	} else if cfg.Enabled && len(cfg.PublicOffers) != 0 {
+		return cfg, errors.New("public offers require the Afdian provider")
 	}
 
 	return cfg, nil

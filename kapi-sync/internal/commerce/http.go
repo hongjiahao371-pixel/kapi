@@ -112,12 +112,24 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.s.mu.Lock()
 		if h.s.enabled && !h.s.damaged {
 			for channel := range h.s.providers {
-				channels = append(channels, channel)
+				if len(h.s.publicOffers) == 0 || channel == "afdian" {
+					channels = append(channels, channel)
+				}
 			}
 		}
 		h.s.mu.Unlock()
 		sort.Strings(channels)
-		reply(w, 200, map[string]any{"catalogue": pro.ProductCatalogue(), "payments_enabled": len(channels) > 0, "channels": channels, "activation": "signed-order-receipt", "receipt_protocol": "GZO1", "purchase_platforms": []string{"android"}, "store_purchase_platforms": []string{"ios", "harmony"}})
+		catalogue := pro.ProductCatalogue()
+		catalogue.Pricing.CheckoutReady = len(channels) > 0 && (h.s.acceptanceOwnerHash != "" || len(h.s.publicOffers) > 0)
+		response := map[string]any{"catalogue": catalogue, "payments_enabled": len(channels) > 0, "channels": channels, "activation": "signed-order-receipt", "receipt_protocol": "GZO2", "receipt_protocols": []string{"GZO1", "GZO2"}, "purchase_platforms": []string{"android"}, "store_purchase_platforms": []string{"ios", "harmony"}}
+		if len(h.s.publicOffers) > 0 {
+			offers := []string{}
+			if catalogue.Pricing.CheckoutReady {
+				offers = h.s.publicOffers
+			}
+			response["available_offer_ids"] = offers
+		}
+		reply(w, 200, response)
 		return
 	}
 	if strings.HasPrefix(path, "/v1/commerce/notify/") {

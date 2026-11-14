@@ -110,7 +110,7 @@ func TestAndroidSignedReceiptAndRefundRecoveryNeverExposeAnOfflineUnlockCode(t *
 	}
 	dir := s.file[:len(s.file)-len("orders.json")]
 	s.Close()
-	reloaded, e := New(Config{Dir: dir, Enabled: true, SigningKey: s.key, ExpectedPublicKey: pub, Providers: []Provider{&providerNamedStub{name: "wechat"}}})
+	reloaded, e := New(Config{AllowLegacySales: true, Dir: dir, Enabled: true, SigningKey: s.key, ExpectedPublicKey: pub, Providers: []Provider{&providerNamedStub{name: "wechat"}}})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -132,7 +132,7 @@ func TestRefundBeforePaymentAndPlatformReleaseBoundaries(t *testing.T) {
 		t.Fatal("late payment resurrected full refund")
 	}
 	key, pub := issuer(t)
-	first, e := New(Config{Dir: t.TempDir(), Enabled: true, SigningKey: key, ExpectedPublicKey: pub, Providers: []Provider{&providerNamedStub{name: "wechat"}}})
+	first, e := New(Config{AllowLegacySales: true, Dir: t.TempDir(), Enabled: true, SigningKey: key, ExpectedPublicKey: pub, Providers: []Provider{&providerNamedStub{name: "wechat"}}})
 	if e != nil {
 		t.Fatal(e)
 	}

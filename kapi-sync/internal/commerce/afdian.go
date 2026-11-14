@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"kapi/sync/internal/pro"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -13,7 +14,12 @@ import (
 	"time"
 )
 
+type AfdianOffer struct {
+	PlanID string
+	SKUID  string
+}
 type AfdianConfig struct {
+	Offers                       map[string]AfdianOffer
 	UserID, Token, PlanID, SKUID string
 	ProductType                  int // 1: one-time sale; 0: an explicitly confirmed permanent plan.
 	PermanentPlanConfirmed       bool
@@ -26,9 +32,27 @@ type Afdian struct {
 }
 
 func NewAfdian(c AfdianConfig) (*Afdian, error) {
-	if !validAtom(c.UserID, 32, 32) || !validAtom(c.Token, 20, 200) || !validAtom(c.PlanID, 32, 32) || (c.ProductType != 0 && c.ProductType != 1) || (c.ProductType == 1 && !validAtom(c.SKUID, 32, 32)) || (c.ProductType == 0 && !c.PermanentPlanConfirmed) {
+	if !validAtom(c.UserID, 32, 32) || !validAtom(c.Token, 20, 200) || (c.ProductType != 0 && c.ProductType != 1) {
 		return nil, ErrInvalid
 	}
+	legacy := c.PlanID != "" || c.SKUID != ""
+	if legacy && (!validAtom(c.PlanID, 32, 32) || (c.ProductType == 1 && !validAtom(c.SKUID, 32, 32)) || (c.ProductType == 0 && !c.PermanentPlanConfirmed)) {
+		return nil, ErrInvalid
+	}
+	if !legacy && len(c.Offers) == 0 {
+		return nil, ErrInvalid
+	}
+	bindings := map[string]AfdianOffer{}
+	seen := map[string]bool{}
+	for id, b := range c.Offers {
+		p, ok := pro.PurchaseOffer(id)
+		if !ok || p.ID == pro.ProductID || !validAtom(b.PlanID, 32, 32) || !validAtom(b.SKUID, 32, 32) || seen[b.PlanID] {
+			return nil, ErrInvalid
+		}
+		seen[b.PlanID] = true
+		bindings[id] = b
+	}
+	c.Offers = bindings
 	return &Afdian{cfg: c, apiURL: "https://afdian.com/api/open/query-order", client: fixedClient(), now: time.Now}, nil
 }
 func (a *Afdian) Name() string { return "afdian" }
@@ -47,12 +71,28 @@ func (a *Afdian) CheckConnection(ctx context.Context) (int, error) {
 }
 
 func (a *Afdian) Prepare(_ context.Context, o Order) (Checkout, error) {
-	if o.Platform != "android" || o.AmountMinor != 2990 || o.Currency != "CNY" || !validAtom(o.ID, 32, 32) {
+	p, known := pro.PurchaseOffer(o.ProductID)
+	if o.ProductID == "" {
+		p, known = pro.PurchaseOffer(pro.ProductID)
+	}
+	b, bound := a.binding(o.ProductID)
+	if !known || !bound || o.Platform != "android" || o.AmountMinor != p.AmountMinor || o.Currency != "CNY" || !validAtom(o.ID, 32, 32) {
 		return Checkout{}, ErrInvalid
 	}
-	v := url.Values{"plan_id": {a.cfg.PlanID}, "product_type": {strconv.Itoa(a.cfg.ProductType)}, "custom_order_id": {o.ID}, "remark": {"归账永久 Pro · " + o.ID}}
-	if a.cfg.ProductType == 0 {
+	v := url.Values{"plan_id": {b.PlanID}, "product_type": {strconv.Itoa(a.cfg.ProductType)}, "custom_order_id": {o.ID}, "remark": {p.Title + " · " + o.ID}}
+	if o.ProductID != pro.ProductID && o.ProductID != "" {
+		v.Set("product_type", "1")
+	}
+	if v.Get("product_type") == "0" {
 		v.Set("month", "1")
+	} else {
+		// Sale checkout requires the selected SKU as well as the plan. Without
+		// it the official page rejects the sale before payment can begin.
+		sku, _ := json.Marshal([]struct {
+			ID    string `json:"sku_id"`
+			Count int    `json:"count"`
+		}{{b.SKUID, 1}})
+		v.Set("sku", string(sku))
 	}
 	return Checkout{Kind: "redirect", Value: "https://afdian.com/order/create?" + v.Encode()}, nil
 }
@@ -117,12 +157,24 @@ func (a *Afdian) query(ctx context.Context, params any) ([]afdianOrder, error) {
 	}
 	return answer.Data.List, nil
 }
+func (a *Afdian) binding(id string) (AfdianOffer, bool) {
+	if id == pro.ProductID || id == "" {
+		return AfdianOffer{a.cfg.PlanID, a.cfg.SKUID}, a.cfg.PlanID != ""
+	}
+	b, ok := a.cfg.Offers[id]
+	return b, ok
+}
 func (a *Afdian) verified(o Order, paid afdianOrder) (Receipt, error) {
+	b, bound := a.binding(o.ProductID)
+	kind := a.cfg.ProductType
+	if o.ProductID != pro.ProductID && o.ProductID != "" {
+		kind = 1
+	}
 	amount, err := minor(paid.Total)
-	if err != nil || paid.Status != 2 || paid.CustomID != o.ID || paid.PlanID != a.cfg.PlanID || paid.ProductType != a.cfg.ProductType || amount != o.AmountMinor || o.Currency != "CNY" || paid.RedeemID != "" || !validAtom(paid.TradeNo, 12, 64) {
+	if !bound || err != nil || paid.Status != 2 || paid.CustomID != o.ID || paid.PlanID != b.PlanID || paid.ProductType != kind || amount != o.AmountMinor || o.Currency != "CNY" || paid.RedeemID != "" || !validAtom(paid.TradeNo, 12, 64) {
 		return Receipt{}, ErrConflict
 	}
-	if paid.ProductType == 1 && (len(paid.SKU) != 1 || paid.SKU[0].ID != a.cfg.SKUID || paid.SKU[0].Count != 1) {
+	if paid.ProductType == 1 && (len(paid.SKU) != 1 || paid.SKU[0].ID != b.SKUID || paid.SKU[0].Count != 1) {
 		return Receipt{}, ErrConflict
 	}
 	if paid.ProductType == 0 && paid.Month != 1 {
@@ -196,14 +248,19 @@ func (s *Service) afdianNotify(ctx context.Context, p *Afdian, body []byte) erro
 			Order afdianOrder `json:"order"`
 		} `json:"data"`
 	}
-	if json.Unmarshal(body, &event) != nil || event.EC != 200 || event.Data.Type != "order" || !validAtom(event.Data.Order.CustomID, 32, 32) {
+	if json.Unmarshal(body, &event) != nil || event.EC != 200 || event.Data.Type != "order" {
 		return ErrInvalid
+	}
+	// The creator can receive ordinary sponsorships and the official test event.
+	// Acknowledge unrelated events without querying or mutating any purchase.
+	if !validAtom(event.Data.Order.CustomID, 32, 32) {
+		return nil
 	}
 	s.mu.Lock()
 	o, ok := s.state.Orders[event.Data.Order.CustomID]
 	s.mu.Unlock()
 	if !ok || o.Channel != "afdian" {
-		return ErrNotFound
+		return nil
 	}
 	// A notification is only a hint. Never trust its status, amount, SKU or
 	// custom_order_id without re-querying the creator's authenticated API.

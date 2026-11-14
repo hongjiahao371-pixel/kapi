@@ -52,7 +52,7 @@ func merchant(t *testing.T) *rsa.PrivateKey {
 func service(t *testing.T, providers ...Provider) (*Service, string) {
 	t.Helper()
 	key, pub := issuer(t)
-	s, e := New(Config{Dir: t.TempDir(), Enabled: true, SigningKey: key, ExpectedPublicKey: pub, AllowNasPurchases: true, Providers: providers})
+	s, e := New(Config{AllowLegacySales: true, Dir: t.TempDir(), Enabled: true, SigningKey: key, ExpectedPublicKey: pub, AllowNasPurchases: true, Providers: providers})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -82,7 +82,7 @@ func call(h http.Handler, method, path, token, body, contentType string) *httpte
 }
 
 func TestDisabledCheckoutCannotGrantAndCatalogHasExactPrice(t *testing.T) {
-	s, e := New(Config{Dir: t.TempDir()})
+	s, e := New(Config{AllowLegacySales: true, Dir: t.TempDir()})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -177,13 +177,13 @@ func TestRestartLockCorruptionAndWrongIssuer(t *testing.T) {
 		t.Fatal(e)
 	}
 	dir := filepath.Dir(s.file)
-	if second, e := New(Config{Dir: dir}); e == nil {
+	if second, e := New(Config{AllowLegacySales: true, Dir: dir}); e == nil {
 		second.Close()
 		t.Fatal("two writers accepted")
 	}
 	paid, _ := s.Get(o.ID, owner)
 	s.Close()
-	reopened, e := New(Config{Dir: dir})
+	reopened, e := New(Config{AllowLegacySales: true, Dir: dir})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -197,14 +197,14 @@ func TestRestartLockCorruptionAndWrongIssuer(t *testing.T) {
 		t.Fatal("private order file permissions")
 	}
 	key, _ := issuer(t)
-	if bad, e := New(Config{Dir: t.TempDir(), Enabled: true, SigningKey: key, ExpectedPublicKey: pub, Providers: []Provider{provider}}); e == nil {
+	if bad, e := New(Config{AllowLegacySales: true, Dir: t.TempDir(), Enabled: true, SigningKey: key, ExpectedPublicKey: pub, Providers: []Provider{provider}}); e == nil {
 		bad.Close()
 		t.Fatal("wrong issuer accepted")
 	}
 	damaged := t.TempDir()
 	file := filepath.Join(damaged, "orders.json")
 	_ = os.WriteFile(file, []byte("broken"), 0600)
-	if bad, e := New(Config{Dir: damaged}); e == nil {
+	if bad, e := New(Config{AllowLegacySales: true, Dir: damaged}); e == nil {
 		bad.Close()
 		t.Fatal("damaged data reset")
 	}

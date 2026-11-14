@@ -59,6 +59,7 @@ type Order struct {
 	OwnerHash   string   `json:"owner_hash"`
 	RequestID   string   `json:"request_id"`
 	TradeID     string   `json:"trade_id,omitempty"`
+	PaidAt      int64    `json:"paid_at,omitempty"`
 	License     string   `json:"license,omitempty"`
 	Checkout    Checkout `json:"checkout"`
 	Revision    int64    `json:"revision,omitempty"`
@@ -92,24 +93,30 @@ type diskState struct {
 	Orders  map[string]Order `json:"orders"`
 }
 type Config struct {
-	Dir               string
-	Enabled           bool
-	SigningKey        *ecdsa.PrivateKey
-	ExpectedPublicKey string
-	AllowNasPurchases bool // Disabled for the first Android-only paid release.
-	Providers         []Provider
+	Dir                 string
+	Enabled             bool
+	SigningKey          *ecdsa.PrivateKey
+	ExpectedPublicKey   string
+	AcceptanceOwnerHash string
+	PublicOffers        []string // Android Afdian offers explicitly opened for public sale.
+	AllowLegacySales    bool     // Only for migration fixtures; publisher always rejects new legacy-price sales.
+	AllowNasPurchases   bool     // Disabled for the first Android-only paid release.
+	Providers           []Provider
 }
 type Service struct {
-	mu                sync.Mutex
-	file              string
-	lock              *os.File
-	state             diskState
-	enabled           bool
-	key               *ecdsa.PrivateKey
-	providers         map[string]Provider
-	now               func() time.Time
-	damaged           bool
-	allowNasPurchases bool
+	mu                  sync.Mutex
+	file                string
+	lock                *os.File
+	state               diskState
+	enabled             bool
+	key                 *ecdsa.PrivateKey
+	providers           map[string]Provider
+	now                 func() time.Time
+	damaged             bool
+	allowNasPurchases   bool
+	allowLegacySales    bool
+	acceptanceOwnerHash string
+	publicOffers        []string
 }
 
 func New(cfg Config) (*Service, error) {
@@ -154,7 +161,7 @@ func New(cfg Config) (*Service, error) {
 		lock.Close()
 		return nil, errors.New("another order service owns this directory")
 	}
-	s := &Service{file: filepath.Join(cfg.Dir, "orders.json"), lock: lock, state: diskState{Version: 1, Orders: map[string]Order{}}, enabled: cfg.Enabled, key: cfg.SigningKey, providers: map[string]Provider{}, now: time.Now, allowNasPurchases: cfg.AllowNasPurchases}
+	s := &Service{file: filepath.Join(cfg.Dir, "orders.json"), lock: lock, state: diskState{Version: 1, Orders: map[string]Order{}}, enabled: cfg.Enabled, key: cfg.SigningKey, providers: map[string]Provider{}, now: time.Now, acceptanceOwnerHash: cfg.AcceptanceOwnerHash, publicOffers: append([]string(nil), cfg.PublicOffers...), allowLegacySales: cfg.AllowLegacySales, allowNasPurchases: cfg.AllowNasPurchases}
 	for _, p := range cfg.Providers {
 		if p == nil || s.providers[p.Name()] != nil {
 			s.Close()
@@ -173,7 +180,8 @@ func New(cfg Config) (*Service, error) {
 			return nil, errors.New("damaged order data; original file retained")
 		}
 		for id, o := range s.state.Orders {
-			if o.ID != id || !validAtom(id, 32, 32) || o.AmountMinor <= 0 || o.Currency != "CNY" || o.OwnerHash == "" {
+			offer, known := pro.PurchaseOffer(o.ProductID)
+			if !known || offer.AmountMinor != o.AmountMinor || o.ProductID != pro.ProductID && o.State == "PAID" && o.PaidAt <= 0 || o.ID != id || !validAtom(id, 32, 32) || o.AmountMinor <= 0 || o.Currency != "CNY" || o.OwnerHash == "" {
 				s.Close()
 				return nil, errors.New("invalid persisted order; original file retained")
 			}
@@ -264,7 +272,8 @@ func (s *Service) save(o Order) error {
 }
 
 func (s *Service) Create(ctx context.Context, token, requestID, product, platform, channel string) (OrderView, error) {
-	if !validAtom(token, 43, 128) || !validAtom(requestID, 16, 80) || product != pro.ProductID {
+	offer, known := pro.PurchaseOffer(product)
+	if !validAtom(token, 43, 128) || !validAtom(requestID, 16, 80) || !known {
 		return OrderView{}, ErrInvalid
 	}
 	if platform == "nas" && !s.allowNasPurchases {
@@ -278,8 +287,11 @@ func (s *Service) Create(ctx context.Context, token, requestID, product, platfor
 	if !s.enabled || s.damaged {
 		return OrderView{}, ErrClosed
 	}
+	if s.acceptanceOwnerHash != "" && subtle.ConstantTimeCompare([]byte(s.acceptanceOwnerHash), []byte(ownerHash(token))) != 1 {
+		return OrderView{}, ErrClosed
+	}
 	provider := s.providers[channel]
-	if provider == nil {
+	if provider == nil || len(s.publicOffers) > 0 && channel != "afdian" {
 		return OrderView{}, ErrClosed
 	}
 	for _, o := range s.state.Orders {
@@ -290,6 +302,29 @@ func (s *Service) Create(ctx context.Context, token, requestID, product, platfor
 			return s.prepareLocked(ctx, provider, o)
 		}
 	}
+	if product == pro.ProductID && !s.allowLegacySales {
+		return OrderView{}, ErrClosed
+	}
+	if len(s.publicOffers) > 0 {
+		available := false
+		for _, id := range s.publicOffers {
+			available = available || product == id
+		}
+		if !available {
+			return OrderView{}, ErrClosed
+		}
+	}
+	if product != pro.ProductID {
+		g := s.grantLocked(ownerHash(token))
+		if g.Permanent {
+			return OrderView{}, ErrConflict
+		}
+		for _, old := range s.state.Orders {
+			if old.OwnerHash == ownerHash(token) && old.State == "CREATED" {
+				return OrderView{}, ErrPendingOrder
+			}
+		}
+	}
 	if len(s.state.Orders) >= 10000 {
 		return OrderView{}, errors.New("order_capacity_reached")
 	}
@@ -298,7 +333,7 @@ func (s *Service) Create(ctx context.Context, token, requestID, product, platfor
 		return OrderView{}, e
 	}
 	at := s.now().Unix()
-	o := Order{ID: id, ProductID: product, Platform: platform, Channel: channel, AmountMinor: pro.PriceMinor, Currency: "CNY", State: "CREATED", CreatedAt: at, ExpiresAt: at + 1800, UpdatedAt: at, Revision: 1, OwnerHash: ownerHash(token), RequestID: requestID}
+	o := Order{ID: id, ProductID: product, Platform: platform, Channel: channel, AmountMinor: offer.AmountMinor, Currency: "CNY", State: "CREATED", CreatedAt: at, ExpiresAt: at + 1800, UpdatedAt: at, Revision: 1, OwnerHash: ownerHash(token), RequestID: requestID}
 	if e = s.save(o); e != nil {
 		return OrderView{}, e
 	}
@@ -310,15 +345,35 @@ func (s *Service) prepareLocked(ctx context.Context, p Provider, o Order) (Order
 	}
 	if s.now().Unix() > o.ExpiresAt {
 		if o.Checkout.Value != "" {
-			return OrderView{}, ErrPendingOrder
+			if _, ok := p.(*Afdian); !ok {
+				return OrderView{}, ErrPendingOrder
+			}
+			// Afdian's official sale redirect has no enforceable local expiry.
+			// Keep this exact unpaid order usable; never invent a new order
+			// while its old official link can still receive a payment.
+		} else {
+			o.State = "EXPIRED"
+			if e := s.save(o); e != nil {
+				return OrderView{}, e
+			}
+			return view(o), nil
 		}
-		o.State = "EXPIRED"
-		if e := s.save(o); e != nil {
-			return OrderView{}, e
-		}
-		return view(o), nil
 	}
 	if o.Checkout.Value != "" {
+		if afdian, ok := p.(*Afdian); ok {
+			// Rebuild a pending official redirect from the same immutable order
+			// binding, so checkout fixes do not require another payment order.
+			checkout, e := afdian.Prepare(ctx, o)
+			if e != nil {
+				return OrderView{}, e
+			}
+			if checkout != o.Checkout {
+				o.Checkout = checkout
+				if e = s.save(o); e != nil {
+					return OrderView{}, e
+				}
+			}
+		}
 		if wx, ok := p.(*Wechat); ok && o.Platform == "android" {
 			checkout, e := wx.refreshAppCheckout(o.Checkout)
 			if e != nil {
@@ -444,7 +499,11 @@ func (s *Service) settle(channel string, r Receipt) error {
 			return nil
 		}
 		code := ""
-		if o.Platform != "android" {
+		offer, known := pro.PurchaseOffer(o.ProductID)
+		if !known || offer.AmountMinor != o.AmountMinor {
+			return ErrConflict
+		}
+		if o.Platform != "android" && offer.Permanent {
 			var e error
 			code, e = issue(s.key, o.ID)
 			if e != nil {
@@ -452,6 +511,7 @@ func (s *Service) settle(channel string, r Receipt) error {
 			}
 		}
 		o.State = "PAID"
+		o.PaidAt = s.now().Unix()
 		o.License = code
 		o.TradeID = r.TradeID
 	case "CLOSED":

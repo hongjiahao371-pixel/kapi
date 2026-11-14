@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"kapi/sync/internal/pro"
 	"net/http"
 	"net/url"
 	"sort"
@@ -124,7 +123,7 @@ func (a *Alipay) Prepare(_ context.Context, o Order) (Checkout, error) {
 		method = "alipay.trade.app.pay"
 		productCode = "QUICK_MSECURITY_PAY"
 	}
-	v, e := a.params(method, map[string]any{"out_trade_no": o.ID, "total_amount": money(o.AmountMinor), "subject": pro.ProductCatalogue().Product.Title, "product_code": productCode, "timeout_express": "30m"})
+	v, e := a.params(method, map[string]any{"out_trade_no": o.ID, "total_amount": money(o.AmountMinor), "subject": productTitle(o), "product_code": productCode, "timeout_express": "30m"})
 	if e != nil {
 		return Checkout{}, e
 	}
@@ -294,7 +293,7 @@ func (w *Wechat) request(ctx context.Context, method, path string, body []byte) 
 	return data, nil
 }
 func (w *Wechat) Prepare(ctx context.Context, o Order) (Checkout, error) {
-	body, e := json.Marshal(map[string]any{"appid": w.cfg.AppID, "mchid": w.cfg.MerchantID, "description": pro.ProductCatalogue().Product.Title, "out_trade_no": o.ID, "time_expire": time.Unix(o.ExpiresAt, 0).Format(time.RFC3339), "notify_url": w.cfg.NotifyURL, "amount": map[string]any{"total": o.AmountMinor, "currency": o.Currency}})
+	body, e := json.Marshal(map[string]any{"appid": w.cfg.AppID, "mchid": w.cfg.MerchantID, "description": productTitle(o), "out_trade_no": o.ID, "time_expire": time.Unix(o.ExpiresAt, 0).Format(time.RFC3339), "notify_url": w.cfg.NotifyURL, "amount": map[string]any{"total": o.AmountMinor, "currency": o.Currency}})
 	if e != nil {
 		return Checkout{}, e
 	}

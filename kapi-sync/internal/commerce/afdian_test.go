@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func afdianFixture(t *testing.T) (*Afdian, *Service, OrderView, *[]afdianOrder) {
@@ -98,6 +99,53 @@ func TestAfdianOfficialCheckoutAndQueryBinding(t *testing.T) {
 	proof, e := s.VerifiedOrder(o.ID, owner, strings.Repeat("d", 32))
 	if e != nil || !strings.HasPrefix(proof.EntitlementProof, "GZO1.") {
 		t.Fatal("no signed proof", e)
+	}
+}
+
+func TestAfdianPendingCheckoutRepairKeepsOrderAndRights(t *testing.T) {
+	p, s, o, _ := afdianFixture(t)
+	old := s.state.Orders[o.ID]
+	u, _ := url.Parse(old.Checkout.Value)
+	q := u.Query()
+	q.Del("sku")
+	u.RawQuery = q.Encode()
+	old.Checkout.Value = u.String()
+	if e := s.save(old); e != nil {
+		t.Fatal(e)
+	}
+	for i := 0; i < 3; i++ {
+		repaired, e := s.Refresh(context.Background(), o.ID, owner)
+		if e != nil {
+			t.Fatal(e)
+		}
+		u, _ = url.Parse(repaired.Checkout.Value)
+		var sku []struct {
+			ID    string `json:"sku_id"`
+			Count int    `json:"count"`
+		}
+		if json.Unmarshal([]byte(u.Query().Get("sku")), &sku) != nil || len(sku) != 1 || sku[0].ID != p.cfg.SKUID || sku[0].Count != 1 {
+			t.Fatal("pending sale remains unusable")
+		}
+		if repaired.ID != o.ID || repaired.State != "CREATED" || len(s.state.Orders) != 1 || s.state.Orders[o.ID].PaidAt != 0 {
+			t.Fatal("repair changed purchase identity or payment state")
+		}
+	}
+}
+
+func TestAfdianReturnAfterLocalExpiryUsesOriginalOrderThenVerifiesPayment(t *testing.T) {
+	_, s, o, rows := afdianFixture(t)
+	s.now = func() time.Time { return time.Unix(o.ExpiresAt+86400, 0) }
+	for i := 0; i < 3; i++ {
+		pending, e := s.Refresh(context.Background(), o.ID, owner)
+		if e != nil || pending.ID != o.ID || pending.State != "CREATED" || len(s.state.Orders) != 1 || s.state.Orders[o.ID].PaidAt != 0 {
+			t.Fatal("late return lost or activated the unpaid order", pending, e)
+		}
+	}
+	p := s.providers["afdian"].(*Afdian)
+	*rows = []afdianOrder{paidAfdian(p, o.ID)}
+	paid, e := s.Refresh(context.Background(), o.ID, owner)
+	if e != nil || paid.State != "PAID" || paid.ID != o.ID || len(s.state.Orders) != 1 {
+		t.Fatal("late authenticated payment did not settle its original order", paid, e)
 	}
 }
 func TestAfdianRejectsWrongAmountPlanProductQuantityAndOrder(t *testing.T) {
@@ -225,5 +273,30 @@ func TestAfdianConnectionCheckIsReadOnlyAndRejectsAuthenticationFailure(t *testi
 	p.apiURL, p.client = server.URL, server.Client()
 	if count, err := p.CheckConnection(context.Background()); err != ErrInvalid || count != 0 {
 		t.Fatal("failed authentication accepted", count, err)
+	}
+}
+
+func TestAfdianUnrelatedAndOfficialTestNotificationsCannotCreateOrChangePurchases(t *testing.T) {
+	p, s, o, _ := afdianFixture(t)
+	before, err := os.ReadFile(s.file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"", "unbound", strings.Repeat("e", 32)} {
+		body, _ := json.Marshal(map[string]any{"ec": 200, "data": map[string]any{"type": "order", "order": map[string]any{"custom_order_id": id, "out_trade_no": "202106232138371083454010626", "status": 2, "total_amount": "99.00"}}})
+		if err := s.afdianNotify(context.Background(), p, body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.afdianNotify(context.Background(), p, []byte(`{"ec":200,"data":{"type":"other"}}`)); err != ErrInvalid {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(s.file)
+	if string(before) != string(after) {
+		t.Fatal("unrelated notifications changed purchase store")
+	}
+	got, _ := s.Get(o.ID, owner)
+	if got.State != "CREATED" {
+		t.Fatal("unrelated notification granted rights")
 	}
 }

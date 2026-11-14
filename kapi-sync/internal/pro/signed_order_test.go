@@ -21,7 +21,7 @@ func TestAfdianSignedRestoreRejectsReplayAndPreservesLegacyAndLedger(t *testing.
 	id, nonce := strings.Repeat("a", 32), strings.Repeat("b", 32)
 	makeResponse := func(state string, revision int64, challenge string) []byte {
 		hash := sha256.Sum256([]byte("redirect\nhttps://afdian.com/order/create"))
-		p := orderProof{id, state, revision, challenge, "afdian", "android", ProductID, 2990, "CNY", true, hex.EncodeToString(hash[:])}
+		p := orderProof{ID: id, State: state, Revision: revision, Nonce: challenge, Channel: "afdian", Platform: "android", Product: ProductID, Amount: 2990, Currency: "CNY", Permanent: true, CheckoutHash: hex.EncodeToString(hash[:])}
 		b, _ := json.Marshal(p)
 		sum := sha256.Sum256(b)
 		sig, _ := ecdsa.SignASN1(rand.Reader, key, sum[:])

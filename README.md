@@ -1,8 +1,9 @@
 # 归账
 
-安卓可以独立安装，NAS 是可选项。当前独立分发准备版为 **Android 0.1.172**，NAS 下载支持为 **0.5.9**；购买功能保持关闭，内测已有权益保留。
+安卓可以独立安装，NAS 是可选项。当前安卓正式版为 **0.1.183**，Pro 可从 App 内购买。NAS 下载支持为 **0.5.9**。
 
-- [安卓 APK 下载与校验文件](https://github.com/hongjiahao371-pixel/kapi/releases/tag/android-v0.1.172)
+- [直接下载 Android 0.1.183 正式 APK](https://github.com/hongjiahao371-pixel/kapi/releases/download/android-v0.1.183/guizhang-android-0.1.183.apk)
+- [0.1.183 发布说明与 SHA-256 校验文件](https://github.com/hongjiahao371-pixel/kapi/releases/tag/android-v0.1.183)
 - [下载、旧内测迁移与爱发电接入说明](kapi-sync/INDEPENDENT-ANDROID.md)
 - [NAS 安装、HTTPS、家庭账本与备份](kapi-sync/DEPLOYMENT.md)
 - [NAS 0.5.9 变更与验收边界](kapi-sync/RELEASE-0.5.9.md)
@@ -11,11 +12,13 @@
 
 镜像标签为 `ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.9`，已完成公开匿名层下载与哈希核验，无需登录；部署资料见 NAS Release，离线导出位于对应 Actions 产物。Docker Hub 现有 `jvsheng/guizhang:0.5.5` 保留。升级前备份，并保留 data、tls、原环境变量和家庭身份。
 
-此仓库公开 NAS 与订单服务源码、配置和已签名安卓二进制。保留的早期手机客户端源码不对应最新 APK；iOS、鸿蒙不属于本次独立分发验收。
+此仓库公开 NAS 与订单服务源码、配置和已签名安卓二进制。最新安卓客户端以 Release 中的正式 APK 为准。
 
 ## 官方爱发电主页
 
-[归账的爱发电主页](https://afdian.com/a/guizhangapp) 由本项目发行者维护，用于创作者身份认证和后续 Pro 购买。新定价草稿为月度 6.90 元、年度 69 元、终身 99 元；当前商品隐藏且不可购买，App 收款关闭。月度／年度有效期、续期及真实交易尚未完成，不属于现有 APK 或镜像已验收的能力。请等 App 正式开放后的订单入口，不要单独赞助后期待自动激活。内测已有权益保持不变。
+打开安卓 App 的「设置 → 归账 Pro」发起购买。月度 ¥6.90（31 天）、年度 ¥69（365 天）、终身 ¥99。月度和年度手动续费。付款后返回归账，App 会自动核对。建议在 App 内保存购买凭据，换机或重装时可恢复权益。
+
+[归账的爱发电主页](https://afdian.com/a/guizhangapp) 供查看创作者信息。单独在主页赞助的订单不会自动绑定到 App。
 
 ## 授权与商业使用
 

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 type stored struct {
@@ -23,6 +24,8 @@ type Status struct {
 	Free                  map[string]string `json:"free"`
 	Premium               map[string]string `json:"pro"`
 	Catalogue             Catalogue         `json:"catalogue"`
+	Permanent             bool              `json:"permanent"`
+	ValidUntil            int64             `json:"valid_until"`
 	OrderRestoreAvailable bool              `json:"order_restore_available"`
 }
 type Manager struct {
@@ -55,12 +58,8 @@ func (m *Manager) enabledLocked() bool {
 	if _, e := Verify(m.state.License, PublicKey); e == nil {
 		return true
 	}
-	for id, proof := range m.state.Orders {
-		if value, e := verifyOrderProof(proof, id, "", PublicKey); e == nil && value.State == "PAID" {
-			return true
-		}
-	}
-	return false
+	permanent, until := m.purchaseEntitlementLocked()
+	return permanent || until > time.Now().Unix()
 }
 func (m *Manager) Enabled() bool              { m.mu.RLock(); defer m.mu.RUnlock(); return m.enabledLocked() }
 func (m *Manager) Allows(feature string) bool { return Allows(feature, m.Enabled()) }
@@ -75,9 +74,24 @@ func (m *Manager) Status() Status {
 	if m.state.LegacyGift {
 		source = "内测永久赠送"
 	} else if enabled {
-		source = "永久 Pro"
+		permanent, until := m.purchaseEntitlementLocked()
+		if permanent || until == 0 {
+			source = "永久 Pro"
+		} else {
+			source = "限时 Pro · " + time.Unix(until, 0).Format("2006-01-02")
+		}
 	}
-	return Status{Version: PolicyVersion, Enabled: enabled, Source: source, PaymentsEnabled: false, Free: Free, Premium: Premium, Catalogue: ProductCatalogue()}
+	permanent, until := m.purchaseEntitlementLocked()
+	if m.state.LegacyGift {
+		permanent = true
+	}
+	if _, e := Verify(m.state.License, PublicKey); e == nil {
+		permanent = true
+	}
+	if permanent {
+		until = 0
+	}
+	return Status{Permanent: permanent, ValidUntil: until, Version: PolicyVersion, Enabled: enabled, Source: source, PaymentsEnabled: false, Free: Free, Premium: Premium, Catalogue: ProductCatalogue()}
 }
 func (m *Manager) Activate(code string) error {
 	if _, e := Verify(code, PublicKey); e != nil {

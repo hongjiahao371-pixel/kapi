@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"kapi/sync/internal/pro"
 )
 
 // A per-request challenge stops a previously paid response from concealing a
@@ -33,7 +34,18 @@ func (s *Service) VerifiedOrder(id, token, nonce string) (OrderView, error) {
 		revision = 1
 	}
 	checkout := sha256.Sum256([]byte(v.Checkout.Kind + "\n" + v.Checkout.Value))
-	body, err := json.Marshal(map[string]any{"id": o.ID, "state": o.State, "product_id": o.ProductID, "amount_minor": o.AmountMinor, "currency": o.Currency, "platform": o.Platform, "channel": o.Channel, "permanent": true, "revision": revision, "nonce": nonce, "checkout_sha256": hex.EncodeToString(checkout[:])})
+	claims := map[string]any{"id": o.ID, "state": o.State, "product_id": o.ProductID, "amount_minor": o.AmountMinor, "currency": o.Currency, "platform": o.Platform, "channel": o.Channel, "permanent": true, "revision": revision, "nonce": nonce, "checkout_sha256": hex.EncodeToString(checkout[:])}
+	protocol := "GZO1"
+	if o.ProductID != pro.ProductID {
+		protocol = "GZO2"
+		g := s.grantLocked(o.OwnerHash)
+		claims["permanent"] = g.Permanent
+		claims["valid_until"] = g.Until
+		claims["entitlement_revision"] = g.Revision
+		claims["scope"] = o.OwnerHash
+		claims["issued_at"] = s.now().Unix()
+	}
+	body, err := json.Marshal(claims)
 	if err != nil {
 		return OrderView{}, err
 	}
@@ -42,7 +54,7 @@ func (s *Service) VerifiedOrder(id, token, nonce string) (OrderView, error) {
 	if err != nil {
 		return OrderView{}, err
 	}
-	v.EntitlementProof = "GZO1." + base64.RawURLEncoding.EncodeToString(body) + "." + base64.RawURLEncoding.EncodeToString(signature)
+	v.EntitlementProof = protocol + "." + base64.RawURLEncoding.EncodeToString(body) + "." + base64.RawURLEncoding.EncodeToString(signature)
 	return v, nil
 }
 
