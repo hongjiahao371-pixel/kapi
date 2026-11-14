@@ -1,15 +1,15 @@
-# 归账 NAS 0.5.5 部署
+# 归账 NAS 0.5.10 部署
 
 ## 从 Docker Hub 直接部署
 
-公开镜像：[jvsheng/guizhang](https://hub.docker.com/r/jvsheng/guizhang)。当前支持 `linux/amd64`（x86-64 NAS），版本标签 `0.5.5`；`latest` 当前指向同一镜像。部署建议固定版本标签。
+公开镜像：[jvsheng/guizhang](https://hub.docker.com/r/jvsheng/guizhang)。当前支持 `linux/amd64`（x86-64 NAS），新部署和升级使用 `0.5.10`，镜像内置归账 Android 0.1.184。
 
 新部署可复制 `deploy/docker-compose.yml` 到一个独立部署目录，或保存下面的最小配置为 `docker-compose.yml`：
 
 ```yaml
 services:
   kapi-sync:
-    image: jvsheng/guizhang:0.5.5
+    image: jvsheng/guizhang:0.5.10
     container_name: kapi-sync
     restart: unless-stopped
     ports:
@@ -25,21 +25,21 @@ docker compose pull
 docker compose up -d
 ```
 
-访问 `http://NAS地址:8787/panel/`。首次自动生成的面板令牌在部署目录的 `data/panel-token`，通过 NAS 私有终端读取，不要发给其他家庭成员。本人多设备配对和家庭成员邀请不是同一个凭据。HTTP 只用于可信局域网；HTTPS 配置见下文。
+访问 `http://NAS地址:8787/panel/`。安卓 APK 可从「连接与备份 → 下载安卓 App」或 `/android/` 下载。首次自动生成的面板令牌在部署目录的 `data/panel-token`，通过 NAS 私有终端读取，不要发给其他家庭成员。本人多设备配对和家庭成员邀请不是同一个凭据。HTTP 只用于可信局域网；HTTPS 配置见下文。
 
 现有部署升级请保留原部署目录、数据卷路径、容器名、端口、环境配置、家庭空间 URL 及配对信息，仅调整镜像地址后更新。不要另建空数据目录，不要清库或重新配对。先停机备份，再恢复启动并升级。
 
-## 离线导入镜像
+## 0.5.5 历史离线包
 
-GitHub Release 同时提供 linux/amd64 镜像压缩包及 SHA256SUMS。校验后执行：
+[0.5.5 Release](https://github.com/hongjiahao371-pixel/kapi/releases/tag/nas-v0.5.5) 提供历史离线包。校验后执行：
 
 ```sh
 docker load -i guizhang-nas-0.5.5-linux-amd64.docker.tar.gz
 ```
 
-离线镜像标签是 `kapi-sync:0.5.5`。将最小配置的 image 改为该标签，或使用完整 Compose 时在 `.env` 中设置 `KAPI_IMAGE=kapi-sync:0.5.5`，然后 `docker compose up -d --pull never`。离线不执行 `docker compose pull`。
+离线镜像标签是 `kapi-sync:0.5.5`。将最小配置的 image 改为该标签，或在 Compose 对应的 `.env` 中设置 `KAPI_IMAGE=kapi-sync:0.5.5`，然后 `docker compose up -d --pull never`。离线不执行 `docker compose pull`。
 
-镜像不含账本、手机配对令牌、面板令牌或 TLS 私钥。本版离线包与 Docker Hub 镜像使用同一配置和应用内容，离线包额外带有 `kapi-sync:0.5.5` 标签供原部署使用。压缩包 SHA-256 与注册表 manifest digest 是不同对象的校验值，不应直接比较。
+镜像不含账本、手机配对令牌、面板令牌或 TLS 私钥。0.5.5 离线包与 Docker Hub 同版镜像使用同一配置和应用内容，离线包额外带有 `kapi-sync:0.5.5` 标签供原部署使用。压缩包 SHA-256 与注册表 manifest digest 是不同对象的校验值，不应直接比较。
 
 ## HTTPS
 
@@ -69,4 +69,4 @@ HTTP 8787 暂时保留旧设备兼容，尚未迁移设备仍是明文。双端�
 
 ## 从源码构建
 
-仓库根目录：`docker build -t kapi-sync:0.5.5 kapi-sync`。运行时将 Compose 的 image 改为本地标签，或在 `.env` 中设置 `KAPI_IMAGE=kapi-sync:0.5.5`。依赖官方 Go、Gradle/JDK 与 Temurin 基础镜像；读取器仅在导入时启动，不常驻运行。独立构建入口包含源文件摘要与第三方许可。当前发布的现成镜像只验收 linux/amd64；不要将可交叉编译等同于 ARM NAS 真机验收。
+从 Android 0.1.184 Release 下载 APK、`release.json` 和 `SHA256SUMS` 到 `kapi-sync/android-release/`。通过校验后，从仓库根目录执行 `docker build -t kapi-sync:0.5.10 kapi-sync`。部署时可在 `.env` 设置 `KAPI_IMAGE=kapi-sync:0.5.10`。依赖官方 Go、Gradle/JDK 与 Temurin 基础镜像；读取器仅在导入时启动，不常驻运行。独立构建入口包含源文件摘要与第三方许可。当前发布的现成镜像只验收 linux/amd64；不要将可交叉编译等同于 ARM NAS 真机验收。

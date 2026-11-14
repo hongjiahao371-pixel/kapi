@@ -24,4 +24,4 @@
 
 ## NAS 部署
 
-镜像 `ghcr.io/hongjiahao371-pixel/kapi-nas:0.5.9` 和 HTTPS、数据持久化配置见 [NAS 部署文档](DEPLOYMENT.md)。独立订单服务使用单独的数据目录。
+镜像 `jvsheng/guizhang:0.5.10` 和 HTTPS、数据持久化配置见 [NAS 部署文档](DEPLOYMENT.md)。独立订单服务使用单独的数据目录。
